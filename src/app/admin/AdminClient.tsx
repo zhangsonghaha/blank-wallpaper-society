@@ -19,6 +19,9 @@ import {
   ChevronRight,
   Link as LinkIcon,
   ExternalLink,
+  LayoutDashboard,
+  ShieldCheck,
+  Users,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -65,6 +68,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import DashboardTab from "./DashboardTab";
+import ReviewTab from "./ReviewTab";
+import UsersTab from "./UsersTab";
 
 interface Category {
   id: number;
@@ -138,6 +145,19 @@ export default function AdminClient() {
     category: "",
   });
   const [previewUrl, setPreviewUrl] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+
+  // 图片编辑状态
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    id: 0,
+    title: "",
+    description: "",
+    author: "",
+    tags: "",
+    category: "",
+  });
+  const [editSaving, setEditSaving] = useState(false);
 
   const [stats, setStats] = useState({
     totalImages: 0,
@@ -158,7 +178,7 @@ export default function AdminClient() {
       if (categoryFilter !== "all") params.set("category", categoryFilter);
 
       const [imagesRes, categoriesRes] = await Promise.all([
-        fetch(`/api/images?${params}`),
+        fetch(`/api/images?${params}&showAll=true`),
         fetch("/api/categories"),
       ]);
 
@@ -302,9 +322,101 @@ export default function AdminClient() {
     }
   };
 
+  const openEdit = (image: ImageRecord) => {
+    setEditForm({
+      id: image.id,
+      title: image.title,
+      description: image.description,
+      author: image.author,
+      tags: image.tags,
+      category: image.category,
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!editForm.title.trim()) {
+      toast.error("标题不能为空");
+      return;
+    }
+    setEditSaving(true);
+    try {
+      const res = await fetch(`/api/images/${editForm.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editForm.title,
+          description: editForm.description,
+          author: editForm.author,
+          tags: editForm.tags,
+          category: editForm.category,
+        }),
+      });
+      if (res.ok) {
+        toast.success("更新成功");
+        setEditOpen(false);
+        setDetailOpen(false);
+        loadData();
+      } else {
+        const data = await res.json();
+        toast.error("更新失败", { description: data.error });
+      }
+    } catch (err) {
+      toast.error("更新失败", { description: "网络错误" });
+    }
+    setEditSaving(false);
+  };
+
+  // 拖拽上传处理
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      setUploadForm((prev) => ({ ...prev, file }));
+      setPreviewUrl(URL.createObjectURL(file));
+      setUploadOpen(true);
+      setUploadMode("file");
+    } else {
+      toast.error("请拖入图片文件");
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[var(--color-surface-soft)]">
+    <div className="min-h-screen bg-[var(--color-surface-soft)]"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <Toaster position="top-right" richColors />
+
+      {/* 拖拽上传覆盖层 */}
+      <AnimatePresence>
+        {isDragging && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-[var(--color-primary)]/10 backdrop-blur-sm flex items-center justify-center pointer-events-none"
+          >
+            <div className="px-8 py-6 rounded-2xl bg-white shadow-xl border-2 border-dashed border-[var(--color-primary)]">
+              <Upload className="w-12 h-12 text-[var(--color-primary)] mx-auto mb-3" />
+              <p className="text-lg font-bold text-[var(--color-ink)]">拖放图片到此处上传</p>
+              <p className="text-sm text-[var(--color-mute)] mt-1">支持 JPG、PNG、WebP、GIF 格式</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="bg-white border-b sticky top-16 z-30">
         <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-4">
@@ -328,7 +440,41 @@ export default function AdminClient() {
         </div>
       </div>
 
-      <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-6 space-y-6">
+      <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-6">
+        <Tabs defaultValue="dashboard">
+          <TabsList variant="line" className="mb-6">
+            <TabsTrigger value="dashboard" className="gap-1.5">
+              <LayoutDashboard className="w-4 h-4" />
+              仪表盘
+            </TabsTrigger>
+            <TabsTrigger value="images" className="gap-1.5">
+              <ImageIcon className="w-4 h-4" />
+              图片管理
+            </TabsTrigger>
+            <TabsTrigger value="review" className="gap-1.5">
+              <ShieldCheck className="w-4 h-4" />
+              审核管理
+            </TabsTrigger>
+            <TabsTrigger value="users" className="gap-1.5">
+              <Users className="w-4 h-4" />
+              用户管理
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="dashboard">
+            <DashboardTab />
+          </TabsContent>
+
+          <TabsContent value="review">
+            <ReviewTab />
+          </TabsContent>
+
+          <TabsContent value="users">
+            <UsersTab />
+          </TabsContent>
+
+          <TabsContent value="images">
+          <div className="space-y-6">
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card>
@@ -548,8 +694,19 @@ export default function AdminClient() {
                                     <MoreHorizontal className="w-4 h-4 text-[var(--color-mute)]" />
                                   </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="rounded-xl">
-                                  <DropdownMenuLabel>操作</DropdownMenuLabel>
                                   <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="cursor-pointer"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openEdit(image);
+                                    }}
+                                  >
+                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                    编辑
+                                  </DropdownMenuItem>
                                   <DropdownMenuItem
                                     className="cursor-pointer"
                                     onClick={(e) => {
@@ -611,6 +768,9 @@ export default function AdminClient() {
             )}
           </CardContent>
         </Card>
+          </div>
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Upload Dialog */}
@@ -937,6 +1097,15 @@ export default function AdminClient() {
                   <Heart className={`w-4 h-4 ${selectedImage.is_favorite ? "fill-red-500 text-red-500" : ""}`} />
                   {selectedImage.is_favorite ? "取消收藏" : "收藏"}
                 </Button>
+                <Button variant="outline" className="rounded-full gap-2" onClick={() => {
+                  openEdit(selectedImage);
+                  setDetailOpen(false);
+                }}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  编辑
+                </Button>
                 <Button variant="outline" className="rounded-full gap-2" onClick={() => window.open(selectedImage.url, "_blank")}>
                   <Download className="w-4 h-4" />
                   查看原图
@@ -948,6 +1117,110 @@ export default function AdminClient() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-lg rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl">编辑图片信息</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="edit-title">标题 *</Label>
+              <Input
+                id="edit-title"
+                value={editForm.title}
+                onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))}
+                placeholder="图片标题"
+                className="mt-1 h-10 rounded-xl"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-desc">描述</Label>
+              <Textarea
+                id="edit-desc"
+                value={editForm.description}
+                onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))}
+                placeholder="图片描述"
+                className="mt-1 h-20 rounded-xl resize-none"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="edit-author">作者</Label>
+                <Input
+                  id="edit-author"
+                  value={editForm.author}
+                  onChange={(e) => setEditForm((p) => ({ ...p, author: e.target.value }))}
+                  placeholder="作者名"
+                  className="mt-1 h-10 rounded-xl"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-cat">分类</Label>
+                <Select
+                  value={editForm.category}
+                  onValueChange={(v) => setEditForm((p) => ({ ...p, category: v || "" }))}
+                >
+                  <SelectTrigger id="edit-cat" className="mt-1 h-10 rounded-xl">
+                    <SelectValue placeholder="选择分类" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.slug}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="edit-tags">标签</Label>
+              <Input
+                id="edit-tags"
+                value={editForm.tags}
+                onChange={(e) => setEditForm((p) => ({ ...p, tags: e.target.value }))}
+                placeholder="逗号分隔，如: 自然,风景"
+                className="mt-1 h-10 rounded-xl"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditOpen(false)}
+              className="rounded-full"
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              disabled={editSaving}
+              onClick={handleEditSave}
+              className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)] rounded-full gap-2"
+            >
+              {editSaving ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  保存中...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  保存修改
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

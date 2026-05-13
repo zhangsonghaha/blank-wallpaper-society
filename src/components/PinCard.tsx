@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
+import { FolderPlus } from "lucide-react";
 import type { GalleryImage } from "@/data/images";
+import AddToCollectionDialog from "./AddToCollectionDialog";
 
 interface PinCardProps {
   image: GalleryImage;
@@ -22,12 +25,31 @@ export default function PinCard({
   const [isLoaded, setIsLoaded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [showSaveFeedback, setShowSaveFeedback] = useState(false);
+  const [addToCollectionOpen, setAddToCollectionOpen] = useState(false);
 
   const handleFavorite = (e: React.MouseEvent) => {
     e.stopPropagation();
     onToggleFavorite(image.id);
     setShowSaveFeedback(true);
     setTimeout(() => setShowSaveFeedback(false), 1500);
+  };
+
+  const handleShare = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}/?pin=${image.id}`;
+    if (navigator.share) {
+      navigator.share({
+        title: image.title,
+        text: image.description || `查看 ${image.title}`,
+        url,
+      }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(url).then(() => {
+        toast.success("链接已复制到剪贴板");
+      }).catch(() => {
+        toast.error("复制失败，请手动复制");
+      });
+    }
   };
 
   const tagLabels: Record<string, string> = {
@@ -109,40 +131,53 @@ export default function PinCard({
                   </button>
                 </div>
 
-                {/* Top Right Actions */}
-                <div className="absolute top-3 right-3 flex gap-2">
+                {/* Collection Button - Below Save */}
+                <div className="absolute top-14 left-3">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      // Share functionality
+                      setAddToCollectionOpen(true);
                     }}
                     className="w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-transform"
+                    title="加入合集"
+                  >
+                    <FolderPlus className="w-4 h-4 text-[var(--color-ink)]" />
+                  </button>
+                </div>
+
+                {/* Top Right Actions */}
+                <div className="absolute top-3 right-3 flex gap-2">
+                  <button
+                    onClick={handleShare}
+                    className="w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-transform"
+                    title="分享"
                   >
                     <svg className="w-4 h-4 text-[var(--color-ink)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                     </svg>
                   </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onClick();
+                    }}
+                    className="w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-transform"
+                    title="查看大图"
+                  >
+                    <svg className="w-4 h-4 text-[var(--color-ink)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                    </svg>
+                  </button>
                 </div>
 
                 {/* Bottom Info */}
-                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
+                <div className="absolute bottom-3 left-3 right-3 flex items-center">
                   <div className="flex items-center gap-2">
                     <div className="w-7 h-7 rounded-full bg-white/90 flex items-center justify-center overflow-hidden ring-2 ring-white/50">
                       <img src={image.avatar} alt={image.author} className="w-full h-full object-cover" />
                     </div>
                     <span className="text-xs font-semibold text-white drop-shadow-sm">{image.author}</span>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onClick();
-                    }}
-                    className="w-9 h-9 bg-white/90 rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-transform shadow-md"
-                  >
-                    <svg className="w-4 h-4 text-[var(--color-ink)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                    </svg>
-                  </button>
                 </div>
               </motion.div>
             )}
@@ -180,6 +215,13 @@ export default function PinCard({
           </div>
         </div>
       </div>
+
+      {/* Add to Collection Dialog */}
+      <AddToCollectionDialog
+        open={addToCollectionOpen}
+        onOpenChange={setAddToCollectionOpen}
+        imageId={image.id}
+      />
     </motion.div>
   );
 }

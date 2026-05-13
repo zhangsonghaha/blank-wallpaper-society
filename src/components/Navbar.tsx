@@ -22,13 +22,16 @@ import {
   User,
   LayoutDashboard,
   Settings,
+  Upload,
+  Grid3X3,
 } from "lucide-react";
 
 export default function Navbar() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { searchQuery, setSearchQuery, favoriteCount } = useSearch();
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const { searchQuery, setSearchQuery, favoriteCount, setShowFavoritesOnly } = useSearch();
   const [localQuery, setLocalQuery] = useState(searchQuery);
 
   const isAdmin = (session?.user as any)?.role === "admin";
@@ -94,6 +97,22 @@ export default function Navbar() {
                   </span>
                 )}
               </Link>
+              <Link
+                href="/collections"
+                className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors flex items-center gap-1.5"
+              >
+                <Grid3X3 className="w-4 h-4" />
+                合集
+              </Link>
+              {isLoggedIn && (
+                <Link
+                  href="/upload"
+                  className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors flex items-center gap-1"
+                >
+                  <Upload className="w-4 h-4" />
+                  上传
+                </Link>
+              )}
             </div>
           </div>
 
@@ -148,7 +167,10 @@ export default function Navbar() {
             {/* Mobile Search Toggle */}
             <button
               className="sm:hidden w-10 h-10 flex items-center justify-center rounded-full hover:bg-[var(--color-surface-card)] transition-colors"
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              onClick={() => {
+                setShowMobileSearch(!showMobileSearch);
+                setIsMenuOpen(false);
+              }}
             >
               <svg
                 className="w-5 h-5 text-[var(--color-ink)]"
@@ -166,7 +188,12 @@ export default function Navbar() {
             </button>
 
             {/* Favorite Button (Mobile) */}
-            <button className="sm:hidden relative w-10 h-10 flex items-center justify-center rounded-full hover:bg-[var(--color-surface-card)] transition-colors">
+            <button
+              className="sm:hidden relative w-10 h-10 flex items-center justify-center rounded-full hover:bg-[var(--color-surface-card)] transition-colors"
+              onClick={() => {
+                router.push("/#favorites");
+              }}
+            >
               <Heart className="w-5 h-5 text-[var(--color-ink)]" />
               {favoriteCount > 0 && (
                 <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-[var(--color-primary)] text-white text-[9px] font-bold rounded-full flex items-center justify-center">
@@ -218,6 +245,14 @@ export default function Navbar() {
                   >
                     <User className="w-4 h-4 mr-2" />
                     个人主页
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => router.push("/upload")}
+                    className="cursor-pointer"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    上传壁纸
                   </DropdownMenuItem>
 
                   <DropdownMenuItem
@@ -306,6 +341,64 @@ export default function Navbar() {
         </div>
       </div>
 
+      {/* Mobile Search Bar */}
+      <AnimatePresence>
+        {showMobileSearch && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="sm:hidden border-b border-[var(--color-hairline)] bg-white overflow-hidden"
+          >
+            <div className="px-4 py-3">
+              <div className="relative">
+                <svg
+                  className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-ash)]"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2.5}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+                <input
+                  type="text"
+                  value={localQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  placeholder="搜索图片、灵感..."
+                  autoFocus
+                  className="w-full h-11 pl-11 pr-10 bg-[var(--color-surface-card)] text-[var(--color-ink)] text-sm rounded-full placeholder:text-[var(--color-ash)] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[var(--color-focus-outer)] transition-all"
+                />
+                {localQuery && (
+                  <button
+                    onClick={() => handleSearch("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-full hover:bg-[var(--color-secondary-bg)] transition-colors"
+                  >
+                    <svg
+                      className="w-3.5 h-3.5 text-[var(--color-ash)]"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Mobile Menu */}
       <AnimatePresence>
         {isMenuOpen && (
@@ -364,6 +457,13 @@ export default function Navbar() {
                   >
                     <User className="w-4 h-4" />
                     个人主页
+                  </Link>
+                  <Link
+                    href="/upload"
+                    className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-[var(--color-ink)] rounded-lg hover:bg-[var(--color-surface-card)]"
+                  >
+                    <Upload className="w-4 h-4" />
+                    上传壁纸
                   </Link>
                   {isAdmin && (
                     <Link

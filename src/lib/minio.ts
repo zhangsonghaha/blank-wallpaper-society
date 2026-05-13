@@ -51,6 +51,46 @@ export async function deleteFile(storageKey: string) {
 }
 
 /**
+ * 获取文件流
+ */
+export async function getObject(storageKey: string): Promise<Buffer> {
+  const client = getMinioClient();
+  const dataStream = await client.getObject(BUCKET_NAME, storageKey);
+  const chunks: Buffer[] = [];
+  for await (const chunk of dataStream) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
+ * 上传Buffer到MinIO
+ */
+export async function putBuffer(
+  buffer: Buffer,
+  storageKey: string,
+  mimeType: string
+): Promise<void> {
+  const client = getMinioClient();
+  await client.putObject(BUCKET_NAME, storageKey, buffer, buffer.length, {
+    "Content-Type": mimeType,
+  });
+}
+
+/**
+ * 检查文件是否存在
+ */
+export async function objectExists(storageKey: string): Promise<boolean> {
+  const client = getMinioClient();
+  try {
+    await client.statObject(BUCKET_NAME, storageKey);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 获取文件公开URL
  */
 export function getPublicUrl(storageKey: string): string {

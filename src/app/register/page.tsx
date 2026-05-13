@@ -92,7 +92,7 @@ export default function RegisterPage() {
         <Card className="rounded-2xl border-none shadow-lg">
           <CardHeader className="text-center pb-2">
             <div className="flex justify-center mb-4">
-              <div className="w-14 h-14 rounded-2xl bg-[var(--color-primary)] flex items-center justify-center">
+              <div className="w-14 h-14 rounded-[var(--radius-md)] bg-[var(--color-primary)] flex items-center justify-center">
                 <UserPlus className="w-7 h-7 text-white" />
               </div>
             </div>
@@ -110,7 +110,7 @@ export default function RegisterPage() {
                     placeholder="你的昵称"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="pl-10 h-12 rounded-xl"
+                    className="pl-10 h-12 rounded-[var(--radius-md)]"
                   />
                 </div>
               </div>
@@ -124,7 +124,7 @@ export default function RegisterPage() {
                     placeholder="your@email.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="pl-10 h-12 rounded-xl"
+                    className="pl-10 h-12 rounded-[var(--radius-md)]"
                     autoComplete="email"
                   />
                 </div>
@@ -139,7 +139,7 @@ export default function RegisterPage() {
                     placeholder="至少 6 位"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 pr-10 h-12 rounded-xl"
+                    className="pl-10 pr-10 h-12 rounded-[var(--radius-md)]"
                     autoComplete="new-password"
                   />
                   <button
@@ -165,7 +165,7 @@ export default function RegisterPage() {
                     placeholder="再次输入密码"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="pl-10 h-12 rounded-xl"
+                    className="pl-10 h-12 rounded-[var(--radius-md)]"
                     autoComplete="new-password"
                   />
                 </div>
@@ -173,7 +173,7 @@ export default function RegisterPage() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full h-12 rounded-xl text-base font-medium gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)]"
+                className="w-full h-12 rounded-[var(--radius-md)] text-base font-bold gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)]"
               >
                 {loading ? (
                   <>
@@ -197,7 +197,7 @@ export default function RegisterPage() {
               已有账号？{" "}
               <Link
                 href="/login"
-                className="text-[var(--color-primary)] font-medium hover:underline"
+                className="text-[var(--color-primary)] font-semibold hover:underline"
               >
                 立即登录
               </Link>

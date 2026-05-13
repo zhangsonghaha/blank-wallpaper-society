@@ -1,8 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
 import type { GalleryImage } from "@/data/images";
+import { Flag, Download, ChevronDown, Monitor, Smartphone, Tablet, X, FolderPlus, Pencil, Calendar } from "lucide-react";
+import AddToCollectionDialog from "./AddToCollectionDialog";
+import {
+  RESOLUTIONS,
+  CATEGORY_LABELS,
+  type Resolution,
+} from "@/lib/resolutions";
 
 interface LightboxProps {
   images: GalleryImage[];
@@ -11,6 +19,12 @@ interface LightboxProps {
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
+  favoritedIds?: Set<number>;
+  onToggleFavorite?: (id: number) => void;
+}
+
+interface ResolutionWithCache extends Resolution {
+  cached?: boolean;
 }
 
 export default function Lightbox({
@@ -20,14 +34,107 @@ export default function Lightbox({
   onClose,
   onPrev,
   onNext,
+  favoritedIds,
+  onToggleFavorite,
 }: LightboxProps) {
   const currentImage = images[currentIndex];
   const [isLoaded, setIsLoaded] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportCategory, setReportCategory] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  // 下载面板状态
+  const [downloadPanelOpen, setDownloadPanelOpen] = useState(false);
+  const [resolutions, setResolutions] = useState<ResolutionWithCache[]>([]);
+  const [downloadingRes, setDownloadingRes] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [loadingResolutions, setLoadingResolutions] = useState(false);
+  const [addToCollectionOpen, setAddToCollectionOpen] = useState(false);
+
+  const isFavorited = favoritedIds?.has(currentImage?.id) ?? false;
+
+  // 推荐分辨率
+  const recommendedResolution = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const w = window.screen.width;
+    const h = window.screen.height;
+    let best: Resolution | null = null;
+    let bestDiff = Infinity;
+    for (const res of RESOLUTIONS) {
+      const diff = Math.abs(res.width * res.height - w * h);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = res;
+      }
+    }
+    return best;
+  }, []);
+
+  // 举报原因分类
+  const reportCategories = [
+    { value: "inappropriate", label: "不当内容" },
+    { value: "copyright", label: "版权侵权" },
+    { value: "spam", label: "垃圾信息" },
+    { value: "violence", label: "暴力血腥" },
+    { value: "other", label: "其他" },
+  ];
+
+  // 分辨率按类别分组
+  const groupedResolutions = useMemo(() => {
+    const groups: Record<string, ResolutionWithCache[]> = {
+      phone: [],
+      desktop: [],
+      tablet: [],
+    };
+    for (const res of resolutions) {
+      groups[res.category].push(res);
+    }
+    return groups;
+  }, [resolutions]);
+
+  // 获取分辨率列表
+  const fetchResolutions = useCallback(async () => {
+    if (!currentImage) return;
+    setLoadingResolutions(true);
+    try {
+      const res = await fetch(`/api/images/${currentImage.id}/resize`);
+      if (res.ok) {
+        const data = await res.json();
+        setResolutions(data.resolutions || []);
+      }
+    } catch {
+      // 静默失败，使用默认列表
+      setResolutions(RESOLUTIONS);
+    }
+    setLoadingResolutions(false);
+  }, [currentImage]);
+
+  // 打开下载面板时获取分辨率
+  useEffect(() => {
+    if (downloadPanelOpen && currentImage) {
+      fetchResolutions();
+    }
+  }, [downloadPanelOpen, currentImage, fetchResolutions]);
+
+  // 记录浏览日志
+  const trackView = useCallback(async (imageId: number) => {
+    try {
+      await fetch("/api/logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "view", image_id: imageId }),
+      });
+    } catch {
+      // 静默失败
+    }
+  }, []);
 
   // 键盘导航
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (!isOpen) return;
+      if (downloadPanelOpen || reportOpen) return;
       switch (e.key) {
         case "Escape":
           onClose();
@@ -40,7 +147,7 @@ export default function Lightbox({
           break;
       }
     },
-    [isOpen, onClose, onPrev, onNext]
+    [isOpen, onClose, onPrev, onNext, downloadPanelOpen, reportOpen]
   );
 
   useEffect(() => {
@@ -48,12 +155,170 @@ export default function Lightbox({
       document.addEventListener("keydown", handleKeyDown);
       document.body.style.overflow = "hidden";
       setIsLoaded(false);
+      // 记录浏览日志
+      if (currentImage?.id) {
+        trackView(currentImage.id);
+      }
     }
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = "";
     };
   }, [isOpen, handleKeyDown]);
+
+  // 重置加载状态当图片切换
+  useEffect(() => {
+    setIsLoaded(false);
+    setDownloadPanelOpen(false);
+    setDownloadingRes(null);
+    setDownloadProgress(0);
+  }, [currentIndex]);
+
+  // 下载指定分辨率
+  const handleDownloadResolution = async (resolution?: string) => {
+    if (!currentImage || downloadingRes) return;
+
+    const resKey = resolution || "original";
+    setDownloadingRes(resKey);
+    setDownloadProgress(0);
+
+    try {
+      const url = resolution
+        ? `/api/images/${currentImage.id}/download?resolution=${resolution}`
+        : `/api/images/${currentImage.id}/download`;
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error("下载失败");
+      }
+
+      const contentLength = response.headers.get("Content-Length");
+      const total = contentLength ? parseInt(contentLength) : 0;
+
+      if (total && typeof ReadableStream !== "undefined") {
+        // 带进度的下载
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("无法读取响应流");
+
+        const chunks: Uint8Array[] = [];
+        let received = 0;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          if (total > 0) {
+            setDownloadProgress(Math.round((received / total) * 100));
+          }
+        }
+
+        const blob = new Blob(chunks.map(c => new Uint8Array(c)), {
+          type: response.headers.get("Content-Type") || "image/webp",
+        });
+        triggerDownload(blob, resolution);
+      } else {
+        // 降级：无进度
+        const blob = await response.blob();
+        triggerDownload(blob, resolution);
+      }
+
+      toast.success(resolution ? `已下载 ${resolution}` : "原图下载完成");
+
+      // 记录下载日志（异步，不阻塞）
+      fetch("/api/logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "download",
+          image_id: currentImage.id,
+          resolution: resolution || "original",
+        }),
+      }).catch(() => {});
+    } catch {
+      toast.error("下载失败，请重试");
+    } finally {
+      setDownloadingRes(null);
+      setDownloadProgress(0);
+    }
+  };
+
+  const triggerDownload = (blob: Blob, resolution?: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const suffix = resolution ? `_${resolution}` : "";
+    a.download = `${currentImage?.title || "image"}${suffix}.webp`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFavorite = () => {
+    if (onToggleFavorite && currentImage) {
+      onToggleFavorite(currentImage.id);
+    }
+  };
+
+  const handleShare = () => {
+    if (!currentImage) return;
+    const url = `${window.location.origin}/?pin=${currentImage.id}`;
+    if (navigator.share) {
+      navigator.share({
+        title: currentImage.title,
+        text: currentImage.description || `查看 ${currentImage.title}`,
+        url,
+      }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(url).then(() => {
+        toast.success("链接已复制到剪贴板");
+      }).catch(() => {
+        toast.error("复制失败");
+      });
+    }
+  };
+
+  const handleReport = async () => {
+    if (!currentImage) return;
+    if (!reportCategory) {
+      toast.error("请选择举报分类");
+      return;
+    }
+    if (!reportReason.trim() && reportCategory !== "other") {
+      toast.error("请填写举报原因");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageId: currentImage.id,
+          reason: `[${reportCategories.find(c => c.value === reportCategory)?.label || reportCategory}] ${reportReason.trim()}`,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("举报成功", { description: "我们会尽快处理" });
+        setReportOpen(false);
+        setReportReason("");
+        setReportCategory("");
+      } else {
+        toast.error("举报失败", { description: data.error });
+      }
+    } catch {
+      toast.error("举报失败", { description: "网络错误" });
+    }
+    setSubmitting(false);
+  };
+
+  const categoryIcons = {
+    phone: Smartphone,
+    desktop: Monitor,
+    tablet: Tablet,
+  };
 
   return (
     <AnimatePresence>
@@ -160,22 +425,351 @@ export default function Lightbox({
             </motion.div>
           </motion.div>
 
-          {/* Download button */}
-          <a
-            href={currentImage.src}
-            download
-            target="_blank"
-            rel="noopener noreferrer"
-            className="absolute bottom-4 right-4 z-10 px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            下载原图
-          </a>
+          {/* Bottom Action Bar */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
+            {/* Favorite Button */}
+            {onToggleFavorite && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleFavorite();
+                }}
+                className={`px-4 py-2 flex items-center gap-2 rounded-full text-sm font-medium transition-colors backdrop-blur-sm ${
+                  isFavorited
+                    ? "bg-[var(--color-primary)] text-white"
+                    : "bg-white/10 text-white hover:bg-white/20"
+                }`}
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill={isFavorited ? "currentColor" : "none"}
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+                {isFavorited ? "已收藏" : "收藏"}
+              </button>
+            )}
+
+            {/* Edit Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const params = new URLSearchParams({
+                  src: currentImage.src,
+                  width: String(currentImage.width),
+                  height: String(currentImage.height),
+                  id: String(currentImage.id),
+                });
+                window.open(`/editor?${params.toString()}`, "_blank");
+              }}
+              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
+            >
+              <Pencil className="w-4 h-4" />
+              编辑
+            </button>
+
+            {/* Calendar Wallpaper Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const params = new URLSearchParams({
+                  src: currentImage.src,
+                  width: String(currentImage.width),
+                  height: String(currentImage.height),
+                  id: String(currentImage.id),
+                });
+                window.open(`/editor/calendar?${params.toString()}`, "_blank");
+              }}
+              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
+            >
+              <Calendar className="w-4 h-4" />
+              日历
+            </button>
+
+            {/* Add to Collection Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setAddToCollectionOpen(true);
+              }}
+              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
+            >
+              <FolderPlus className="w-4 h-4" />
+              合集
+            </button>
+
+            {/* Share Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleShare();
+              }}
+              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+              </svg>
+              分享
+            </button>
+
+            {/* Download Button with Panel */}
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDownloadPanelOpen(!downloadPanelOpen);
+                }}
+                className="px-4 py-2 flex items-center gap-2 rounded-full bg-[var(--color-primary)] text-white text-sm font-medium hover:bg-[var(--color-primary-pressed,#c5001d)] transition-colors backdrop-blur-sm"
+              >
+                <Download className="w-4 h-4" />
+                下载
+                <ChevronDown className={`w-3 h-3 transition-transform ${downloadPanelOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {/* Download Panel */}
+              <AnimatePresence>
+                {downloadPanelOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 bg-[var(--color-canvas,#fff)] rounded-2xl shadow-2xl border border-[var(--color-hairline,#e5e5e5)] overflow-hidden"
+                  >
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-hairline,#e5e5e5)]">
+                      <h4 className="text-sm font-semibold text-[var(--color-ink,#1a1a1a)]">选择分辨率</h4>
+                      <button
+                        onClick={() => setDownloadPanelOpen(false)}
+                        className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-[var(--color-surface-soft,#f5f5f5)] text-[var(--color-ink,#1a1a1a)]"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Resolution List */}
+                    <div className="max-h-[50vh] overflow-y-auto p-2">
+                      {loadingResolutions ? (
+                        <div className="flex items-center justify-center py-6">
+                          <svg className="w-5 h-5 animate-spin text-[var(--color-primary)]" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          <span className="ml-2 text-sm text-[var(--color-ash,#999)]">加载中...</span>
+                        </div>
+                      ) : (
+                        (["phone", "desktop", "tablet"] as const).map((category) => {
+                          const group = groupedResolutions[category];
+                          if (!group || group.length === 0) return null;
+                          const Icon = categoryIcons[category];
+                          return (
+                            <div key={category} className="mb-2 last:mb-0">
+                              <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-[var(--color-ash,#999)]">
+                                <Icon className="w-3.5 h-3.5" />
+                                {CATEGORY_LABELS[category]}
+                              </div>
+                              {group.map((res) => {
+                                const resKey = `${res.width}x${res.height}`;
+                                const isRecommended =
+                                  recommendedResolution &&
+                                  recommendedResolution.width === res.width &&
+                                  recommendedResolution.height === res.height;
+                                const isDownloading = downloadingRes === resKey;
+
+                                return (
+                                  <button
+                                    key={resKey}
+                                    onClick={() => handleDownloadResolution(resKey)}
+                                    disabled={downloadingRes !== null}
+                                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors hover:bg-[var(--color-surface-soft,#f5f5f5)] disabled:opacity-50 group"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[var(--color-ink,#1a1a1a)]">{res.label}</span>
+                                      {isRecommended && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--color-primary)] text-white font-medium">
+                                          推荐
+                                        </span>
+                                      )}
+                                    </div>
+                                    {isDownloading ? (
+                                      <div className="flex items-center gap-1.5">
+                                        <div className="w-16 h-1.5 rounded-full bg-[var(--color-hairline,#e5e5e5)] overflow-hidden">
+                                          <div
+                                            className="h-full bg-[var(--color-primary)] rounded-full transition-all"
+                                            style={{ width: `${downloadProgress}%` }}
+                                          />
+                                        </div>
+                                        <span className="text-xs text-[var(--color-ash,#999)]">{downloadProgress}%</span>
+                                      </div>
+                                    ) : (
+                                      <Download className="w-3.5 h-3.5 text-[var(--color-ash,#999)] group-hover:text-[var(--color-primary)]" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Original Download */}
+                    <div className="border-t border-[var(--color-hairline,#e5e5e5)] p-2">
+                      <button
+                        onClick={() => handleDownloadResolution()}
+                        disabled={downloadingRes !== null}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm transition-colors hover:bg-[var(--color-surface-soft,#f5f5f5)] disabled:opacity-50 group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-[var(--color-ink,#1a1a1a)] font-medium">原图</span>
+                          <span className="text-[10px] text-[var(--color-ash,#999)]">
+                            {currentImage.width}×{currentImage.height}
+                          </span>
+                        </div>
+                        {downloadingRes === "original" ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-16 h-1.5 rounded-full bg-[var(--color-hairline,#e5e5e5)] overflow-hidden">
+                              <div
+                                className="h-full bg-[var(--color-primary)] rounded-full transition-all"
+                                style={{ width: `${downloadProgress}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-[var(--color-ash,#999)]">{downloadProgress}%</span>
+                          </div>
+                        ) : (
+                          <Download className="w-3.5 h-3.5 text-[var(--color-ash,#999)] group-hover:text-[var(--color-primary)]" />
+                        )}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Report Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setReportOpen(true);
+              }}
+              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
+            >
+              <Flag className="w-4 h-4" />
+              举报
+            </button>
+          </div>
+
+          {/* Report Dialog */}
+          <AnimatePresence>
+            {reportOpen && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+                onClick={() => setReportOpen(false)}
+              >
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                  transition={{ duration: 0.2 }}
+                  className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Header */}
+                  <div className="px-6 pt-6 pb-4">
+                    <div className="flex items-center gap-3 mb-1">
+                      <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                        <Flag className="w-5 h-5 text-red-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-[var(--color-ink)]">举报图片</h3>
+                        <p className="text-xs text-[var(--color-mute)]">我们会认真对待每一条举报</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Body */}
+                  <div className="px-6 space-y-4">
+                    <div>
+                      <label className="text-sm font-medium text-[var(--color-ink)] mb-2 block">举报分类 *</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {reportCategories.map((cat) => (
+                          <button
+                            key={cat.value}
+                            onClick={() => setReportCategory(cat.value)}
+                            className={`px-3 py-2 rounded-xl text-sm font-medium transition-all border ${
+                              reportCategory === cat.value
+                                ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
+                                : "bg-white text-[var(--color-body)] border-[var(--color-hairline)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                            }`}
+                          >
+                            {cat.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium text-[var(--color-ink)] mb-2 block">详细说明</label>
+                      <textarea
+                        value={reportReason}
+                        onChange={(e) => setReportReason(e.target.value)}
+                        placeholder="请描述具体问题..."
+                        maxLength={500}
+                        className="w-full h-20 px-3 py-2 rounded-xl border border-[var(--color-hairline)] text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent placeholder:text-[var(--color-ash)]"
+                      />
+                      <p className="text-xs text-[var(--color-ash)] text-right mt-1">
+                        {reportReason.length}/500
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div className="px-6 py-4 flex items-center justify-end gap-3">
+                    <button
+                      onClick={() => {
+                        setReportOpen(false);
+                        setReportReason("");
+                        setReportCategory("");
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-[var(--color-mute)] hover:text-[var(--color-ink)] rounded-full hover:bg-[var(--color-surface-soft)] transition-colors"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={handleReport}
+                      disabled={submitting || !reportCategory}
+                      className="px-5 py-2 text-sm font-medium text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)] rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {submitting ? (
+                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                      ) : (
+                        <Flag className="w-4 h-4" />
+                      )}
+                      提交举报
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       )}
+
+      {/* Add to Collection Dialog */}
+      <AddToCollectionDialog
+        open={addToCollectionOpen}
+        onOpenChange={setAddToCollectionOpen}
+        imageId={currentImage?.id ?? null}
+      />
     </AnimatePresence>
   );
 }

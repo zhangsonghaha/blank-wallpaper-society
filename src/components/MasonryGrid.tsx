@@ -5,7 +5,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import PinCard from "./PinCard";
 import FilterChips from "./FilterChips";
 import Lightbox from "./Lightbox";
+import ColorSearch from "./ColorSearch";
 import { useSearch } from "@/context/SearchContext";
+import Link from "next/link";
+import { ChevronRight, Users, Image as ImageIcon } from "lucide-react";
+import HotRankings from "./HotRankings";
+import RecommendForYou from "./RecommendForYou";
 
 interface ImageRecord {
   id: number;
@@ -25,6 +30,8 @@ interface ImageRecord {
   is_favorite: number;
   view_count: number;
   created_at: string;
+  dominant_color?: string | null;
+  color_palette?: string | null;
 }
 
 interface CategoryRecord {
@@ -36,8 +43,20 @@ interface CategoryRecord {
 const ITEMS_PER_PAGE = 12;
 
 export default function MasonryGrid() {
-  const { searchQuery, setSearchQuery, activeCategory, setActiveCategory, setFavoriteCount } =
-    useSearch();
+  const {
+    searchQuery,
+    setSearchQuery,
+    activeCategory,
+    setActiveCategory,
+    setFavoriteCount,
+    showFavoritesOnly,
+    setShowFavoritesOnly,
+    sortBy,
+    setSortBy,
+    activeColor,
+    setActiveColor,
+    colorThreshold,
+  } = useSearch();
   const [images, setImages] = useState<ImageRecord[]>([]);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,6 +67,28 @@ export default function MasonryGrid() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [totalCount, setTotalCount] = useState(0);
+  const favoritesRef = useRef<HTMLDivElement>(null);
+
+  // 精选合集
+  const [featuredCollections, setFeaturedCollections] = useState<any[]>([]);
+
+  // 处理 URL hash 变化
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash;
+      if (hash === "#favorites") {
+        setShowFavoritesOnly(true);
+        setTimeout(() => {
+          favoritesRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
+      } else if (hash === "#popular") {
+        setSortBy("popular");
+      }
+    };
+    handleHash();
+    window.addEventListener("hashchange", handleHash);
+    return () => window.removeEventListener("hashchange", handleHash);
+  }, [setShowFavoritesOnly, setSortBy]);
 
   // 加载分类
   useEffect(() => {
@@ -57,36 +98,82 @@ export default function MasonryGrid() {
       .catch(() => {});
   }, []);
 
+  // 加载精选合集
+  useEffect(() => {
+    fetch("/api/collections?featured=true&limit=6")
+      .then((res) => res.json())
+      .then((data) => setFeaturedCollections(data.data || []))
+      .catch(() => {});
+  }, []);
+
   // 加载图片
   useEffect(() => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (activeCategory !== "all") params.set("category", activeCategory);
-    if (searchQuery.trim()) params.set("search", searchQuery);
-    params.set("limit", "100"); // 加载较多数据用于客户端分页
 
-    fetch(`/api/images?${params}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setImages(data.data || []);
-        setTotalCount(data.total || 0);
-        setVisibleCount(ITEMS_PER_PAGE);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [activeCategory, searchQuery]);
+    if (activeColor) {
+      // 颜色搜索使用专门的API
+      params.set("color", activeColor);
+      params.set("threshold", String(colorThreshold));
+      if (activeCategory !== "all") params.set("category", activeCategory);
+      params.set("limit", "100");
+
+      fetch(`/api/images/search/color?${params}`)
+        .then((res) => res.json())
+        .then((data) => {
+          setImages(data.data || []);
+          setTotalCount(data.total || 0);
+          setVisibleCount(ITEMS_PER_PAGE);
+          setLoading(false);
+        })
+        .catch(() => setLoading(false));
+    } else {
+      // 常规搜索
+      if (activeCategory !== "all") params.set("category", activeCategory);
+      if (searchQuery.trim()) params.set("search", searchQuery);
+      params.set("limit", "100");
+
+      fetch(`/api/images?${params}`)
+        .then((res) => res.json())
+        .then((data) => {
+          setImages(data.data || []);
+          setTotalCount(data.total || 0);
+          setVisibleCount(ITEMS_PER_PAGE);
+          setLoading(false);
+        })
+        .catch(() => setLoading(false));
+    }
+  }, [activeCategory, searchQuery, activeColor, colorThreshold]);
 
   // 同步收藏数量到 Context
   useEffect(() => {
     setFavoriteCount(favorites.size);
   }, [favorites.size, setFavoriteCount]);
 
+  // 排序和筛选
+  const filteredImages = useMemo(() => {
+    let result = [...images];
+
+    // 收藏筛选
+    if (showFavoritesOnly) {
+      result = result.filter((img) => favorites.has(img.id));
+    }
+
+    // 排序
+    if (sortBy === "popular") {
+      result.sort((a, b) => b.view_count - a.view_count);
+    }
+    // latest: 保持原始顺序（API已按时间倒序）
+
+    return result;
+  }, [images, showFavoritesOnly, favorites, sortBy]);
+
   // 分页
   const displayedImages = useMemo(() => {
-    return images.slice(0, visibleCount);
-  }, [images, visibleCount]);
+    return filteredImages.slice(0, visibleCount);
+  }, [filteredImages, visibleCount]);
 
-  const hasMore = visibleCount < images.length;
+  const hasMore = visibleCount < filteredImages.length;
 
   // 收藏切换
   const toggleFavorite = useCallback((id: number) => {
@@ -96,7 +183,6 @@ export default function MasonryGrid() {
       else next.add(id);
       return next;
     });
-    // 同步到服务器
     const isFav = !favorites.has(id);
     fetch(`/api/images/${id}`, {
       method: "PATCH",
@@ -118,16 +204,16 @@ export default function MasonryGrid() {
   const goToPrev = useCallback(
     () =>
       setLightboxIndex((prev) =>
-        prev === 0 ? images.length - 1 : prev - 1
+        prev === 0 ? filteredImages.length - 1 : prev - 1
       ),
-    [images.length]
+    [filteredImages.length]
   );
   const goToNext = useCallback(
     () =>
       setLightboxIndex((prev) =>
-        prev === images.length - 1 ? 0 : prev + 1
+        prev === filteredImages.length - 1 ? 0 : prev + 1
       ),
-    [images.length]
+    [filteredImages.length]
   );
 
   // 加载更多
@@ -167,7 +253,7 @@ export default function MasonryGrid() {
   // 转换为 GalleryImage 格式供 Lightbox 使用
   const lightboxImages = useMemo(
     () =>
-      images.map((img) => ({
+      filteredImages.map((img) => ({
         id: img.id,
         src: img.url,
         width: img.width || 600,
@@ -178,7 +264,7 @@ export default function MasonryGrid() {
         author: img.author || "未知",
         avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${img.author || img.id}`,
       })),
-    [images]
+    [filteredImages]
   );
 
   return (
@@ -238,21 +324,37 @@ export default function MasonryGrid() {
           </p>
 
           {/* 搜索状态提示 */}
-          {searchQuery && (
+          {(searchQuery || activeColor) && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-surface-card)] rounded-full text-sm"
             >
-              <svg className="w-4 h-4 text-[var(--color-mute)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <span>
-                搜索 &ldquo;{searchQuery}&rdquo; 共找到{" "}
-                <strong>{totalCount}</strong> 张图片
-              </span>
+              {searchQuery && (
+                <>
+                  <svg className="w-4 h-4 text-[var(--color-mute)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <span>
+                    搜索 &ldquo;{searchQuery}&rdquo;
+                  </span>
+                </>
+              )}
+              {activeColor && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className="w-3 h-3 rounded-full border border-[var(--color-hairline-soft)]"
+                    style={{ backgroundColor: activeColor }}
+                  />
+                  按颜色筛选
+                </span>
+              )}
+              <span>共找到 <strong>{totalCount}</strong> 张图片</span>
               <button
-                onClick={() => setSearchQuery("")}
+                onClick={() => {
+                  setSearchQuery("");
+                  setActiveColor(null);
+                }}
                 className="ml-1 w-5 h-5 flex items-center justify-center rounded-full hover:bg-[var(--color-secondary-bg)] transition-colors"
               >
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -262,20 +364,130 @@ export default function MasonryGrid() {
             </motion.div>
           )}
 
-          {/* 收藏统计 */}
-          {favorites.size > 0 && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-sm font-medium rounded-full"
+          {/* 筛选栏: 收藏筛选 + 颜色筛选 + 排序 */}
+          <div className="mt-4 flex items-center justify-center gap-3 flex-wrap">
+            {/* 颜色筛选 */}
+            <ColorSearch
+              activeColor={activeColor}
+              onColorSelect={(color) => {
+                setActiveColor(color);
+                setVisibleCount(ITEMS_PER_PAGE);
+              }}
+            />
+
+            {/* 收藏筛选 */}
+            <button
+              onClick={() => {
+                setShowFavoritesOnly(!showFavoritesOnly);
+                if (!showFavoritesOnly) {
+                  setTimeout(() => {
+                    favoritesRef.current?.scrollIntoView({ behavior: "smooth" });
+                  }, 100);
+                }
+              }}
+              className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-full transition-all ${
+                showFavoritesOnly
+                  ? "bg-[var(--color-primary)] text-white"
+                  : favorites.size > 0
+                    ? "bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/20"
+                    : "bg-[var(--color-surface-card)] text-[var(--color-mute)]"
+              }`}
             >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+              <svg className="w-4 h-4" fill={showFavoritesOnly ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
               </svg>
-              已收藏 {favorites.size} 张
-            </motion.div>
-          )}
+              {showFavoritesOnly ? "查看全部" : `收藏 (${favorites.size})`}
+            </button>
+
+            {/* 排序切换 */}
+            <div className="inline-flex items-center bg-[var(--color-surface-card)] rounded-full p-0.5">
+              <button
+                onClick={() => setSortBy("latest")}
+                className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all ${
+                  sortBy === "latest"
+                    ? "bg-[var(--color-ink)] text-white"
+                    : "text-[var(--color-mute)] hover:text-[var(--color-ink)]"
+                }`}
+              >
+                最新
+              </button>
+              <button
+                onClick={() => setSortBy("popular")}
+                className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all ${
+                  sortBy === "popular"
+                    ? "bg-[var(--color-ink)] text-white"
+                    : "text-[var(--color-mute)] hover:text-[var(--color-ink)]"
+                }`}
+              >
+                热门
+              </button>
+            </div>
+          </div>
         </div>
+
+        {/* 收藏区域锚点 */}
+        <div ref={favoritesRef} id="favorites" className="scroll-mt-32" />
+
+        {/* Featured Collections */}
+        {featuredCollections.length > 0 && !searchQuery && !activeColor && !showFavoritesOnly && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-[var(--color-ink)]">
+                精选合集
+              </h2>
+              <Link
+                href="/collections"
+                className="flex items-center gap-1 text-sm text-[var(--color-primary)] font-medium hover:underline"
+              >
+                查看全部
+                <ChevronRight className="w-4 h-4" />
+              </Link>
+            </div>
+            <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+              {featuredCollections.map((col: any) => (
+                <Link
+                  key={col.id}
+                  href={`/collections/${col.id}`}
+                  className="shrink-0 w-52 group"
+                >
+                  <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-[var(--color-surface-card)]">
+                    {col.cover_thumbnail_url || col.cover_url ? (
+                      <img
+                        src={col.cover_thumbnail_url || col.cover_url}
+                        alt={col.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-[var(--color-primary)]/20 to-purple-200 flex items-center justify-center">
+                        <svg className="w-8 h-8 text-[var(--color-primary)]/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                        </svg>
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                    <div className="absolute bottom-2 left-2 right-2 flex items-center gap-2">
+                      <span className="flex items-center gap-1 text-white text-[10px]">
+                        <ImageIcon className="w-3 h-3" /> {col.image_count || 0}
+                      </span>
+                      <span className="flex items-center gap-1 text-white text-[10px]">
+                        <Users className="w-3 h-3" /> {col.subscriber_count || 0}
+                      </span>
+                    </div>
+                  </div>
+                  <h3 className="mt-2 text-sm font-medium text-[var(--color-ink)] truncate">
+                    {col.title}
+                  </h3>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Hot Rankings - 热门排行 */}
+        {!searchQuery && !activeColor && !showFavoritesOnly && <HotRankings />}
+
+        {/* Recommendations - 猜你喜欢 */}
+        {!searchQuery && !activeColor && !showFavoritesOnly && <RecommendForYou />}
 
         {/* Loading State */}
         {loading ? (
@@ -294,7 +506,7 @@ export default function MasonryGrid() {
           </div>
         ) : displayedImages.length > 0 ? (
           <motion.div
-            key={activeCategory + searchQuery}
+            key={activeCategory + searchQuery + String(showFavoritesOnly) + sortBy + (activeColor || "")}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -341,21 +553,39 @@ export default function MasonryGrid() {
             className="text-center py-20"
           >
             <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-[var(--color-surface-card)] flex items-center justify-center">
-              <svg className="w-10 h-10 text-[var(--color-ash)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+              {showFavoritesOnly ? (
+                <svg className="w-10 h-10 text-[var(--color-ash)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+              ) : (
+                <svg className="w-10 h-10 text-[var(--color-ash)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              )}
             </div>
             <h3 className="text-xl font-semibold text-[var(--color-ink)] mb-2">
-              {searchQuery ? "没有找到匹配的图片" : "还没有图片"}
+              {showFavoritesOnly ? "还没有收藏" : (searchQuery || activeColor) ? "没有找到匹配的图片" : "还没有图片"}
             </h3>
             <p className="text-[var(--color-mute)] mb-6">
-              {searchQuery
-                ? "试试其他关键词或清除搜索条件"
-                : "去管理后台上传第一张图片吧"}
+              {showFavoritesOnly
+                ? "浏览图片时点击收藏按钮添加到收藏夹"
+                : (searchQuery || activeColor)
+                  ? "试试其他关键词、更换颜色或清除搜索条件"
+                  : "去管理后台上传第一张图片吧"}
             </p>
-            {searchQuery ? (
+            {showFavoritesOnly ? (
               <button
-                onClick={() => setSearchQuery("")}
+                onClick={() => setShowFavoritesOnly(false)}
+                className="px-6 py-2.5 bg-[var(--color-primary)] text-white text-sm font-bold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors active:scale-95"
+              >
+                浏览全部图片
+              </button>
+            ) : (searchQuery || activeColor) ? (
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setActiveColor(null);
+                }}
                 className="px-6 py-2.5 bg-[var(--color-primary)] text-white text-sm font-bold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors active:scale-95"
               >
                 清除搜索
@@ -393,7 +623,7 @@ export default function MasonryGrid() {
                 </span>
               ) : (
                 <span>
-                  加载更多 ({displayedImages.length}/{images.length})
+                  加载更多 ({displayedImages.length}/{filteredImages.length})
                 </span>
               )}
             </button>
@@ -406,7 +636,7 @@ export default function MasonryGrid() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
-              已展示全部 {images.length} 张图片
+              已展示全部 {filteredImages.length} 张图片
             </span>
           </div>
         )}
@@ -420,6 +650,8 @@ export default function MasonryGrid() {
         onClose={closeLightbox}
         onPrev={goToPrev}
         onNext={goToNext}
+        favoritedIds={favorites}
+        onToggleFavorite={toggleFavorite}
       />
     </>
   );

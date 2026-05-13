@@ -26,7 +26,22 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
     // 注意：角色验证在 admin 页面服务端组件中完成
-    // 这里只做基本的登录检查
+    // moderator 可以访问审核相关页面，admin 可以访问所有管理页面
+    // 详细的 API 级别权限在各 route handler 中验证
+  }
+
+  // 保护上传页面 - 需要登录
+  if (pathname.startsWith("/upload")) {
+    if (!hasSession) {
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("callbackUrl", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
+  // API v1 开放端点 - 支持API Key认证，跳过session检查（限流在route handler中处理）
+  if (pathname.startsWith("/api/v1/")) {
+    return NextResponse.next();
   }
 
   // API 路由保护
@@ -36,6 +51,13 @@ export async function middleware(request: NextRequest) {
       "/api/auth/",
       "/api/categories",
       "/api/images",
+    ];
+
+    // 管理员/审核员 API - 需要登录但在这里只检查 session，角色验证在 route handler 中
+    const adminApis = [
+      "/api/admin/review",
+      "/api/admin/users",
+      "/api/admin/stats",
     ];
 
     // GET /api/images 公开
@@ -61,5 +83,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/api/:path*"],
+  matcher: ["/admin/:path*", "/upload/:path*", "/api/:path*"],
 };

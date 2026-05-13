@@ -5,6 +5,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { SearchProvider } from "@/context/SearchContext";
 import AuthProvider from "@/components/AuthProvider";
+import { Toaster } from "sonner";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -32,6 +33,7 @@ export default function RootLayout({
             <Navbar />
             <div className="flex-1">{children}</div>
             <Footer />
+            <Toaster position="top-right" richColors closeButton />
           </AuthProvider>
         </SearchProvider>
       </body>

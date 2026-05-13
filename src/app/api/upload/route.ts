@@ -1,11 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadFile, BUCKET_NAME, PUBLIC_URL_BASE } from "@/lib/minio";
 import { query } from "@/lib/db";
+import { auth } from "@/lib/auth";
+import { extractColors } from "@/lib/color-extract";
 import sharp from "sharp";
+
+// 每日上传限制
+const DAILY_UPLOAD_LIMIT = 10;
+// 非管理员文件大小限制 10MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+// 管理员文件大小限制 20MB
+const ADMIN_MAX_FILE_SIZE = 20 * 1024 * 1024;
+// 最低分辨率要求（非管理员）
+const MIN_WIDTH = 1920;
+const MIN_HEIGHT = 1080;
+
+// 允许的文件类型
+const ALLOWED_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
 
 // POST /api/upload - 上传图片到 MinIO 并记录到数据库
 export async function POST(request: NextRequest) {
   try {
+    // === 用户认证 ===
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "请先登录" }, { status: 401 });
+    }
+
+    const userId = (session.user as any).id;
+    const userRole = (session.user as any).role;
+    const userName = session.user.name || "";
+    const isAdmin = userRole === "admin";
+
     const contentType = request.headers.get("content-type") || "";
 
     // === 网络链接模式 ===
@@ -26,6 +56,22 @@ export async function POST(request: NextRequest) {
         }
       } catch {
         return NextResponse.json({ error: "请输入有效的图片链接" }, { status: 400 });
+      }
+
+      // 非管理员每日上传限制检查
+      if (!isAdmin) {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayCount = await query(
+          "SELECT COUNT(*) as count FROM images WHERE author = ? AND created_at >= ?",
+          [userName, todayStart.toISOString().slice(0, 19).replace("T", " ")]
+        );
+        if ((todayCount as any[])[0]?.count >= DAILY_UPLOAD_LIMIT) {
+          return NextResponse.json(
+            { error: `每日上传限制为${DAILY_UPLOAD_LIMIT}张，请明天再试` },
+            { status: 429 }
+          );
+        }
       }
 
       // 获取图片信息
@@ -89,10 +135,24 @@ export async function POST(request: NextRequest) {
         // 缩略图生成失败不影响主流程
       }
 
+      // 提取颜色信息
+      let dominantColor: string | null = null;
+      let colorPalette: string | null = null;
+      try {
+        const colors = await extractColors(imageBuffer);
+        dominantColor = colors.dominant;
+        colorPalette = JSON.stringify(colors.palette);
+      } catch {
+        // 颜色提取失败不影响主流程
+      }
+
+      // 非管理员上传状态为 pending，管理员为 approved
+      const status = isAdmin ? "approved" : "pending";
+
       // 写入数据库
       const result = await query(
-        `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           title || "网络图片",
           description || "",
@@ -104,9 +164,13 @@ export async function POST(request: NextRequest) {
           height,
           imageBuffer.length,
           contentTypeHeader,
-          author || "",
+          author || userName,
           tags || "",
           category || "",
+          status,
+          dominantColor,
+          colorPalette,
+          userId,
         ]
       );
 
@@ -118,13 +182,14 @@ export async function POST(request: NextRequest) {
           title: title || "网络图片",
           url: storedUrl,
           thumbnail_url: thumbnailUrl,
-          message: "抓取并上传成功",
+          status,
+          message: isAdmin ? "上传成功" : "上传成功，等待审核",
         },
         { status: 201 }
       );
     }
 
-    // === 本地文件上传模式（原有逻辑）===
+    // === 本地文件上传模式 ===
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
 
@@ -132,28 +197,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "请选择文件" }, { status: 400 });
     }
 
-    // 验证文件类型
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/gif",
-      "image/avif",
-    ];
-    if (!allowedTypes.includes(file.type)) {
+    // 验证文件类型（非管理员只允许 jpg/png/webp）
+    if (!ALLOWED_TYPES.includes(file.type)) {
       return NextResponse.json(
-        { error: "不支持的文件类型，支持: JPEG, PNG, WebP, GIF, AVIF" },
+        { error: "不支持的文件类型，仅支持: JPEG, PNG, WebP" },
         { status: 400 }
       );
     }
 
-    // 验证文件大小 (最大 20MB)
-    const maxSize = 20 * 1024 * 1024;
+    // 验证文件大小
+    const maxSize = isAdmin ? ADMIN_MAX_FILE_SIZE : MAX_FILE_SIZE;
     if (file.size > maxSize) {
       return NextResponse.json(
-        { error: "文件大小不能超过 20MB" },
+        { error: `文件大小不能超过${isAdmin ? 20 : 10}MB` },
         { status: 400 }
       );
+    }
+
+    // 非管理员每日上传限制检查
+    if (!isAdmin) {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayCount = await query(
+        "SELECT COUNT(*) as count FROM images WHERE uploaded_by = ? AND created_at >= ?",
+        [userId, todayStart.toISOString().slice(0, 19).replace("T", " ")]
+      );
+      if ((todayCount as any[])[0]?.count >= DAILY_UPLOAD_LIMIT) {
+        return NextResponse.json(
+          { error: `每日上传限制为${DAILY_UPLOAD_LIMIT}张，请明天再试` },
+          { status: 429 }
+        );
+      }
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -168,6 +242,14 @@ export async function POST(request: NextRequest) {
       height = metadata.height || 0;
     } catch {
       // 如果 sharp 无法解析，使用默认值
+    }
+
+    // 非管理员分辨率验证
+    if (!isAdmin && (width < MIN_WIDTH || height < MIN_HEIGHT)) {
+      return NextResponse.json(
+        { error: `图片分辨率过低，最低要求 ${MIN_WIDTH}x${MIN_HEIGHT}，当前 ${width}x${height}` },
+        { status: 400 }
+      );
     }
 
     // 上传原图到 MinIO
@@ -191,17 +273,30 @@ export async function POST(request: NextRequest) {
       // 缩略图生成失败不影响主流程
     }
 
+    // 提取颜色信息
+    let dominantColor: string | null = null;
+    let colorPalette: string | null = null;
+    try {
+      const colors = await extractColors(buffer);
+      dominantColor = colors.dominant;
+      colorPalette = JSON.stringify(colors.palette);
+    } catch {
+      // 颜色提取失败不影响主流程
+    }
+
     // 获取表单其他字段
     const title = (formData.get("title") as string) || filename;
     const description = (formData.get("description") as string) || "";
-    const author = (formData.get("author") as string) || "";
     const tags = (formData.get("tags") as string) || "";
     const category = (formData.get("category") as string) || "";
 
+    // 非管理员上传状态为 pending，管理员为 approved
+    const status = isAdmin ? "approved" : "pending";
+
     // 写入数据库
     const result = await query(
-      `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         title,
         description,
@@ -213,9 +308,13 @@ export async function POST(request: NextRequest) {
         height,
         file.size,
         file.type,
-        author,
+        userName,
         tags,
         category,
+        status,
+        dominantColor,
+        colorPalette,
+        userId,
       ]
     );
 
@@ -227,7 +326,8 @@ export async function POST(request: NextRequest) {
         title,
         url,
         thumbnail_url: thumbnailUrl,
-        message: "上传成功",
+        status,
+        message: isAdmin ? "上传成功" : "上传成功，等待审核",
       },
       { status: 201 }
     );

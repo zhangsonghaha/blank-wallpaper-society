@@ -10,9 +10,9 @@ export default async function AdminPage() {
     redirect("/login?callbackUrl=/admin");
   }
 
-  // 检查是否为管理员
+  // 检查是否为管理员或审核员
   const role = (session.user as any)?.role;
-  if (role !== "admin") {
+  if (role !== "admin" && role !== "moderator") {
     redirect("/");
   }
 

@@ -9,6 +9,14 @@ interface SearchContextType {
   setActiveCategory: (category: string) => void;
   favoriteCount: number;
   setFavoriteCount: (count: number) => void;
+  showFavoritesOnly: boolean;
+  setShowFavoritesOnly: (show: boolean) => void;
+  sortBy: "latest" | "popular";
+  setSortBy: (sort: "latest" | "popular") => void;
+  activeColor: string | null;
+  setActiveColor: (color: string | null) => void;
+  colorThreshold: number;
+  setColorThreshold: (threshold: number) => void;
 }
 
 const SearchContext = createContext<SearchContextType>({
@@ -18,12 +26,24 @@ const SearchContext = createContext<SearchContextType>({
   setActiveCategory: () => {},
   favoriteCount: 0,
   setFavoriteCount: () => {},
+  showFavoritesOnly: false,
+  setShowFavoritesOnly: () => {},
+  sortBy: "latest",
+  setSortBy: () => {},
+  activeColor: null,
+  setActiveColor: () => {},
+  colorThreshold: 30,
+  setColorThreshold: () => {},
 });
 
 export function SearchProvider({ children }: { children: ReactNode }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
   const [favoriteCount, setFavoriteCount] = useState(0);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [sortBy, setSortBy] = useState<"latest" | "popular">("latest");
+  const [activeColor, setActiveColor] = useState<string | null>(null);
+  const [colorThreshold, setColorThreshold] = useState(30);
 
   return (
     <SearchContext.Provider
@@ -34,6 +54,14 @@ export function SearchProvider({ children }: { children: ReactNode }) {
         setActiveCategory,
         favoriteCount,
         setFavoriteCount,
+        showFavoritesOnly,
+        setShowFavoritesOnly,
+        sortBy,
+        setSortBy,
+        activeColor,
+        setActiveColor,
+        colorThreshold,
+        setColorThreshold,
       }}
     >
       {children}

@@ -67,7 +67,7 @@ function LoginForm() {
     <Card className="rounded-2xl border-none shadow-lg">
       <CardHeader className="text-center pb-2">
         <div className="flex justify-center mb-4">
-          <div className="w-14 h-14 rounded-2xl bg-[var(--color-primary)] flex items-center justify-center">
+          <div className="w-14 h-14 rounded-[var(--radius-md)] bg-[var(--color-primary)] flex items-center justify-center">
             <ImageIcon className="w-7 h-7 text-white" />
           </div>
         </div>
@@ -86,7 +86,7 @@ function LoginForm() {
                 placeholder="your@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="pl-10 h-12 rounded-xl"
+                className="pl-10 h-12 rounded-[var(--radius-md)]"
                 autoComplete="email"
               />
             </div>
@@ -101,7 +101,7 @@ function LoginForm() {
                 placeholder="输入密码"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="pl-10 pr-10 h-12 rounded-xl"
+                className="pl-10 pr-10 h-12 rounded-[var(--radius-md)]"
                 autoComplete="current-password"
               />
               <button
@@ -120,7 +120,7 @@ function LoginForm() {
           <Button
             type="submit"
             disabled={loading}
-            className="w-full h-12 rounded-xl text-base font-medium gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)]"
+            className="w-full h-12 rounded-[var(--radius-md)] text-base font-bold gap-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)]"
           >
             {loading ? (
               <>
@@ -139,7 +139,7 @@ function LoginForm() {
           </Button>
         </form>
 
-        <div className="mt-6 p-3 rounded-xl bg-[var(--color-surface-card)] text-xs text-[var(--color-mute)]">
+        <div className="mt-6 p-3 rounded-[var(--radius-md)] bg-[var(--color-surface-card)] text-xs text-[var(--color-mute)]">
           <p className="font-medium mb-1">测试账号</p>
           <p>管理员：admin@img.com / admin123</p>
           <p>普通用户：注册即可</p>
@@ -150,7 +150,7 @@ function LoginForm() {
           还没有账号？{" "}
           <Link
             href="/register"
-            className="text-[var(--color-primary)] font-medium hover:underline"
+            className="text-[var(--color-primary)] font-semibold hover:underline"
           >
             立即注册
           </Link>
