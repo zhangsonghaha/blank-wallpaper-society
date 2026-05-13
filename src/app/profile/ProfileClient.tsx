@@ -144,13 +144,13 @@ export default function ProfileClient({
           transition={{ duration: 0.5 }}
         >
           {/* Profile Card */}
-          <Card className="rounded-2xl border-none shadow-lg overflow-hidden">
+          <Card className="rounded-2xl border-none shadow-lg overflow-visible">
             <CardContent className="p-0">
               {/* Avatar + Basic Info */}
               <div className="px-6 md:px-8 pb-6 pt-0">
                 <div className="flex flex-col md:flex-row items-center md:items-end gap-4 -mt-16 md:-mt-20">
-                  <div className="relative group">
-                    <div className="w-28 h-28 md:w-36 md:h-36 rounded-full overflow-hidden ring-4 ring-white shadow-xl pointer-events-none">
+                  <div className="relative group shrink-0">
+                    <div className="w-28 h-28 md:w-36 md:h-36 rounded-full overflow-hidden ring-4 ring-white shadow-xl">
                       <Avatar className="w-full h-full">
                         <AvatarImage
                           src={avatarUrl}
@@ -162,6 +162,7 @@ export default function ProfileClient({
                         </AvatarFallback>
                       </Avatar>
                     </div>
+                    {/* 悬停上传覆盖层 */}
                     <label className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10">
                       {uploading ? (
                         <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
