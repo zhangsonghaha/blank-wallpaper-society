@@ -299,9 +299,9 @@ export default function AdminClient() {
               </div>
               <div>
                 <p className="text-xs text-[var(--color-mute)]">图片总数</p>
-                <p className="text-xl font-bold">
+                <div className="text-xl font-bold">
                   {loading ? <Skeleton className="w-12 h-6" /> : stats.totalImages}
-                </p>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -312,9 +312,9 @@ export default function AdminClient() {
               </div>
               <div>
                 <p className="text-xs text-[var(--color-mute)]">总浏览</p>
-                <p className="text-xl font-bold">
+                <div className="text-xl font-bold">
                   {loading ? <Skeleton className="w-12 h-6" /> : stats.totalViews}
-                </p>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -325,9 +325,9 @@ export default function AdminClient() {
               </div>
               <div>
                 <p className="text-xs text-[var(--color-mute)]">收藏</p>
-                <p className="text-xl font-bold">
+                <div className="text-xl font-bold">
                   {loading ? <Skeleton className="w-12 h-6" /> : stats.totalFavorites}
-                </p>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -338,9 +338,9 @@ export default function AdminClient() {
               </div>
               <div>
                 <p className="text-xs text-[var(--color-mute)]">分类</p>
-                <p className="text-xl font-bold">
+                <div className="text-xl font-bold">
                   {loading ? <Skeleton className="w-12 h-6" /> : stats.totalCategories}
-                </p>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -505,16 +505,9 @@ export default function AdminClient() {
                                 />
                               </Button>
                               <DropdownMenu>
-                                <DropdownMenuTrigger className="outline-none">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="w-8 h-8"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <MoreHorizontal className="w-4 h-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
+                                  <DropdownMenuTrigger className="outline-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--color-surface-card)] transition-colors data-open:bg-[var(--color-surface-card)]">
+                                    <MoreHorizontal className="w-4 h-4 text-[var(--color-mute)]" />
+                                  </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="rounded-xl">
                                   <DropdownMenuLabel>操作</DropdownMenuLabel>
                                   <DropdownMenuSeparator />

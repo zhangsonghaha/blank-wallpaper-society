@@ -1,43 +1,70 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { getMinioClient, PUBLIC_URL_BASE, BUCKET_NAME } from "@/lib/minio";
+import sharp from "sharp";
 
 // PATCH /api/auth/profile - 更新用户信息
 export async function PATCH(request: NextRequest) {
   try {
     const session = await auth();
-
     if (!session?.user) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
-
     const userId = (session.user as any).id;
 
-    // 检查是否是 FormData（头像上传）
     const contentType = request.headers.get("content-type") || "";
+
+    // === 头像上传（FormData）===
     if (contentType.includes("multipart/form-data")) {
-      // 头像上传 - 简化处理，只记录 URL
-      // 实际项目中应该上传到 MinIO
       const formData = await request.formData();
       const avatarFile = formData.get("avatar") as File | null;
-
       if (!avatarFile) {
         return NextResponse.json({ error: "请选择头像文件" }, { status: 400 });
       }
 
-      // 生成头像 URL（使用当前域名 + 时间戳）
+      // 校验文件类型
+      const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+      if (!allowedTypes.includes(avatarFile.type)) {
+        return NextResponse.json({ error: "仅支持 JPG/PNG/WebP/GIF 格式" }, { status: 400 });
+      }
+
+      // 限制大小 2MB
+      if (avatarFile.size > 2 * 1024 * 1024) {
+        return NextResponse.json({ error: "头像文件不能超过 2MB" }, { status: 400 });
+      }
+
+      // 读取文件缓冲区
+      const buffer = Buffer.from(await avatarFile.arrayBuffer());
+
+      // 用 sharp 压缩和裁剪为正方形
+      const processedBuffer = await sharp(buffer)
+        .resize(256, 256, { fit: "cover", position: "center" })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+
+      // 上传到 MinIO
       const timestamp = Date.now();
-      const avatarUrl = `/avatars/${userId}_${timestamp}.jpg`;
+      const storageKey = `avatars/${userId}_${timestamp}.jpg`;
 
-      await query("UPDATE users SET avatar = ? WHERE id = ?", [
-        avatarUrl,
-        userId,
-      ]);
+      const minioClient = getMinioClient();
+      await minioClient.putObject(BUCKET_NAME, storageKey, processedBuffer, processedBuffer.length, {
+        "Content-Type": "image/jpeg",
+        "Cache-Control": "public, max-age=31536000",
+      });
 
-      return NextResponse.json({ message: "头像已更新", avatar: avatarUrl });
+      const avatarUrl = `${PUBLIC_URL_BASE}/${BUCKET_NAME}/${storageKey}`;
+
+      // 更新数据库
+      await query("UPDATE users SET avatar = ? WHERE id = ?", [avatarUrl, userId]);
+
+      return NextResponse.json({
+        message: "头像已更新",
+        avatar: avatarUrl,
+      });
     }
 
-    // JSON 更新
+    // === JSON 更新（昵称）===
     const body = await request.json();
     const { name } = body;
 
@@ -46,36 +73,26 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: "昵称不能为空" }, { status: 400 });
       }
       if (name.length > 50) {
-        return NextResponse.json(
-          { error: "昵称最长 50 个字符" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "昵称最长 50 个字符" }, { status: 400 });
       }
-
-      await query("UPDATE users SET name = ? WHERE id = ?", [
-        name.trim(),
-        userId,
-      ]);
+      await query("UPDATE users SET name = ? WHERE id = ?", [name.trim(), userId]);
     }
 
     return NextResponse.json({ message: "更新成功" });
   } catch (error: any) {
     console.error("PATCH /api/auth/profile error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message || "更新失败" }, { status: 500 });
   }
 }
 
 // GET /api/auth/profile - 获取用户信息
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const session = await auth();
-
     if (!session?.user) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
-
     const userId = (session.user as any).id;
-
     const users = (await query(
       "SELECT id, email, name, avatar, role, created_at FROM users WHERE id = ?",
       [userId]
@@ -84,7 +101,6 @@ export async function GET(request: NextRequest) {
     if (users.length === 0) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
-
     return NextResponse.json(users[0]);
   } catch (error: any) {
     console.error("GET /api/auth/profile error:", error);

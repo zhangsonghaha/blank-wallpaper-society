@@ -57,6 +57,8 @@ export default function ProfileClient({
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user.name);
   const [saving, setSaving] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(user.avatar || "");
+  const [uploading, setUploading] = useState(false);
 
   const isAdmin = user.role === "admin";
   const userInitial = user.name?.[0] || user.email?.[0] || "?";
@@ -102,6 +104,7 @@ export default function ProfileClient({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setUploading(true);
     try {
       const fd = new FormData();
       fd.append("avatar", file);
@@ -112,16 +115,19 @@ export default function ProfileClient({
       });
 
       if (res.ok) {
+        const data = await res.json();
         toast.success("头像已更新");
+        // 立即显示新头像，无需刷新页面
+        setAvatarUrl(data.avatar);
         await updateSession();
-        // 刷新页面以显示新头像
-        window.location.reload();
       } else {
-        toast.error("头像上传失败");
+        const data = await res.json();
+        toast.error(data.error || "头像上传失败");
       }
     } catch (err) {
-      toast.error("上传失败");
+      toast.error("上传失败，请重试");
     }
+    setUploading(false);
   };
 
   return (
@@ -144,22 +150,30 @@ export default function ProfileClient({
               <div className="px-6 md:px-8 pb-6 pt-0">
                 <div className="flex flex-col md:flex-row items-center md:items-end gap-4 -mt-16 md:-mt-20">
                   <div className="relative group">
-                    <Avatar className="w-28 h-28 md:w-36 md:h-36 ring-4 ring-white shadow-xl">
-                      <AvatarImage
-                        src={user.avatar || ""}
-                        alt={user.name}
-                      />
-                      <AvatarFallback className="bg-[var(--color-primary)] text-white text-4xl md:text-5xl font-bold">
-                        {userInitial}
-                      </AvatarFallback>
-                    </Avatar>
-                    <label className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                      <Camera className="w-8 h-8 text-white" />
+                    <div className="w-28 h-28 md:w-36 md:h-36 rounded-full overflow-hidden ring-4 ring-white shadow-xl pointer-events-none">
+                      <Avatar className="w-full h-full">
+                        <AvatarImage
+                          src={avatarUrl}
+                          alt={user.name}
+                          className="object-cover w-full h-full"
+                        />
+                        <AvatarFallback className="bg-[var(--color-primary)] text-white text-4xl md:text-5xl font-bold w-full h-full">
+                          {userInitial}
+                        </AvatarFallback>
+                      </Avatar>
+                    </div>
+                    <label className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10">
+                      {uploading ? (
+                        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Camera className="w-8 h-8 text-white" />
+                      )}
                       <input
                         type="file"
                         accept="image/*"
                         className="hidden"
                         onChange={handleAvatarUpload}
+                        disabled={uploading}
                       />
                     </label>
                   </div>
