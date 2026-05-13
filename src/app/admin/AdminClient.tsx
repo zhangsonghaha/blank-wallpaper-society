@@ -17,6 +17,8 @@ import {
   Download,
   ChevronLeft,
   ChevronRight,
+  Link as LinkIcon,
+  ExternalLink,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -125,8 +127,10 @@ export default function AdminClient() {
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadMode, setUploadMode] = useState<"file" | "url">("file");
   const [uploadForm, setUploadForm] = useState({
     file: null as File | null,
+    url: "",
     title: "",
     description: "",
     author: "",
@@ -195,30 +199,65 @@ export default function AdminClient() {
     }
   };
 
+  const handleUrlPreview = useCallback(async () => {
+    if (!uploadForm.url) return;
+    // 简单预览网络图片
+    setPreviewUrl(uploadForm.url);
+  }, [uploadForm.url]);
+
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!uploadForm.file) return;
-
     setUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", uploadForm.file);
-      fd.append("title", uploadForm.title);
-      fd.append("description", uploadForm.description);
-      fd.append("author", uploadForm.author);
-      fd.append("tags", uploadForm.tags);
-      fd.append("category", uploadForm.category);
+      let res;
 
-      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      if (uploadMode === "url") {
+        // 网络链接模式
+        if (!uploadForm.url) {
+          toast.error("请输入图片链接");
+          setUploading(false);
+          return;
+        }
+        res = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: uploadForm.url,
+            title: uploadForm.title,
+            description: uploadForm.description,
+            author: uploadForm.author,
+            tags: uploadForm.tags,
+            category: uploadForm.category,
+          }),
+        });
+      } else {
+        // 本地文件模式
+        if (!uploadForm.file) {
+          toast.error("请选择文件");
+          setUploading(false);
+          return;
+        }
+        const fd = new FormData();
+        fd.append("file", uploadForm.file);
+        fd.append("title", uploadForm.title);
+        fd.append("description", uploadForm.description);
+        fd.append("author", uploadForm.author);
+        fd.append("tags", uploadForm.tags);
+        fd.append("category", uploadForm.category);
+
+        res = await fetch("/api/upload", { method: "POST", body: fd });
+      }
+
       const result = await res.json();
 
       if (res.ok) {
         toast.success("上传成功", {
-          description: `${result.title} 已上传到服务器`,
+          description: result.message,
         });
         setUploadOpen(false);
         setUploadForm({
           file: null,
+          url: "",
           title: "",
           description: "",
           author: "",
@@ -580,46 +619,119 @@ export default function AdminClient() {
           <DialogHeader>
             <DialogTitle className="text-xl">上传图片</DialogTitle>
             <DialogDescription>
-              支持 JPG、PNG、WebP、GIF 格式，单文件最大 20MB
+              支持本地文件或网络链接，JPG/PNG/WebP/GIF 格式，单文件最大 20MB
             </DialogDescription>
           </DialogHeader>
+
+          {/* 上传模式切换 */}
+          <div className="flex gap-2 mb-4">
+            <Button
+              type="button"
+              variant={uploadMode === "file" ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setUploadMode("file");
+                setUploadForm((prev) => ({ ...prev, file: null, url: "" }));
+                setPreviewUrl("");
+              }}
+              className="rounded-full gap-1"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              本地上传
+            </Button>
+            <Button
+              type="button"
+              variant={uploadMode === "url" ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setUploadMode("url");
+                setUploadForm((prev) => ({ ...prev, file: null, url: "" }));
+                setPreviewUrl("");
+              }}
+              className="rounded-full gap-1"
+            >
+              <LinkIcon className="w-3.5 h-3.5" />
+              网络链接
+            </Button>
+          </div>
+
           <form onSubmit={handleUpload}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+              {/* 左侧：上传方式 */}
               <div>
-                <Label className="mb-2 block">选择图片 *</Label>
-                <div
-                  className="border-2 border-dashed border-[var(--color-hairline)] rounded-xl p-6 text-center cursor-pointer hover:border-[var(--color-primary)] transition-colors"
-                  onClick={() => document.getElementById("upload-file")?.click()}
-                >
-                  {previewUrl ? (
-                    <img
-                      src={previewUrl}
-                      alt="预览"
-                      className="max-h-40 mx-auto rounded-lg object-contain"
+                <Label className="mb-2 block">
+                  {uploadMode === "file" ? "选择图片 *" : "图片链接 *"}
+                </Label>
+                {uploadMode === "file" ? (
+                  <div
+                    className="border-2 border-dashed border-[var(--color-hairline)] rounded-xl p-6 text-center cursor-pointer hover:border-[var(--color-primary)] transition-colors"
+                    onClick={() => document.getElementById("upload-file")?.click()}
+                  >
+                    {previewUrl ? (
+                      <img
+                        src={previewUrl}
+                        alt="预览"
+                        className="max-h-40 mx-auto rounded-lg object-contain"
+                      />
+                    ) : (
+                      <div className="text-[var(--color-mute)]">
+                        <Upload className="w-10 h-10 mx-auto mb-2" />
+                        <p className="text-sm">点击选择图片</p>
+                        <p className="text-xs mt-1">或拖拽文件到此处</p>
+                      </div>
+                    )}
+                    <input
+                      id="upload-file"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleFileSelect}
                     />
-                  ) : (
-                    <div className="text-[var(--color-mute)]">
-                      <Upload className="w-10 h-10 mx-auto mb-2" />
-                      <p className="text-sm">点击选择图片</p>
-                      <p className="text-xs mt-1">或拖拽文件到此处</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Input
+                        value={uploadForm.url}
+                        onChange={(e) =>
+                          setUploadForm((p) => ({ ...p, url: e.target.value }))
+                        }
+                        placeholder="https://example.com/image.jpg"
+                        className="pr-10 h-10"
+                      />
+                      <ExternalLink className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-mute)]" />
                     </div>
-                  )}
-                  <input
-                    id="upload-file"
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleFileSelect}
-                  />
-                </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleUrlPreview}
+                      disabled={!uploadForm.url}
+                      className="rounded-full w-full"
+                    >
+                      预览图片
+                    </Button>
+                    {previewUrl && (
+                      <img
+                        src={previewUrl}
+                        alt="预览"
+                        className="max-h-40 mx-auto rounded-lg object-contain border"
+                      />
+                    )}
+                  </div>
+                )}
               </div>
+
+              {/* 右侧：图片信息 */}
               <div className="space-y-4">
                 <div>
                   <Label htmlFor="title">标题</Label>
                   <Input
                     id="title"
                     value={uploadForm.title}
-                    onChange={(e) => setUploadForm((p) => ({ ...p, title: e.target.value }))}
+                    onChange={(e) =>
+                      setUploadForm((p) => ({ ...p, title: e.target.value }))
+                    }
                     placeholder="图片标题"
                     className="mt-1 h-10 rounded-xl"
                   />
@@ -629,7 +741,9 @@ export default function AdminClient() {
                   <Textarea
                     id="desc"
                     value={uploadForm.description}
-                    onChange={(e) => setUploadForm((p) => ({ ...p, description: e.target.value }))}
+                    onChange={(e) =>
+                      setUploadForm((p) => ({ ...p, description: e.target.value }))
+                    }
                     placeholder="图片描述"
                     className="mt-1 h-20 rounded-xl resize-none"
                   />
@@ -640,7 +754,9 @@ export default function AdminClient() {
                     <Input
                       id="author"
                       value={uploadForm.author}
-                      onChange={(e) => setUploadForm((p) => ({ ...p, author: e.target.value }))}
+                      onChange={(e) =>
+                        setUploadForm((p) => ({ ...p, author: e.target.value }))
+                      }
                       placeholder="作者名"
                       className="mt-1 h-10 rounded-xl"
                     />
@@ -649,7 +765,9 @@ export default function AdminClient() {
                     <Label htmlFor="cat">分类</Label>
                     <Select
                       value={uploadForm.category}
-                      onValueChange={(v) => setUploadForm((p) => ({ ...p, category: v || "" }))}
+                      onValueChange={(v) =>
+                        setUploadForm((p) => ({ ...p, category: v || "" }))
+                      }
                     >
                       <SelectTrigger id="cat" className="mt-1 h-10 rounded-xl">
                         <SelectValue placeholder="选择分类" />
@@ -669,30 +787,64 @@ export default function AdminClient() {
                   <Input
                     id="tags"
                     value={uploadForm.tags}
-                    onChange={(e) => setUploadForm((p) => ({ ...p, tags: e.target.value }))}
+                    onChange={(e) =>
+                      setUploadForm((p) => ({ ...p, tags: e.target.value }))
+                    }
                     placeholder="逗号分隔，如: 自然,风景"
                     className="mt-1 h-10 rounded-xl"
                   />
                 </div>
               </div>
             </div>
+
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setUploadOpen(false)} className="rounded-full">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setUploadOpen(false)}
+                className="rounded-full"
+              >
                 取消
               </Button>
-              <Button type="submit" disabled={uploading || !uploadForm.file} className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)] rounded-full gap-2">
+              <Button
+                type="submit"
+                disabled={
+                  uploading ||
+                  (uploadMode === "file" ? !uploadForm.file : !uploadForm.url)
+                }
+                className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)] rounded-full gap-2"
+              >
                 {uploading ? (
                   <>
-                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    <svg
+                      className="w-4 h-4 animate-spin"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                      />
                     </svg>
-                    上传中...
+                    {uploadMode === "url" ? "抓取中..." : "上传中..."}
                   </>
                 ) : (
                   <>
-                    <Upload className="w-4 h-4" />
-                    上传到服务器
+                    {uploadMode === "url" ? (
+                      <LinkIcon className="w-4 h-4" />
+                    ) : (
+                      <Upload className="w-4 h-4" />
+                    )}
+                    {uploadMode === "url" ? "抓取并上传" : "上传到服务器"}
                   </>
                 )}
               </Button>
