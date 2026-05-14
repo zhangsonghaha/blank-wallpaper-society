@@ -176,13 +176,13 @@ export default function EditorCanvas({
     >
       {/* 图片预览 */}
       <div
-        className="relative"
-        style={{ width: displayWidth, height: displayHeight }}
+        className="relative max-w-full max-h-full"
+        style={{ aspectRatio: `${imageWidth}/${imageHeight}` }}
       >
         <img
           src={imageUrl}
           alt="编辑预览"
-          className="w-full h-full object-cover"
+          className="max-w-full max-h-full object-contain"
           style={{ filter: filterCSS || "none" }}
           crossOrigin="anonymous"
         />
