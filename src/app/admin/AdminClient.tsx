@@ -30,6 +30,10 @@ import {
   Bell,
   FileText,
   Bug,
+  Pencil,
+  ZoomIn,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -76,6 +80,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import DashboardTab from "./DashboardTab";
 import ReviewTab from "./ReviewTab";
@@ -152,6 +157,9 @@ export default function AdminClient() {
   const [total, setTotal] = useState(0);
   const [selectedImage, setSelectedImage] = useState<ImageRecord | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [batchDeleteConfirmOpen, setBatchDeleteConfirmOpen] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
   
   // 布局状态
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -395,11 +403,43 @@ export default function AdminClient() {
                   </div>
                 ) : (
                   <>
+                    {/* 批量操作栏 */}
+                    {selectedIds.size > 0 && (
+                      <div className="flex items-center gap-3 mb-3 px-4 py-2.5 bg-blue-50 rounded-xl border border-blue-200">
+                        <span className="text-sm font-medium text-blue-700">
+                          已选择 {selectedIds.size} 项
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="rounded-full text-xs h-7"
+                          onClick={() => setSelectedIds(new Set())}
+                        >
+                          取消选择
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          className="rounded-full text-xs h-7 gap-1"
+                          onClick={() => setBatchDeleteConfirmOpen(true)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          批量删除
+                        </Button>
+                      </div>
+                    )}
+
                     <div className="rounded-xl border overflow-hidden">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="w-[300px]">图片</TableHead>
+                            <TableHead className="w-[48px] pl-4">
+                              <Checkbox
+                                checked={images.length > 0 && selectedIds.size === images.length}
+                                onCheckedChange={toggleSelectAll}
+                              />
+                            </TableHead>
+                            <TableHead className="w-[260px]">图片</TableHead>
                             <TableHead>分类</TableHead>
                             <TableHead>尺寸</TableHead>
                             <TableHead>大小</TableHead>
@@ -409,20 +449,27 @@ export default function AdminClient() {
                               </div>
                             </TableHead>
                             <TableHead>上传时间</TableHead>
-                            <TableHead className="w-[80px]">操作</TableHead>
+                            <TableHead className="w-[140px]">操作</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {images.map((image) => (
                             <TableRow
                               key={image.id}
-                              className="cursor-pointer hover:bg-[var(--color-surface-soft)]"
-                              onClick={() => {
-                                setSelectedImage(image);
-                                setDetailOpen(true);
-                              }}
+                              className={`cursor-pointer hover:bg-[var(--color-surface-soft)] ${selectedIds.has(image.id) ? "bg-blue-50/50" : ""}`}
                             >
-                              <TableCell>
+                              <TableCell className="pl-4" onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={selectedIds.has(image.id)}
+                                  onCheckedChange={() => toggleSelect(image.id)}
+                                />
+                              </TableCell>
+                              <TableCell
+                                onClick={() => {
+                                  setSelectedImage(image);
+                                  setDetailOpen(true);
+                                }}
+                              >
                                 <div className="flex items-center gap-3">
                                   <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-[var(--color-surface-card)]">
                                     <img
@@ -432,16 +479,21 @@ export default function AdminClient() {
                                     />
                                   </div>
                                   <div className="min-w-0">
-                                    <p className="text-sm font-medium truncate max-w-[200px]">
+                                    <p className="text-sm font-medium truncate max-w-[180px]">
                                       {image.title}
                                     </p>
-                                    <p className="text-xs text-[var(--color-mute)] truncate max-w-[200px]">
+                                    <p className="text-xs text-[var(--color-mute)] truncate max-w-[180px]">
                                       {image.author || "未知作者"}
                                     </p>
                                   </div>
                                 </div>
                               </TableCell>
-                              <TableCell>
+                              <TableCell
+                                onClick={() => {
+                                  setSelectedImage(image);
+                                  setDetailOpen(true);
+                                }}
+                              >
                                 {image.category ? (
                                   <Badge
                                     variant="secondary"
@@ -453,79 +505,75 @@ export default function AdminClient() {
                                   <span className="text-xs text-[var(--color-mute)]">未分类</span>
                                 )}
                               </TableCell>
-                              <TableCell className="text-sm text-[var(--color-mute)]">
+                              <TableCell
+                                className="text-sm text-[var(--color-mute)]"
+                                onClick={() => {
+                                  setSelectedImage(image);
+                                  setDetailOpen(true);
+                                }}
+                              >
                                 {image.width}×{image.height}
                               </TableCell>
-                              <TableCell className="text-sm text-[var(--color-mute)]">
+                              <TableCell
+                                className="text-sm text-[var(--color-mute)]"
+                                onClick={() => {
+                                  setSelectedImage(image);
+                                  setDetailOpen(true);
+                                }}
+                              >
                                 {formatSize(image.file_size)}
                               </TableCell>
-                              <TableCell>
+                              <TableCell
+                                onClick={() => {
+                                  setSelectedImage(image);
+                                  setDetailOpen(true);
+                                }}
+                              >
                                 <div className="flex items-center gap-1 text-sm text-[var(--color-mute)]">
                                   {image.view_count}
                                 </div>
                               </TableCell>
-                              <TableCell className="text-sm text-[var(--color-mute)]">
+                              <TableCell
+                                className="text-sm text-[var(--color-mute)]"
+                                onClick={() => {
+                                  setSelectedImage(image);
+                                  setDetailOpen(true);
+                                }}
+                              >
                                 {formatDate(image.created_at)}
                               </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-1">
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center gap-0.5">
                                   <Button
                                     variant="ghost"
                                     size="icon"
                                     className="w-8 h-8"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleFavorite(image);
+                                    title="查看"
+                                    onClick={() => {
+                                      setSelectedImage(image);
+                                      setDetailOpen(true);
                                     }}
                                   >
-                                    <Heart
-                                      className={`w-4 h-4 ${
-                                        image.is_favorite
-                                          ? "fill-red-500 text-red-500"
-                                          : "text-[var(--color-mute)]"
-                                      }`}
-                                    />
+                                    <ZoomIn className="w-4 h-4 text-[var(--color-mute)]" />
                                   </Button>
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger className="outline-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--color-surface-card)] transition-colors data-open:bg-[var(--color-surface-card)]">
-                                      <MoreHorizontal className="w-4 h-4 text-[var(--color-mute)]" />
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="rounded-xl">
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem
-                                        className="cursor-pointer"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          openEdit(image);
-                                        }}
-                                      >
-                                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                        </svg>
-                                        编辑
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        className="cursor-pointer"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          window.open(image.url, "_blank");
-                                        }}
-                                      >
-                                        <Download className="w-4 h-4 mr-2" />
-                                        查看原图
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        className="text-red-500 cursor-pointer"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDelete(image);
-                                        }}
-                                      >
-                                        <Trash2 className="w-4 h-4 mr-2" />
-                                        删除
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="w-8 h-8"
+                                    title="编辑"
+                                    onClick={() => openEdit(image)}
+                                  >
+                                    <Pencil className="w-4 h-4 text-[var(--color-mute)]" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="w-8 h-8"
+                                    title="删除"
+                                    onClick={() => handleDelete(image)}
+                                  >
+                                    <Trash2 className="w-4 h-4 text-red-400" />
+                                  </Button>
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -538,25 +586,54 @@ export default function AdminClient() {
                       <p className="text-sm text-[var(--color-mute)]">
                         共 {total} 张图片，第 {page}/{totalPages} 页
                       </p>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => setPage((p) => Math.max(1, p - 1))}
                           disabled={page === 1}
-                          className="rounded-full"
+                          className="rounded-full h-8 w-8 p-0"
                         >
                           <ChevronLeft className="w-4 h-4" />
-                          上一页
                         </Button>
+                        {Array.from({ length: totalPages }, (_, i) => i + 1)
+                          .filter((p) => {
+                            // 显示首页、末页、当前页附近
+                            return p === 1 || p === totalPages || Math.abs(p - page) <= 1;
+                          })
+                          .reduce<(number | string)[]>((acc, p, idx, arr) => {
+                            if (idx > 0 && p - (arr[idx - 1] as number) > 1) {
+                              acc.push("...");
+                            }
+                            acc.push(p);
+                            return acc;
+                          }, [])
+                          .map((p, idx) =>
+                            typeof p === "string" ? (
+                              <span key={`ellipsis-${idx}`} className="px-1 text-sm text-[var(--color-mute)]">
+                                ...
+                              </span>
+                            ) : (
+                              <Button
+                                key={p}
+                                variant={page === p ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setPage(p)}
+                                className={`rounded-full h-8 w-8 p-0 text-xs ${
+                                  page === p ? "bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)]" : ""
+                                }`}
+                              >
+                                {p}
+                              </Button>
+                            )
+                          )}
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                           disabled={page === totalPages}
-                          className="rounded-full"
+                          className="rounded-full h-8 w-8 p-0"
                         >
-                          下一页
                           <ChevronRight className="w-4 h-4" />
                         </Button>
                       </div>
@@ -619,6 +696,7 @@ export default function AdminClient() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    setSelectedIds(new Set());
     try {
       const params = new URLSearchParams();
       params.set("page", String(page));
@@ -743,6 +821,50 @@ export default function AdminClient() {
       toast.error("上传失败", { description: "网络错误" });
     }
     setUploading(false);
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === images.length && images.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(images.map(img => img.id)));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setBatchDeleting(true);
+    try {
+      const res = await fetch("/api/images/batch-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("批量删除成功", { description: data.message });
+        setSelectedIds(new Set());
+        setBatchDeleteConfirmOpen(false);
+        loadData();
+      } else {
+        toast.error("批量删除失败", { description: data.error });
+      }
+    } catch (err) {
+      toast.error("批量删除失败", { description: "网络错误" });
+    }
+    setBatchDeleting(false);
   };
 
   const handleDelete = async (image: ImageRecord) => {
@@ -1383,6 +1505,48 @@ export default function AdminClient() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Batch Delete Confirm Dialog */}
+      <Dialog open={batchDeleteConfirmOpen} onOpenChange={setBatchDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl">确认批量删除</DialogTitle>
+            <DialogDescription>
+              您确定要删除选中的 {selectedIds.size} 张图片吗？此操作无法撤销。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setBatchDeleteConfirmOpen(false)}
+              className="rounded-full"
+            >
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={batchDeleting}
+              onClick={handleBatchDelete}
+              className="rounded-full gap-2"
+            >
+              {batchDeleting ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  删除中...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4" />
+                  确认删除 {selectedIds.size} 张图片
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
