@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { query, safeQuery } from "@/lib/db";
 
 // GET /api/admin/users - 获取用户列表（分页、搜索、筛选）
 export async function GET(request: NextRequest) {
@@ -47,16 +47,17 @@ export async function GET(request: NextRequest) {
     const whereClause =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    // 获取总数
-    const countResult = (await query(
+    // 获取总数（独立容错）
+    const countResult = await safeQuery(
       `SELECT COUNT(*) as count FROM users u ${whereClause}`,
-      params
-    )) as any[];
-    const total = countResult[0]?.count || 0;
-    const totalPages = Math.ceil(total / limit);
+      params,
+      [{ count: 0 }]
+    );
+    const total = Number((countResult as any[])?.[0]?.count ?? 0);
+    const totalPages = Math.ceil(total / limit) || 1;
 
-    // 获取用户列表 + 统计信息
-    const users = (await query(
+    // 获取用户列表 + 统计信息（独立容错）
+    const users = await safeQuery(
       `SELECT 
         u.id, u.email, u.name, u.avatar, u.role, u.status,
         u.banned_reason, u.banned_at, u.created_at, u.updated_at,
@@ -77,13 +78,14 @@ export async function GET(request: NextRequest) {
       ${whereClause}
       ORDER BY u.created_at DESC
       LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
-    )) as any[];
+      [...params, limit, offset],
+      []
+    );
 
     // 邮箱脱敏处理
-    const maskedUsers = users.map((user: any) => ({
+    const maskedUsers = (Array.isArray(users) ? users : []).map((user: any) => ({
       ...user,
-      email: maskEmail(user.email),
+      email: maskEmail(user?.email),
     }));
 
     return NextResponse.json({
@@ -95,7 +97,13 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("获取用户列表失败:", error);
-    return NextResponse.json({ error: "获取用户列表失败" }, { status: 500 });
+    return NextResponse.json({
+      data: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+    });
   }
 }
 

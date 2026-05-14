@@ -31,7 +31,7 @@ export default function RootLayout({
         <SearchProvider>
           <AuthProvider>
             <Navbar />
-            <div className="flex-1">{children}</div>
+            <div className="flex-1 pt-16 min-h-0">{children}</div>
             <Footer />
             <Toaster position="top-right" richColors closeButton />
           </AuthProvider>

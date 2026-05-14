@@ -27,7 +27,8 @@ export default async function ProfilePage() {
   )) as any[];
 
   const [favStats] = (await query(
-    "SELECT COUNT(*) as total FROM images WHERE is_favorite = 1"
+    "SELECT COUNT(*) as total FROM favorites WHERE user_id = ?",
+    [userId]
   )) as any[];
 
   return (

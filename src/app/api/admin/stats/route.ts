@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { safeQuery } from "@/lib/db";
 
 export async function GET() {
   try {
@@ -10,7 +10,7 @@ export async function GET() {
       return NextResponse.json({ error: "无权访问" }, { status: 403 });
     }
 
-    // 并行执行所有查询
+    // 并行执行所有查询（每个查询独立容错）
     const [
       totalUsersRes,
       totalImagesRes,
@@ -25,95 +25,121 @@ export async function GET() {
       storageRes,
     ] = await Promise.all([
       // 总用户数
-      query("SELECT COUNT(*) as count FROM users"),
+      safeQuery("SELECT COUNT(*) as count FROM users", undefined, [{ count: 0 }]),
       // 总图片数
-      query("SELECT COUNT(*) as count FROM images"),
+      safeQuery("SELECT COUNT(*) as count FROM images", undefined, [{ count: 0 }]),
       // 总下载量
-      query("SELECT COALESCE(SUM(download_count), 0) as count FROM images"),
+      safeQuery("SELECT COALESCE(SUM(download_count), 0) as count FROM images", undefined, [{ count: 0 }]),
       // 总收藏数
-      query("SELECT COUNT(*) as count FROM favorites"),
+      safeQuery("SELECT COUNT(*) as count FROM favorites", undefined, [{ count: 0 }]),
       // 近7天活跃用户数
-      query(
-        "SELECT COUNT(DISTINCT user_id) as count FROM favorites WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+      safeQuery(
+        "SELECT COUNT(DISTINCT user_id) as count FROM favorites WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)",
+        undefined,
+        [{ count: 0 }]
       ),
       // 近30天每日新增用户
-      query(
+      safeQuery(
         `SELECT DATE(created_at) as date, COUNT(*) as count 
          FROM users 
          WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) 
          GROUP BY DATE(created_at) 
-         ORDER BY date ASC`
+         ORDER BY date ASC`,
+        undefined,
+        []
       ),
       // 近30天每日新增图片
-      query(
+      safeQuery(
         `SELECT DATE(created_at) as date, COUNT(*) as count 
          FROM images 
          WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) 
          GROUP BY DATE(created_at) 
-         ORDER BY date ASC`
+         ORDER BY date ASC`,
+        undefined,
+        []
       ),
       // 近30天每日下载量
-      query(
+      safeQuery(
         `SELECT DATE(created_at) as date, SUM(download_count) as count 
          FROM images 
          WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) 
          GROUP BY DATE(created_at) 
-         ORDER BY date ASC`
+         ORDER BY date ASC`,
+        undefined,
+        []
       ),
       // 分类分布
-      query(
+      safeQuery(
         `SELECT c.name, c.slug, COUNT(i.id) as count 
          FROM categories c 
          LEFT JOIN images i ON i.category_id = c.id 
          GROUP BY c.id, c.name, c.slug 
-         ORDER BY count DESC`
+         ORDER BY count DESC`,
+        undefined,
+        []
       ),
       // 热门壁纸 Top 10
-      query(
+      safeQuery(
         `SELECT id, title, thumbnail_url, url, download_count, width, height 
          FROM images 
          ORDER BY download_count DESC 
-         LIMIT 10`
+         LIMIT 10`,
+        undefined,
+        []
       ),
       // 存储用量
-      query(
-        "SELECT COALESCE(SUM(file_size), 0) as total_size, COUNT(*) as file_count FROM images"
+      safeQuery(
+        "SELECT COALESCE(SUM(file_size), 0) as total_size, COUNT(*) as file_count FROM images",
+        undefined,
+        [{ total_size: 0, file_count: 0 }]
       ),
     ]);
 
-    // 类型断言辅助
+    // 类型断言辅助 - 防御性处理
     const toCount = (res: any): number => {
-      const rows = res as any[];
-      return rows?.[0]?.count ?? 0;
+      try {
+        const rows = Array.isArray(res) ? res : [];
+        return Number(rows?.[0]?.count ?? 0);
+      } catch {
+        return 0;
+      }
     };
 
     const toTrend = (res: any): { date: string; count: number }[] => {
-      const rows = res as any[];
-      return rows.map((r) => ({
-        date: r.date instanceof Date ? r.date.toISOString().split("T")[0] : String(r.date),
-        count: Number(r.count),
-      }));
+      try {
+        const rows = Array.isArray(res) ? res : [];
+        return rows.map((r: any) => ({
+          date: r.date instanceof Date ? r.date.toISOString().split("T")[0] : String(r.date ?? ""),
+          count: Number(r.count ?? 0),
+        }));
+      } catch {
+        return [];
+      }
     };
 
     // 补全30天缺失日期
     const fillTrendDates = (
       data: { date: string; count: number }[]
     ): { date: string; count: number }[] => {
-      const map = new Map(data.map((d) => [d.date, d.count]));
-      const result: { date: string; count: number }[] = [];
-      const now = new Date();
-      for (let i = 29; i >= 0; i--) {
-        const d = new Date(now);
-        d.setDate(d.getDate() - i);
-        const key = d.toISOString().split("T")[0];
-        result.push({ date: key, count: map.get(key) ?? 0 });
+      try {
+        const map = new Map((data || []).map((d) => [d.date, d.count]));
+        const result: { date: string; count: number }[] = [];
+        const now = new Date();
+        for (let i = 29; i >= 0; i--) {
+          const d = new Date(now);
+          d.setDate(d.getDate() - i);
+          const key = d.toISOString().split("T")[0];
+          result.push({ date: key, count: map.get(key) ?? 0 });
+        }
+        return result;
+      } catch {
+        return [];
       }
-      return result;
     };
 
-    const categoryRows = categoryDistRes as any[];
-    const topImageRows = topImagesRes as any[];
-    const storageRow = (storageRes as any[])?.[0];
+    const categoryRows = Array.isArray(categoryDistRes) ? categoryDistRes : [];
+    const topImageRows = Array.isArray(topImagesRes) ? topImagesRes : [];
+    const storageRow = Array.isArray(storageRes) ? storageRes?.[0] : null;
 
     return NextResponse.json({
       overview: {
@@ -128,18 +154,18 @@ export async function GET() {
         newImages: fillTrendDates(toTrend(newImagesTrendRes)),
         downloads: fillTrendDates(toTrend(downloadTrendRes)),
       },
-      categoryDistribution: categoryRows.map((r) => ({
-        name: r.name,
-        slug: r.slug,
-        count: Number(r.count),
+      categoryDistribution: categoryRows.map((r: any) => ({
+        name: String(r?.name ?? ""),
+        slug: String(r?.slug ?? ""),
+        count: Number(r?.count ?? 0),
       })),
-      topImages: topImageRows.map((r) => ({
-        id: r.id,
-        title: r.title,
-        thumbnailUrl: r.thumbnail_url || r.url,
-        downloadCount: Number(r.download_count),
-        width: r.width,
-        height: r.height,
+      topImages: topImageRows.map((r: any) => ({
+        id: Number(r?.id ?? 0),
+        title: String(r?.title ?? ""),
+        thumbnailUrl: String(r?.thumbnail_url || r?.url || ""),
+        downloadCount: Number(r?.download_count ?? 0),
+        width: Number(r?.width ?? 0),
+        height: Number(r?.height ?? 0),
       })),
       storage: {
         totalSize: Number(storageRow?.total_size ?? 0),
@@ -148,6 +174,13 @@ export async function GET() {
     });
   } catch (error) {
     console.error("获取统计数据失败:", error);
-    return NextResponse.json({ error: "获取统计数据失败" }, { status: 500 });
+    // 返回默认值而非500错误，让前端能正常展示
+    return NextResponse.json({
+      overview: { totalUsers: 0, totalImages: 0, totalDownloads: 0, totalFavorites: 0, recentActiveUsers: 0 },
+      trends: { newUsers: [], newImages: [], downloads: [] },
+      categoryDistribution: [],
+      topImages: [],
+      storage: { totalSize: 0, fileCount: 0 },
+    });
   }
 }

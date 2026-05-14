@@ -6,9 +6,10 @@ import PinCard from "./PinCard";
 import FilterChips from "./FilterChips";
 import Lightbox from "./Lightbox";
 import ColorSearch from "./ColorSearch";
+import AdvancedFilterPanel from "./AdvancedFilterPanel";
 import { useSearch } from "@/context/SearchContext";
 import Link from "next/link";
-import { ChevronRight, Users, Image as ImageIcon } from "lucide-react";
+import { ChevronRight, Users, Image as ImageIcon, Filter } from "lucide-react";
 import HotRankings from "./HotRankings";
 import RecommendForYou from "./RecommendForYou";
 
@@ -56,6 +57,10 @@ export default function MasonryGrid() {
     activeColor,
     setActiveColor,
     colorThreshold,
+    showAdvancedFilter,
+    setShowAdvancedFilter,
+    resolutionFilter,
+    dateFilter,
   } = useSearch();
   const [images, setImages] = useState<ImageRecord[]>([]);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
@@ -115,9 +120,26 @@ export default function MasonryGrid() {
       // 颜色搜索使用专门的API
       params.set("color", activeColor);
       params.set("threshold", String(colorThreshold));
-      if (activeCategory !== "all") params.set("category", activeCategory);
-      params.set("limit", "100");
+    }
+    
+    // 通用参数
+    if (activeCategory !== "all") params.set("category", activeCategory);
+    if (searchQuery.trim()) params.set("search", searchQuery);
+    if (sortBy) params.set("sort", sortBy);
+    
+    // 分辨率筛选
+    if (resolutionFilter.minWidth) params.set("minWidth", String(resolutionFilter.minWidth));
+    if (resolutionFilter.maxWidth) params.set("maxWidth", String(resolutionFilter.maxWidth));
+    if (resolutionFilter.minHeight) params.set("minHeight", String(resolutionFilter.minHeight));
+    if (resolutionFilter.maxHeight) params.set("maxHeight", String(resolutionFilter.maxHeight));
+    
+    // 日期筛选
+    if (dateFilter.from) params.set("dateFrom", dateFilter.from);
+    if (dateFilter.to) params.set("dateTo", dateFilter.to);
+    
+    params.set("limit", "100");
 
+    if (activeColor) {
       fetch(`/api/images/search/color?${params}`)
         .then((res) => res.json())
         .then((data) => {
@@ -128,11 +150,6 @@ export default function MasonryGrid() {
         })
         .catch(() => setLoading(false));
     } else {
-      // 常规搜索
-      if (activeCategory !== "all") params.set("category", activeCategory);
-      if (searchQuery.trim()) params.set("search", searchQuery);
-      params.set("limit", "100");
-
       fetch(`/api/images?${params}`)
         .then((res) => res.json())
         .then((data) => {
@@ -143,7 +160,23 @@ export default function MasonryGrid() {
         })
         .catch(() => setLoading(false));
     }
-  }, [activeCategory, searchQuery, activeColor, colorThreshold]);
+  }, [activeCategory, searchQuery, activeColor, colorThreshold, sortBy, resolutionFilter, dateFilter]);
+
+  // 从API加载初始收藏列表
+  useEffect(() => {
+    fetch("/api/favorites?limit=100")
+      .then((res) => {
+        if (!res.ok) return { data: [] };
+        return res.json();
+      })
+      .then((data) => {
+        const favIds = new Set<number>(
+          (data.data || []).map((item: any) => item.id)
+        );
+        setFavorites(favIds);
+      })
+      .catch(() => {});
+  }, []);
 
   // 同步收藏数量到 Context
   useEffect(() => {
@@ -177,18 +210,46 @@ export default function MasonryGrid() {
 
   // 收藏切换
   const toggleFavorite = useCallback((id: number) => {
+    const isFav = favorites.has(id);
+    // 乐观更新UI
     setFavorites((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-    const isFav = !favorites.has(id);
-    fetch(`/api/images/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ is_favorite: isFav ? 1 : 0 }),
-    }).catch(() => {});
+    // 调用favorites API
+    if (isFav) {
+      fetch(`/api/favorites/${id}`, { method: "DELETE" })
+        .then((res) => {
+          if (!res.ok) {
+            // 回滚
+            setFavorites((prev) => new Set(prev).add(id));
+          }
+        })
+        .catch(() => {
+          setFavorites((prev) => new Set(prev).add(id));
+        });
+    } else {
+      fetch(`/api/favorites/${id}`, { method: "POST" })
+        .then((res) => {
+          if (!res.ok) {
+            // 回滚
+            setFavorites((prev) => {
+              const next = new Set(prev);
+              next.delete(id);
+              return next;
+            });
+          }
+        })
+        .catch(() => {
+          setFavorites((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+        });
+    }
   }, [favorites]);
 
   // 灯箱导航
@@ -652,6 +713,12 @@ export default function MasonryGrid() {
         onNext={goToNext}
         favoritedIds={favorites}
         onToggleFavorite={toggleFavorite}
+      />
+
+      {/* Advanced Filter Panel */}
+      <AdvancedFilterPanel
+        isOpen={showAdvancedFilter}
+        onClose={() => setShowAdvancedFilter(false)}
       />
     </>
   );

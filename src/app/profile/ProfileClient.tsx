@@ -138,16 +138,24 @@ export default function ProfileClient({
     fetchUploads(uploadFilter === "all" ? undefined : uploadFilter);
   }, [uploadFilter, fetchUploads]);
 
-  useEffect(() => {
-    fetch("/api/images?limit=50")
-      .then((res) => res.json())
+  // 加载收藏列表
+  const fetchFavorites = useCallback(() => {
+    setLoadingFav(true);
+    fetch("/api/favorites?limit=50")
+      .then((res) => {
+        if (!res.ok) return { data: [] };
+        return res.json();
+      })
       .then((data) => {
-        const favs = (data.data || []).filter((img: any) => img.is_favorite === 1);
-        setFavoriteImages(favs);
+        setFavoriteImages(data.data || []);
         setLoadingFav(false);
       })
       .catch(() => setLoadingFav(false));
   }, []);
+
+  useEffect(() => {
+    fetchFavorites();
+  }, [fetchFavorites]);
 
   // 加载我的合集
   useEffect(() => {
@@ -546,9 +554,23 @@ export default function ProfileClient({
                                 <p className="text-xs text-white font-medium truncate">{img.title}</p>
                                 <p className="text-[10px] text-white/70 truncate">{img.author}</p>
                               </div>
-                              <div className="absolute top-2 right-2">
-                                <Heart className="w-4 h-4 text-white fill-[var(--color-primary)]" />
-                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  fetch(`/api/favorites/${img.id}`, { method: "DELETE" })
+                                    .then((res) => {
+                                      if (res.ok) {
+                                        setFavoriteImages((prev) => prev.filter((f: any) => f.id !== img.id));
+                                        toast.success("已取消收藏");
+                                      }
+                                    })
+                                    .catch(() => toast.error("操作失败"));
+                                }}
+                                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                              >
+                                <Heart className="w-4 h-4 text-white fill-[var(--color-primary)] hover:scale-110 transition-transform" />
+                              </button>
                             </Link>
                           ))}
                         </div>

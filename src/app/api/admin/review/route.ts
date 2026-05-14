@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { query, safeQuery } from "@/lib/db";
 
 // GET /api/admin/review - 获取待审核图片列表（分页），支持按状态筛选
 export async function GET(request: NextRequest) {
@@ -26,34 +26,42 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 获取总数
-    const countResult = await query(
+    // 获取总数（独立容错）
+    const countResult = await safeQuery(
       "SELECT COUNT(*) as total FROM images WHERE status = ?",
-      [status]
+      [status],
+      [{ total: 0 }]
     );
-    const total = (countResult as any[])[0]?.total || 0;
+    const total = Number((countResult as any[])?.[0]?.total ?? 0);
 
-    // 获取图片列表，关联审核人信息
-    const rows = await query(
+    // 获取图片列表，关联审核人信息（独立容错）
+    const rows = await safeQuery(
       `SELECT i.*, u.name as reviewer_name
        FROM images i
        LEFT JOIN users u ON i.reviewed_by = u.id
        WHERE i.status = ?
        ORDER BY i.created_at DESC
        LIMIT ? OFFSET ?`,
-      [status, String(limit), String(offset)]
+      [status, String(limit), String(offset)],
+      []
     );
 
     return NextResponse.json({
-      data: rows,
+      data: Array.isArray(rows) ? rows : [],
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(total / limit) || 1,
     });
   } catch (error: any) {
     console.error("GET /api/admin/review error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({
+      data: [],
+      total: 0,
+      page: 1,
+      limit: 12,
+      totalPages: 1,
+    });
   }
 }
 

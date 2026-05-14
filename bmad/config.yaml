@@ -1,0 +1,32 @@
+# BMAD Method v6 - Project Configuration
+# Generated: 2026-05-14
+# Project: blank-wallpaper-society
+
+bmad_version: "6.0.0"
+
+# Project Information
+project_name: "blank-wallpaper-society"
+project_type: "web-app"
+project_level: 2  # Medium feature set (auth, upload, collections, admin, search, rankings, API)
+
+# Output Configuration
+output_folder: "docs"
+stories_folder: "docs/stories"
+
+# Language Settings
+communication_language: "Chinese"
+document_output_language: "Chinese"
+
+# Project Metadata
+project_description: "Pinterest风格的壁纸图库/图片社区。支持图片上传、分类浏览、色彩搜索、收藏夹、用户认证、排行榜、内容审核等功能。"
+repository_url: ""
+team_size: 1
+tech_stack:
+  - "Next.js 16"
+  - "React 19"
+  - "TypeScript"
+  - "MySQL (Aliyun RDS)"
+  - "MinIO (对象存储)"
+  - "NextAuth.js"
+  - "Tailwind CSS 4"
+  - "Sharp (图片处理)"

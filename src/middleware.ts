@@ -71,6 +71,10 @@ export async function middleware(request: NextRequest) {
       if (segments.length === 3 && segments[0] === "api" && segments[1] === "images") {
         return NextResponse.next();
       }
+      // GET /api/images/[id]/comments 公开
+      if (segments.length === 4 && segments[0] === "api" && segments[1] === "images" && segments[3] === "comments") {
+        return NextResponse.next();
+      }
     }
 
     const isPublic = publicApis.some((p) => pathname.startsWith(p));

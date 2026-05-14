@@ -13,8 +13,24 @@ const pool = mysql.createPool({
 });
 
 export async function query(sql: string, params?: any[]) {
-  const [rows] = await pool.execute(sql, params);
-  return rows;
+  try {
+    const [rows] = await pool.execute(sql, params);
+    return rows;
+  } catch (error) {
+    console.error(`DB query error: ${sql}`, error);
+    throw error;
+  }
+}
+
+/** 安全查询辅助函数：查询失败时返回默认值，不影响整体 */
+export async function safeQuery(sql: string, params?: any[], defaultValue: any = []) {
+  try {
+    const [rows] = await pool.execute(sql, params);
+    return rows;
+  } catch (error) {
+    console.warn(`DB safeQuery fallback (using default): ${sql}`, error);
+    return defaultValue;
+  }
 }
 
 export async function getConnection() {

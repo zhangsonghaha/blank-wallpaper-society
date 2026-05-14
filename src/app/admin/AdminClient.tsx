@@ -311,11 +311,11 @@ export default function AdminClient() {
 
   const toggleFavorite = async (image: ImageRecord) => {
     try {
-      await fetch(`/api/images/${image.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ is_favorite: image.is_favorite ? 0 : 1 }),
-      });
+      if (image.is_favorite) {
+        await fetch(`/api/favorites/${image.id}`, { method: "DELETE" });
+      } else {
+        await fetch(`/api/favorites/${image.id}`, { method: "POST" });
+      }
       loadData();
     } catch (err) {
       console.error("切换收藏失败:", err);
@@ -418,7 +418,7 @@ export default function AdminClient() {
         )}
       </AnimatePresence>
 
-      <div className="bg-white border-b sticky top-16 z-30">
+      <div className="bg-white border-b sticky top-16 z-30 shadow-sm">
         <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div>

@@ -25,6 +25,7 @@ import {
   Upload,
   Grid3X3,
 } from "lucide-react";
+import NotificationBell from "./NotificationBell";
 
 export default function Navbar() {
   const router = useRouter();
@@ -41,6 +42,18 @@ export default function Navbar() {
     setLocalQuery(searchQuery);
   }, [searchQuery]);
 
+  // 移动端菜单打开时锁定body滚动
+  useEffect(() => {
+    if (isMenuOpen || showMobileSearch) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isMenuOpen, showMobileSearch]);
+
   const handleSearch = (value: string) => {
     setLocalQuery(value);
     setSearchQuery(value);
@@ -52,7 +65,7 @@ export default function Navbar() {
     "?";
 
   return (
-    <nav className="sticky top-0 z-50 bg-white border-b border-[var(--color-hairline)]">
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-[var(--color-hairline)]">
       <div className="max-w-[1440px] mx-auto px-4 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Left: Logo + Nav Links */}
@@ -201,6 +214,9 @@ export default function Navbar() {
                 </span>
               )}
             </button>
+
+            {/* Notification Bell */}
+            {isLoggedIn && <NotificationBell />}
 
             {/* User Area */}
             {status === "loading" ? (
@@ -399,6 +415,19 @@ export default function Navbar() {
         )}
       </AnimatePresence>
 
+      {/* Mobile Menu Backdrop */}
+      <AnimatePresence>
+        {isMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 top-16 z-40 bg-black/20 md:hidden"
+            onClick={() => setIsMenuOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Mobile Menu */}
       <AnimatePresence>
         {isMenuOpen && (
@@ -406,7 +435,7 @@ export default function Navbar() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden border-t border-[var(--color-hairline)] bg-white overflow-hidden"
+            className="md:hidden border-t border-[var(--color-hairline)] bg-white overflow-hidden relative z-50"
           >
             <div className="px-4 py-4 space-y-2">
               <Link

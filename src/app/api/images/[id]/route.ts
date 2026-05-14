@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { deleteFile } from "@/lib/minio";
+import { auth } from "@/lib/auth";
 
 // GET /api/images/[id] - 获取单张图片
 export async function GET(
@@ -34,6 +35,40 @@ export async function PATCH(
     const body = await request.json();
     const { title, description, author, tags, category, is_favorite } = body;
 
+    // is_favorite 需要用户登录，操作 favorites 表
+    if (is_favorite !== undefined) {
+      const session = await auth();
+      if (!session?.user) {
+        return NextResponse.json({ error: "请先登录" }, { status: 401 });
+      }
+      const userId = (session.user as any).id;
+
+      if (is_favorite) {
+        // 添加收藏（忽略重复）
+        await query(
+          `INSERT IGNORE INTO favorites (user_id, image_id) VALUES (?, ?)`,
+          [userId, id]
+        );
+      } else {
+        // 取消收藏
+        await query(
+          `DELETE FROM favorites WHERE user_id = ? AND image_id = ?`,
+          [userId, id]
+        );
+      }
+
+      // 如果只有 is_favorite 字段，直接返回
+      if (
+        title === undefined &&
+        description === undefined &&
+        author === undefined &&
+        tags === undefined &&
+        category === undefined
+      ) {
+        return NextResponse.json({ success: true, message: "更新成功" });
+      }
+    }
+
     const updates: string[] = [];
     const values: any[] = [];
 
@@ -57,10 +92,6 @@ export async function PATCH(
       updates.push("category = ?");
       values.push(category);
     }
-    if (is_favorite !== undefined) {
-      updates.push("is_favorite = ?");
-      values.push(is_favorite ? 1 : 0);
-    }
 
     if (updates.length === 0) {
       return NextResponse.json({ error: "没有需要更新的字段" }, { status: 400 });
@@ -72,9 +103,9 @@ export async function PATCH(
       values
     );
 
-    return NextResponse.json({ message: "更新成功" });
+    return NextResponse.json({ success: true, message: "更新成功" });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 

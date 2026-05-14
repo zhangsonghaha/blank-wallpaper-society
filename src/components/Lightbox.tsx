@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import type { GalleryImage } from "@/data/images";
-import { Flag, Download, ChevronDown, Monitor, Smartphone, Tablet, X, FolderPlus, Pencil, Calendar } from "lucide-react";
+import { Flag, Download, ChevronDown, Monitor, Smartphone, Tablet, X, FolderPlus, Pencil, Calendar, MessageCircle } from "lucide-react";
 import AddToCollectionDialog from "./AddToCollectionDialog";
+import CommentSection from "./CommentSection";
 import {
   RESOLUTIONS,
   CATEGORY_LABELS,
@@ -51,6 +52,7 @@ export default function Lightbox({
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [loadingResolutions, setLoadingResolutions] = useState(false);
   const [addToCollectionOpen, setAddToCollectionOpen] = useState(false);
+  const [commentOpen, setCommentOpen] = useState(false);
 
   const isFavorited = favoritedIds?.has(currentImage?.id) ?? false;
 
@@ -514,6 +516,18 @@ export default function Lightbox({
               分享
             </button>
 
+            {/* Comment Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setCommentOpen(true);
+              }}
+              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
+            >
+              <MessageCircle className="w-4 h-4" />
+              评论
+            </button>
+
             {/* Download Button with Panel */}
             <div className="relative">
               <button
@@ -770,6 +784,15 @@ export default function Lightbox({
         onOpenChange={setAddToCollectionOpen}
         imageId={currentImage?.id ?? null}
       />
+
+      {/* Comment Section */}
+      {currentImage && (
+        <CommentSection
+          imageId={currentImage.id}
+          isOpen={commentOpen}
+          onClose={() => setCommentOpen(false)}
+        />
+      )}
     </AnimatePresence>
   );
 }

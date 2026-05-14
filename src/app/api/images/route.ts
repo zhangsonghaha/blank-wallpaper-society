@@ -14,6 +14,16 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "24");
     const offset = (page - 1) * limit;
 
+    // 高级筛选参数
+    const minWidth = searchParams.get("minWidth") ? parseInt(searchParams.get("minWidth")!) : null;
+    const maxWidth = searchParams.get("maxWidth") ? parseInt(searchParams.get("maxWidth")!) : null;
+    const minHeight = searchParams.get("minHeight") ? parseInt(searchParams.get("minHeight")!) : null;
+    const maxHeight = searchParams.get("maxHeight") ? parseInt(searchParams.get("maxHeight")!) : null;
+    const resolutionPreset = searchParams.get("resolution"); // e.g. "1920x1080"
+    const dateFrom = searchParams.get("dateFrom"); // e.g. "2026-01-01"
+    const dateTo = searchParams.get("dateTo"); // e.g. "2026-12-31"
+    const tags = searchParams.get("tags"); // 逗号分隔的标签
+
     let sql = "SELECT * FROM images WHERE 1=1";
     const params: any[] = [];
 
@@ -37,6 +47,51 @@ export async function GET(request: NextRequest) {
     // 颜色筛选支持
     if (color) {
       sql += " AND dominant_color IS NOT NULL";
+    }
+
+    // 分辨率筛选
+    if (resolutionPreset) {
+      const [w, h] = resolutionPreset.split("x").map(Number);
+      if (w && h) {
+        sql += " AND ((width = ? AND height = ?) OR (width = ? AND height = ?))";
+        params.push(String(w), String(h), String(h), String(w));
+      }
+    }
+    if (minWidth) {
+      sql += " AND width >= ?";
+      params.push(String(minWidth));
+    }
+    if (maxWidth) {
+      sql += " AND width <= ?";
+      params.push(String(maxWidth));
+    }
+    if (minHeight) {
+      sql += " AND height >= ?";
+      params.push(String(minHeight));
+    }
+    if (maxHeight) {
+      sql += " AND height <= ?";
+      params.push(String(maxHeight));
+    }
+
+    // 时间范围筛选
+    if (dateFrom) {
+      sql += " AND created_at >= ?";
+      params.push(dateFrom);
+    }
+    if (dateTo) {
+      sql += " AND created_at <= ?";
+      params.push(`${dateTo} 23:59:59`);
+    }
+
+    // 标签筛选
+    if (tags) {
+      const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
+      if (tagList.length > 0) {
+        const tagConditions = tagList.map(() => "tags LIKE ?").join(" AND ");
+        sql += ` AND (${tagConditions})`;
+        tagList.forEach((tag) => params.push(`%${tag}%`));
+      }
     }
 
     // 获取总数

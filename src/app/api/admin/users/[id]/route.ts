@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { query, safeQuery } from "@/lib/db";
 
 // GET /api/admin/users/[id] - 获取用户详情
 export async function GET(
@@ -20,8 +20,8 @@ export async function GET(
       return NextResponse.json({ error: "无效的用户ID" }, { status: 400 });
     }
 
-    // 获取用户详情 + 统计
-    const users = (await query(
+    // 获取用户详情 + 统计（独立容错）
+    const users = await safeQuery(
       `SELECT 
         u.id, u.email, u.name, u.avatar, u.role, u.status,
         u.banned_reason, u.banned_at, u.created_at, u.updated_at,
@@ -37,40 +37,43 @@ export async function GET(
         FROM user_favorites GROUP BY user_id
       ) fav_stats ON u.id = fav_stats.user_id
       WHERE u.id = ?`,
-      [userId]
-    )) as any[];
+      [userId],
+      []
+    );
 
-    if (users.length === 0) {
+    if (!Array.isArray(users) || users.length === 0) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
 
     const user = users[0];
 
-    // 获取最近上传的图片
-    const recentImages = (await query(
+    // 获取最近上传的图片（独立容错）
+    const recentImages = await safeQuery(
       `SELECT id, title, url, thumbnail_url, created_at, status
        FROM images 
        WHERE uploaded_by = ? 
        ORDER BY created_at DESC 
        LIMIT 5`,
-      [userId]
-    )) as any[];
+      [userId],
+      []
+    );
 
-    // 获取操作日志
-    const operationLogs = (await query(
+    // 获取操作日志（独立容错）
+    const operationLogs = await safeQuery(
       `SELECT aol.*, u.name as operator_name
        FROM admin_operation_logs aol
        LEFT JOIN users u ON aol.operator_id = u.id
        WHERE aol.target_user_id = ?
        ORDER BY aol.created_at DESC
        LIMIT 10`,
-      [userId]
-    )) as any[];
+      [userId],
+      []
+    );
 
     return NextResponse.json({
       ...user,
-      recentImages,
-      operationLogs,
+      recentImages: Array.isArray(recentImages) ? recentImages : [],
+      operationLogs: Array.isArray(operationLogs) ? operationLogs : [],
     });
   } catch (error) {
     console.error("获取用户详情失败:", error);

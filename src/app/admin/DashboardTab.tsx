@@ -429,7 +429,27 @@ export default function DashboardTab() {
         const res = await fetch("/api/admin/stats");
         if (!res.ok) throw new Error("获取数据失败");
         const json = await res.json();
-        setData(json);
+        // 防御性数据验证：确保所有字段存在且格式正确
+        setData({
+          overview: {
+            totalUsers: Number(json?.overview?.totalUsers ?? 0),
+            totalImages: Number(json?.overview?.totalImages ?? 0),
+            totalDownloads: Number(json?.overview?.totalDownloads ?? 0),
+            totalFavorites: Number(json?.overview?.totalFavorites ?? 0),
+            recentActiveUsers: Number(json?.overview?.recentActiveUsers ?? 0),
+          },
+          trends: {
+            newUsers: Array.isArray(json?.trends?.newUsers) ? json.trends.newUsers : [],
+            newImages: Array.isArray(json?.trends?.newImages) ? json.trends.newImages : [],
+            downloads: Array.isArray(json?.trends?.downloads) ? json.trends.downloads : [],
+          },
+          categoryDistribution: Array.isArray(json?.categoryDistribution) ? json.categoryDistribution : [],
+          topImages: Array.isArray(json?.topImages) ? json.topImages : [],
+          storage: {
+            totalSize: Number(json?.storage?.totalSize ?? 0),
+            fileCount: Number(json?.storage?.fileCount ?? 0),
+          },
+        });
       } catch (err: any) {
         setError(err.message || "获取数据失败");
       } finally {
