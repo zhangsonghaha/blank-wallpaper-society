@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 壁纸爬虫脚本 - 基于 Scrapling 自适应爬虫框架
 支持两种模式：
@@ -15,10 +16,20 @@
   python scripts/crawl_with_scrapling.py --source unsplash --mode sequential --count 5
 """
 
+# ====== 强制 UTF-8 编码输出（修复 Windows 中文乱码） ======
+import sys
+import os
+
+if sys.platform == "win32":
+    # Windows 下强制 stdout/stderr 使用 UTF-8
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import argparse
 import json
-import os
-import sys
 import time
 import random
 import tempfile

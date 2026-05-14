@@ -247,7 +247,7 @@ function runCrawlScript(
 
     const proc = spawn(pythonCmd, args, {
       cwd: process.cwd(),
-      env: { ...process.env },
+      env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
       timeout: 120000, // 2分钟超时
     });
 
@@ -255,11 +255,11 @@ function runCrawlScript(
     let stderr = "";
 
     proc.stdout.on("data", (data) => {
-      stdout += data.toString();
+      stdout += data.toString("utf-8");
     });
 
     proc.stderr.on("data", (data) => {
-      stderr += data.toString();
+      stderr += data.toString("utf-8");
     });
 
     proc.on("close", (code) => {
