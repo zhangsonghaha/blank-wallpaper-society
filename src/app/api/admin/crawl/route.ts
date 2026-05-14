@@ -63,7 +63,23 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "20");
     const offset = (page - 1) * limit;
 
-    // 查询爬取历史（从 images 表中筛选 source 为爬虫导入的记录）
+    // 查询爬取历史（从 crawl_logs 表查询）
+    const [logResult, logCountResult] = await Promise.all([
+      query(
+        `SELECT id, source, source_url, crawl_mode, category, tags, pages, requested_count,
+                success_count, fail_count, dedup_skipped, status, error_message,
+                started_at, finished_at, duration_seconds
+         FROM crawl_logs 
+         ORDER BY started_at DESC 
+         LIMIT ? OFFSET ?`,
+        [limit, offset]
+      ),
+      query(
+        `SELECT COUNT(*) as total FROM crawl_logs`
+      ),
+    ]);
+
+    // 查询爬取统计（从 images 表筛选 source 为爬虫导入的记录）
     const [historyResult, countResult] = await Promise.all([
       query(
         `SELECT id, title, url, thumbnail_url, width, height, tags, category, created_at
@@ -86,6 +102,8 @@ export async function GET(request: NextRequest) {
       total,
       page,
       totalPages: Math.ceil(total / limit),
+      crawlLogs: logResult,
+      crawlLogsTotal: (logCountResult as any[])[0]?.total || 0,
     });
   } catch (error: any) {
     console.error("GET /api/admin/crawl error:", error);
@@ -107,7 +125,7 @@ export async function POST(request: NextRequest) {
 
     const userId = (session.user as any).id;
     const body = await request.json();
-    const { source, mode, count, url, fetchMode, minWidth } = body;
+    const { source, mode, count, url, fetchMode, minWidth, pages, dedup, category, tags } = body;
 
     // 参数验证：支持两种模式
     // 1. 自定义URL模式 (url 字段)
@@ -149,6 +167,32 @@ export async function POST(request: NextRequest) {
     }
 
     const crawlCount = Math.min(Math.max(parseInt(count) || 5, 1), 50);
+    const crawlPages = Math.min(Math.max(parseInt(pages) || 1, 1), 10); // 最多10页
+    const enableDedup = dedup !== false; // 默认开启去重
+    const categoryValue = category || ""; // 手动指定分类
+    const tagsValue = tags || ""; // 手动指定标签（逗号分隔）
+
+    // 创建爬取历史记录
+    const crawlSource = isUrlMode ? url : source;
+    const crawlModeStr = isUrlMode ? (fetchMode || "auto") : (mode || "random");
+    const tagsStr = Array.isArray(tagsValue) ? tagsValue.join(",") : tagsValue;
+
+    const logResult = await query(
+      `INSERT INTO crawl_logs (source, source_url, crawl_mode, category, tags, pages, requested_count, status, operator_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?)`,
+      [
+        isUrlMode ? new URL(url).hostname : source,
+        isUrlMode ? url : (CRAWL_SOURCES.find(s => s.id === source)?.url || ""),
+        crawlModeStr,
+        categoryValue,
+        tagsStr,
+        crawlPages,
+        crawlCount,
+        userId,
+      ]
+    );
+    const crawlLogId = (logResult as any).insertId;
+    const startTime = Date.now();
 
     // 调用 Python 爬虫脚本
     const scriptPath = path.join(process.cwd(), "scripts", "crawl_with_scrapling.py");
@@ -159,9 +203,19 @@ export async function POST(request: NextRequest) {
       fetchMode: fetchMode || "auto",
       count: crawlCount,
       minWidth: parseInt(minWidth) || 800,
+      pages: crawlPages,
+      dedup: enableDedup,
+      category: categoryValue,
+      tags: tagsValue,
     });
 
     if (!crawlResult.success || !crawlResult.results || crawlResult.results.length === 0) {
+      // 更新爬取历史为失败
+      const duration = Math.round((Date.now() - startTime) / 1000);
+      await query(
+        `UPDATE crawl_logs SET status = 'failed', error_message = ?, finished_at = NOW(), duration_seconds = ? WHERE id = ?`,
+        [crawlResult.error || "爬取未返回任何结果", duration, crawlLogId]
+      );
       return NextResponse.json(
         {
           error: crawlResult.error || "爬取未返回任何结果",
@@ -171,6 +225,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 数据库级去重：查询已存在的图片URL，避免重复入库
+    let dedupSkipped = 0;
+    const existingUrls = new Set<string>();
+    if (enableDedup) {
+      const imageUrls = crawlResult.results
+        .map((item: any) => item.image_url)
+        .filter(Boolean) as string[];
+      if (imageUrls.length > 0) {
+        // 分批查询，避免SQL过长
+        const batchSize = 50;
+        for (let i = 0; i < imageUrls.length; i += batchSize) {
+          const batch = imageUrls.slice(i, i + batchSize);
+          const placeholders = batch.map(() => "?").join(",");
+          const existing = await query(
+            `SELECT url FROM images WHERE description LIKE '%[crawl]%' AND url IN (${placeholders})`,
+            batch
+          );
+          for (const row of existing as any[]) {
+            existingUrls.add(row.url);
+          }
+          // 也检查 storage_key
+          const storageKeys = batch.map((url: string) => {
+            const hash = url.split("/").pop() || "";
+            return `images/%${hash}`;
+          });
+        }
+      }
+    }
+
     // 处理爬取结果：下载图片 -> 上传 MinIO -> 写入数据库
     const processedResults = [];
     let successCount = 0;
@@ -178,6 +261,13 @@ export async function POST(request: NextRequest) {
 
     for (const item of crawlResult.results) {
       try {
+        // 数据库级去重检查
+        if (enableDedup && item.image_url && existingUrls.has(item.image_url)) {
+          dedupSkipped++;
+          console.log(`[去重] 跳过已存在的图片: ${item.image_url}`);
+          continue;
+        }
+
         const result = await processCrawledImage(item, userId);
         if (result) {
           processedResults.push(result);
@@ -191,12 +281,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 更新爬取历史为完成
+    const duration = Math.round((Date.now() - startTime) / 1000);
+    await query(
+      `UPDATE crawl_logs SET status = 'completed', success_count = ?, fail_count = ?, dedup_skipped = ?, finished_at = NOW(), duration_seconds = ? WHERE id = ?`,
+      [successCount, failCount, dedupSkipped, duration, crawlLogId]
+    );
+
     return NextResponse.json({
       success: true,
-      message: `爬取完成: 成功 ${successCount} 张, 失败 ${failCount} 张`,
+      message: `爬取完成: 成功 ${successCount} 张, 失败 ${failCount} 张${dedupSkipped > 0 ? `, 去重跳过 ${dedupSkipped} 张` : ""}`,
       total: crawlResult.results.length,
       successCount,
       failCount,
+      dedupSkipped,
       results: processedResults,
     });
   } catch (error: any) {
@@ -224,6 +322,10 @@ function runCrawlScript(
     fetchMode?: string;
     count: number;
     minWidth?: number;
+    pages?: number;
+    dedup?: boolean;
+    category?: string;
+    tags?: string;
   }
 ): Promise<CrawlScriptResult> {
   return new Promise((resolve) => {
@@ -241,6 +343,26 @@ function runCrawlScript(
     }
 
     args.push("--count", String(params.count));
+
+    // 分页参数
+    if (params.pages && params.pages > 1) {
+      args.push("--pages", String(params.pages));
+    }
+
+    // 去重参数
+    if (params.dedup === false) {
+      args.push("--no-dedup");
+    }
+
+    // 手动分类参数
+    if (params.category) {
+      args.push("--category", params.category);
+    }
+
+    // 手动标签参数
+    if (params.tags) {
+      args.push("--tags", params.tags);
+    }
 
     // 尝试找到 Python 可执行文件
     const pythonCmd = process.platform === "win32" ? "python" : "python3";
@@ -315,43 +437,55 @@ async function processCrawledImage(
     width: number;
     height: number;
     filename: string;
+    media_type?: string;
+    poster_url?: string;
+    video_url?: string;
   },
   userId: number
 ): Promise<any | null> {
-  if (!item.image_url) return null;
+  const isVideo = item.media_type === "video";
+  // 视频类型优先使用 video_url（实际视频文件地址），image_url 可能是封面图
+  const downloadUrl = (isVideo && item.video_url) ? item.video_url : item.image_url;
 
-  // 1. 下载图片
-  const imageRes = await fetch(item.image_url, {
+  if (!downloadUrl) return null;
+
+  // 1. 下载图片/视频
+  const imageRes = await fetch(downloadUrl, {
     headers: {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      "Referer": new URL(item.image_url).origin + "/",
     },
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(60000), // 视频文件较大，超时60秒
   });
 
   if (!imageRes.ok) {
-    console.error(`下载图片失败: HTTP ${imageRes.status} - ${item.image_url}`);
+    console.error(`下载失败: HTTP ${imageRes.status} - ${item.image_url}`);
     return null;
   }
 
-  const contentType = imageRes.headers.get("content-type") || "image/jpeg";
+  const contentType = imageRes.headers.get("content-type") || (isVideo ? "video/mp4" : "image/jpeg");
   const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
 
-  // 2. 获取图片尺寸
+  // 2. 获取图片尺寸（视频不处理）
   let width = item.width || 0;
   let height = item.height || 0;
-  try {
-    const metadata = await sharp(imageBuffer).metadata();
-    width = metadata.width || width;
-    height = metadata.height || height;
-  } catch {
-    // sharp 无法解析时使用爬取到的尺寸
+  if (!isVideo) {
+    try {
+      const metadata = await sharp(imageBuffer).metadata();
+      width = metadata.width || width;
+      height = metadata.height || height;
+    } catch {
+      // sharp 无法解析时使用爬取到的尺寸
+    }
   }
 
-  // 3. 上传原图到 MinIO
+  // 3. 上传文件到 MinIO
   const timestamp = Date.now();
-  const safeName = item.filename || `crawled_${timestamp}.jpg`;
-  const storageKey = `images/${timestamp}_${safeName}`;
+  const safeName = item.filename || (isVideo ? `crawled_${timestamp}.mp4` : `crawled_${timestamp}.jpg`);
+  const storageKey = isVideo
+    ? `videos/${timestamp}_${safeName}`
+    : `images/${timestamp}_${safeName}`;
 
   const minioClient = await import("@/lib/minio").then((m) => m.getMinioClient());
   await minioClient.putObject(BUCKET_NAME, storageKey, imageBuffer, imageBuffer.length, {
@@ -360,48 +494,78 @@ async function processCrawledImage(
 
   const storedUrl = `${PUBLIC_URL_BASE}/${BUCKET_NAME}/${storageKey}`;
 
-  // 4. 生成缩略图
+  // 4. 生成缩略图（视频用 poster，静态图片正常生成）
   let thumbnailUrl = "";
-  try {
-    const thumbBuffer = await sharp(imageBuffer)
-      .resize(400, 400, { fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 80 })
-      .toBuffer();
+  let posterStoredUrl = "";
 
-    const thumbResult = await uploadFile(
-      thumbBuffer,
-      `thumb_${timestamp}.webp`,
-      "image/webp"
-    );
-    thumbnailUrl = thumbResult.url;
-  } catch {
-    // 缩略图生成失败不影响主流程
+  if (isVideo) {
+    // 视频类型：使用爬取到的 poster_url 或存储视频URL
+    posterStoredUrl = storedUrl; // 视频文件URL
+    if (item.poster_url) {
+      // 尝试下载封面图作为缩略图
+      try {
+        const posterRes = await fetch(item.poster_url, {
+          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (posterRes.ok) {
+          const posterBuffer = Buffer.from(await posterRes.arrayBuffer());
+          const thumbBuffer = await sharp(posterBuffer)
+            .resize(400, 400, { fit: "inside", withoutEnlargement: true })
+            .webp({ quality: 80 })
+            .toBuffer();
+          const thumbResult = await uploadFile(thumbBuffer, `thumb_${timestamp}.webp`, "image/webp");
+          thumbnailUrl = thumbResult.url;
+        }
+      } catch {
+        // 封面图下载失败不影响主流程
+      }
+    }
+  } else {
+    // 静态图片：正常生成缩略图
+    try {
+      const thumbBuffer = await sharp(imageBuffer)
+        .resize(400, 400, { fit: "inside", withoutEnlargement: true })
+        .webp({ quality: 80 })
+        .toBuffer();
+
+      const thumbResult = await uploadFile(
+        thumbBuffer,
+        `thumb_${timestamp}.webp`,
+        "image/webp"
+      );
+      thumbnailUrl = thumbResult.url;
+    } catch {
+      // 缩略图生成失败不影响主流程
+    }
   }
 
-  // 5. 提取颜色
+  // 5. 提取颜色（仅静态图片）
   let dominantColor: string | null = null;
   let colorPalette: string | null = null;
-  try {
-    const colors = await extractColors(imageBuffer);
-    dominantColor = colors.dominant;
-    colorPalette = JSON.stringify(colors.palette);
-  } catch {
-    // 颜色提取失败不影响主流程
+  if (!isVideo) {
+    try {
+      const colors = await extractColors(imageBuffer);
+      dominantColor = colors.dominant;
+      colorPalette = JSON.stringify(colors.palette);
+    } catch {
+      // 颜色提取失败不影响主流程
+    }
   }
 
-  // 6. 写入数据库
+  // 6. 写入数据库（增加 media_type, video_url, poster_url 字段）
   const tagsStr = Array.isArray(item.tags) ? item.tags.join(",") : (item.tags || "");
-  const description = `[crawl] 从 ${item.source} 爬取 | 源地址: ${item.source_url || item.image_url}`;
+  const description = `[crawl] 从 ${item.source} 爬取 | 源地址: ${item.source_url || item.image_url}${isVideo ? " | 动态壁纸" : ""}`;
 
   const result = await query(
-    `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by, media_type, video_url, poster_url)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      item.title || "爬取壁纸",
+      item.title || `从${item.source}爬取的${isVideo ? "动态壁纸" : "图片"}`,
       description,
       safeName,
       storageKey,
-      storedUrl,
+      isVideo ? (thumbnailUrl || storedUrl) : storedUrl, // 视频的url显示封面/缩略图
       thumbnailUrl || null,
       width,
       height,
@@ -410,10 +574,13 @@ async function processCrawledImage(
       `crawler-${item.source}`,
       tagsStr,
       item.category || "",
-      "approved", // 管理员爬取直接通过审核
+      "approved",
       dominantColor,
       colorPalette,
       userId,
+      isVideo ? "video" : "image",
+      isVideo ? storedUrl : null,     // video_url: 视频文件地址
+      isVideo ? (thumbnailUrl || null) : null, // poster_url: 封面图地址
     ]
   );
 
@@ -421,13 +588,15 @@ async function processCrawledImage(
 
   return {
     id: insertId,
-    title: item.title || "爬取壁纸",
-    url: storedUrl,
+    title: item.title || `从${item.source}爬取的${isVideo ? "动态壁纸" : "图片"}`,
+    url: isVideo ? (thumbnailUrl || storedUrl) : storedUrl,
+    video_url: isVideo ? storedUrl : undefined,
     thumbnail_url: thumbnailUrl,
     width,
     height,
     tags: tagsStr,
     category: item.category,
     source: item.source,
+    media_type: isVideo ? "video" : "image",
   };
 }
