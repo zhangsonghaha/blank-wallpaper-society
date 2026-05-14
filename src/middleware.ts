@@ -51,6 +51,7 @@ export async function middleware(request: NextRequest) {
       "/api/auth/",
       "/api/categories",
       "/api/images",
+      "/api/proxy-image",
     ];
 
     // 管理员/审核员 API - 需要登录但在这里只检查 session，角色验证在 route handler 中

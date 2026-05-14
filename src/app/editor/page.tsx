@@ -49,10 +49,15 @@ function EditorContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const imageUrl = searchParams.get("src") || "";
+  const rawImageUrl = searchParams.get("src") || "";
   const imageWidth = parseInt(searchParams.get("width") || "1920");
   const imageHeight = parseInt(searchParams.get("height") || "1080");
   const imageId = searchParams.get("id") || "";
+
+  // 使用代理 URL 避免 CORS 问题
+  const imageUrl = rawImageUrl
+    ? `/api/proxy-image?url=${encodeURIComponent(rawImageUrl)}`
+    : "";
 
   // 编辑器状态
   const [activeTool, setActiveTool] = useState<ToolType>(null);

@@ -22,6 +22,14 @@ function buildFilterCSS(filter: FilterConfig, values: FilterValues): string {
   return css;
 }
 
+function getFilterDefaultValues(filter: FilterConfig): FilterValues {
+  const defaults: FilterValues = {};
+  for (const param of filter.params) {
+    defaults[param.key] = param.default;
+  }
+  return defaults;
+}
+
 export default function FilterTool({
   activeFilter,
   filterValues,
@@ -52,7 +60,8 @@ export default function FilterTool({
         <div className="grid grid-cols-4 gap-2">
           {FILTER_PRESETS.map((filter) => {
             const isActive = activeFilter.name === filter.name;
-            const previewCSS = buildFilterCSS(filter, filterValues);
+            const previewValues = getFilterDefaultValues(filter);
+            const previewCSS = buildFilterCSS(filter, previewValues);
             return (
               <button
                 key={filter.name}
