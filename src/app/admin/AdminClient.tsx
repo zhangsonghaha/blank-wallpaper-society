@@ -29,6 +29,7 @@ import {
   FolderTree,
   Bell,
   FileText,
+  Bug,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -82,6 +83,7 @@ import UsersTab from "./UsersTab";
 import CategoriesTab from "./CategoriesTab";
 import NotificationsTab from "./NotificationsTab";
 import SettingsTab from "./SettingsTab";
+import CrawlTab from "./CrawlTab";
 
 interface Category {
   id: number;
@@ -242,6 +244,11 @@ export default function AdminClient() {
       id: "settings",
       title: "系统设置",
       icon: <Settings className="w-5 h-5" />,
+    },
+    {
+      id: "crawl",
+      title: "爬虫管理",
+      icon: <Bug className="w-5 h-5" />,
     },
   ];
 
@@ -578,6 +585,9 @@ export default function AdminClient() {
         break;
       case "settings":
         content = <SettingsTab />;
+        break;
+      case "crawl":
+        content = <CrawlTab />;
         break;
       default:
         content = <div className="p-6">功能开发中...</div>;
