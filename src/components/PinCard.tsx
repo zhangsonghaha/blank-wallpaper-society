@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { FolderPlus } from "lucide-react";
+import { FolderPlus, Play } from "lucide-react";
 import type { GalleryImage } from "@/data/images";
 import AddToCollectionDialog from "./AddToCollectionDialog";
 
@@ -26,6 +26,10 @@ export default function PinCard({
   const [isHovered, setIsHovered] = useState(false);
   const [showSaveFeedback, setShowSaveFeedback] = useState(false);
   const [addToCollectionOpen, setAddToCollectionOpen] = useState(false);
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const isVideo = image.media_type === "video" && image.video_url;
 
   const handleFavorite = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -74,27 +78,71 @@ export default function PinCard({
         ease: [0.25, 0.1, 0.25, 1],
       }}
       className="pin-card break-inside-avoid mb-4 group cursor-pointer"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onMouseEnter={() => {
+        setIsHovered(true);
+        if (isVideo && videoRef.current) {
+          setIsVideoPlaying(true);
+          setTimeout(() => videoRef.current?.play().catch(() => {}), 100);
+        }
+      }}
+      onMouseLeave={() => {
+        setIsHovered(false);
+        if (isVideo) {
+          setIsVideoPlaying(false);
+          videoRef.current?.pause();
+        }
+      }}
       onClick={onClick}
     >
       <div className="relative rounded-[var(--radius-md)] overflow-hidden bg-[var(--color-surface-card)] shadow-sm hover:shadow-md transition-shadow duration-300">
-        {/* Image */}
-        <div className="relative" style={{ aspectRatio: `${image.width}/${image.height}` }}>
+        {/* Image / Video */}
+        <div className="relative" style={{ aspectRatio: `${image.width || 16}/${image.height || 9}` }}>
           {/* Loading Skeleton */}
           {!isLoaded && (
             <div className="absolute inset-0 skeleton-pulse bg-[var(--color-surface-card)]" />
           )}
 
-          <img
-            src={image.src}
-            alt={image.title}
-            loading="lazy"
-            onLoad={() => setIsLoaded(true)}
-            className={`pin-card-image w-full h-full object-cover transition-all duration-500 ${
-              isLoaded ? "opacity-100" : "opacity-0"
-            }`}
-          />
+          {isVideo && isVideoPlaying ? (
+            <video
+              ref={videoRef}
+              src={image.video_url}
+              poster={image.poster_url || image.src}
+              autoPlay
+              muted
+              loop
+              playsInline
+              className="w-full h-full object-cover"
+              onLoadedData={() => setIsLoaded(true)}
+            />
+          ) : (
+            <img
+              src={image.src}
+              alt={image.title}
+              loading="lazy"
+              onLoad={() => setIsLoaded(true)}
+              className={`pin-card-image w-full h-full object-cover transition-all duration-500 ${
+                isLoaded ? "opacity-100" : "opacity-0"
+              }`}
+            />
+          )}
+
+          {/* 动态壁纸播放指示器 */}
+          {isVideo && !isVideoPlaying && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
+                <Play className="w-5 h-5 text-white ml-0.5" />
+              </div>
+            </div>
+          )}
+
+          {/* 动态壁纸标签 */}
+          {isVideo && (
+            <div className="absolute top-2 right-2">
+              <span className="text-[10px] font-bold text-white bg-gradient-to-r from-purple-500 to-pink-500 px-1.5 py-0.5 rounded">
+                LIVE
+              </span>
+            </div>
+          )}
 
           {/* Hover Overlay */}
           <AnimatePresence>

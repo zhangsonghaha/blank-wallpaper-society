@@ -33,6 +33,9 @@ interface ImageRecord {
   created_at: string;
   dominant_color?: string | null;
   color_palette?: string | null;
+  media_type?: "image" | "video";
+  video_url?: string | null;
+  poster_url?: string | null;
 }
 
 interface CategoryRecord {
@@ -595,6 +598,9 @@ export default function MasonryGrid() {
                             : [],
                           author: image.author || "未知",
                           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${image.author || image.id}`,
+                          media_type: image.media_type || "image",
+                          video_url: image.video_url || undefined,
+                          poster_url: image.poster_url || undefined,
                         }}
                         index={globalIdx}
                         isFavorited={favorites.has(image.id)}

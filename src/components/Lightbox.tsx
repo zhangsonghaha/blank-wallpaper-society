@@ -390,15 +390,43 @@ export default function Lightbox({
               <div className="w-[500px] h-[600px] rounded-2xl skeleton-pulse bg-white/10" />
             )}
 
-            <img
-              src={currentImage.src}
-              alt={currentImage.title}
-              onLoad={() => setIsLoaded(true)}
-              className={`max-w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl ${
-                isLoaded ? "opacity-100" : "opacity-0 absolute"
-              }`}
-              style={{ maxHeight: "75vh" }}
-            />
+            {/* 动态壁纸或静态图片 */}
+            {currentImage.media_type === "video" && currentImage.video_url ? (
+              <video
+                key={`video-${currentImage.id}`}
+                src={currentImage.video_url}
+                poster={currentImage.poster_url || currentImage.src}
+                autoPlay
+                muted
+                loop
+                playsInline
+                controls
+                onLoadedData={() => setIsLoaded(true)}
+                className={`max-w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl ${
+                  isLoaded ? "opacity-100" : "opacity-0 absolute"
+                }`}
+                style={{ maxHeight: "75vh" }}
+              />
+            ) : (
+              <img
+                src={currentImage.src}
+                alt={currentImage.title}
+                onLoad={() => setIsLoaded(true)}
+                className={`max-w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl ${
+                  isLoaded ? "opacity-100" : "opacity-0 absolute"
+                }`}
+                style={{ maxHeight: "75vh" }}
+              />
+            )}
+
+            {/* 动态壁纸标识 */}
+            {currentImage.media_type === "video" && (
+              <div className="absolute top-3 left-3">
+                <span className="text-xs font-bold text-white bg-gradient-to-r from-purple-500 to-pink-500 px-2 py-1 rounded-full">
+                  LIVE
+                </span>
+              </div>
+            )}
 
             {/* Image Info */}
             <motion.div

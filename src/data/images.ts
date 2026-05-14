@@ -8,6 +8,9 @@ export interface GalleryImage {
   tags: string[];
   author: string;
   avatar: string;
+  media_type?: "image" | "video";
+  video_url?: string;
+  poster_url?: string;
 }
 
 export const categories = [

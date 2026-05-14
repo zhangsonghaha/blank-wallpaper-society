@@ -1,0 +1,327 @@
+
+        const API_BASE_URL = '/_waf/_528d711ff1749436a73410e1b947e0b0.sjs';
+        function t(key, fallback) {
+            const i18n = window.__waf_i18n;
+            if (i18n && typeof i18n.t === 'function') {
+                return i18n.t(key, fallback);
+            }
+            return fallback || '';
+        }
+        function updateCaptchaHeader(container) {
+            const root = container || document;
+            const spans = root.querySelectorAll('.go-captcha .gc-header > span');
+            const text = t('captcha.header', '请完成下方验证');
+            for (const span of spans) {
+                if (span) {
+                    if (span.textContent !== text) {
+                        span.textContent = text;
+                    }
+                }
+            }
+        }
+        function showToast(message, type) {
+            // Remove existing toast if any
+            const existingToast = document.querySelector('.toast');
+            if (existingToast) {
+                existingToast.remove();
+            }
+            // Create new toast
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            // Show toast
+            setTimeout(() => {
+                toast.classList.add('show');
+            }, 10); // Shorter delay to start animation
+            // Hide and remove toast after 3 seconds
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    if (toast.parentNode) { // Check if still in DOM
+                        toast.remove();
+                    }
+                }, 400); // Match transition duration
+            }, 3000); // Increased display time for toast
+        }
+        function toastSuccess(msg) {
+            showToast(msg, 'success');
+        }
+        function toastError(msg) {
+            showToast(msg, 'error');
+        }
+        ; (function (goCaptcha) {
+            if (!goCaptcha || !goCaptcha.SlideRegion) {
+                console.error("GoCaptcha not loaded or SlideRegion method not available.");
+                // Optionally, display an error message to the user on the page
+                const el = document.getElementById("slide-region-wrap");
+                if (el) {
+                    el.innerHTML = '<p style="color: red; text-align: center; padding: 20px;">' +
+                        t('error.component_load', '验证组件加载失败，请刷新页面或联系管理员。') +
+                        '</p>';
+                }
+                return;
+            }
+
+            const getDataApi = "?type=get";
+            const checkDataApi = "?type=check";
+            const el = document.getElementById("slide-region-wrap");
+            const capt = new goCaptcha.SlideRegion({
+                width: 300,
+                height: 220,
+            });
+            var captKey = ''
+            capt.mount(el)
+            let headerUpdateScheduled = false;
+            function scheduleHeaderUpdate() {
+                if (headerUpdateScheduled) return;
+                headerUpdateScheduled = true;
+                requestAnimationFrame(() => {
+                    headerUpdateScheduled = false;
+                    updateCaptchaHeader(el);
+                });
+            }
+            window.__updateCaptchaHeader = function () { scheduleHeaderUpdate(); };
+            scheduleHeaderUpdate();
+            const headerObserver = new MutationObserver(() => scheduleHeaderUpdate());
+            headerObserver.observe(el, { subtree: true, childList: true, characterData: true });
+            capt.setEvents({
+                confirm(dots, reset) {
+                    confirmEvent(dots)
+                },
+                refresh() {
+                    capt.clear()
+                    requestCaptchaData()
+                },
+            })
+            const requestCaptchaData = async function () {
+                capt.clear()
+                captKey = ''
+                try {
+                    const response = await fetch(API_BASE_URL + getDataApi);
+                    if (!response.ok) { // Check for HTTP errors
+                        toastError(t('error.fetch_data', '获取数据失败') + ': ' + response.status);
+                        return;
+                    }
+                    const data = await response.json();
+                    if (data && (data['code'] || 0) === 0) {
+                        capt.setData({
+                            image: data['image_base64'] || '',
+                            thumb: data['tile_base64'] || '',
+                            thumbX: data['tile_x'] || 0,
+                            thumbY: data['tile_y'] || 0,
+                            thumbWidth: data['tile_width'] || 0,
+                            thumbHeight: data['tile_height'] || 0,
+                        })
+
+                        captKey = data['captcha_key'] || ''
+                    } else {
+                        toastError(t('error.fetch_data_failed', '获取验证数据失败') + ': ' + (data['message'] || t('error.unknown', '未知错误')));
+                    }
+                } catch (e) {
+                    console.warn("Error fetching captcha data:", e)
+                    toastError(t('error.network_request', '网络请求失败，请检查连接'));
+                }
+            }
+            const confirmEvent = async function (point) {
+                if (!captKey) {
+                    toastError(t('error.missing_verify_info', '验证信息丢失，请刷新重试'));
+                    requestCaptchaData(); // Attempt to refresh
+                    return;
+                }
+                try {
+                    const response = await fetch(API_BASE_URL + checkDataApi, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: Qs.stringify({
+                            point: [Math.round(point.x), Math.round(point.y)].join(','),
+                            key: captKey || ''
+                        })
+                    });
+                    if (!response.ok) { // Check for HTTP errors
+                        toastError(t('error.verify_request', '验证请求失败') + ': ' + response.status);
+                        setTimeout(() => { requestCaptchaData() }, 500);
+                        return;
+                    }
+                    const data = await response.json();
+                    if (data && (data['code'] || 0) === 0) {
+                        toastSuccess(t('success.verified_reload', '验证成功！页面即将刷新...'));
+                        setTimeout(function () {
+                            location.reload(true);
+                        }, 1500); // Slightly longer for user to read success
+                    } else {
+                        toastError(t('error.verify_failed', '验证失败') + ': ' + (data['message'] || t('tip.retry', '请重试')));
+                        setTimeout(() => { requestCaptchaData() }, 500);
+                    }
+                } catch (e) {
+                    console.warn("Error confirming captcha:", e)
+                    toastError(t('error.verify_network', '验证时发生网络错误'));
+                    setTimeout(() => { requestCaptchaData() }, 500);
+                }
+            }
+            // Initial load
+            if (el) { // Ensure element exists before trying to mount
+                requestCaptchaData();
+            } else {
+                console.error("Captcha container #slide-region-wrap not found.");
+                // Optionally display an error to the user
+            }
+
+        })(window.GoCaptcha || {});
+
+        // New script to set the current year in the footer
+        document.addEventListener('DOMContentLoaded', function () {
+            const yearSpan = document.getElementById('currentYear');
+            if (yearSpan) {
+                yearSpan.textContent = new Date().getFullYear();
+            }
+        });
+
+        const languageResources = {
+            'zh-CN': {
+                'document-title': '验证码中间页 - 哲风科技WAF防护系统',
+                'page-title': '安全验证',
+                'page-subtitle': '完成验证后继续访问',
+                'footer-text': '本站由哲风科技提供安全防护',
+                'lang-toggle-label': '语言',
+                'captcha.header': '请拖动滑块完成验证',
+                'success.verified_reload': '验证成功！页面即将刷新...',
+                'tip.retry': '请重试',
+                'error.component_load': '验证组件加载失败，请刷新页面或联系管理员。',
+                'error.fetch_data': '获取数据失败',
+                'error.fetch_data_failed': '获取验证数据失败',
+                'error.network_request': '网络请求失败，请检查连接',
+                'error.missing_verify_info': '验证信息丢失，请刷新重试',
+                'error.verify_request': '验证请求失败',
+                'error.verify_failed': '验证失败',
+                'error.verify_network': '验证时发生网络错误',
+                'error.unknown': '未知错误'
+            },
+            'zh-TW': {
+                'document-title': '驗證碼中間頁 - 哲风科技WAF防護系統',
+                'page-title': '安全驗證',
+                'page-subtitle': '完成驗證後繼續訪問',
+                'footer-text': '本網站由哲风科技提供安全防護',
+                'lang-toggle-label': '語言',
+                'captcha.header': '請拖動滑塊完成驗證',
+                'success.verified_reload': '驗證成功！頁面即將刷新...',
+                'tip.retry': '請重試',
+                'error.component_load': '驗證組件加載失敗，請刷新頁面或聯繫管理員。',
+                'error.fetch_data': '獲取數據失敗',
+                'error.fetch_data_failed': '獲取驗證數據失敗',
+                'error.network_request': '網絡請求失敗，請檢查連接',
+                'error.missing_verify_info': '驗證信息丟失，請刷新重試',
+                'error.verify_request': '驗證請求失敗',
+                'error.verify_failed': '驗證失敗',
+                'error.verify_network': '驗證時發生網絡錯誤',
+                'error.unknown': '未知錯誤'
+            },
+            'en': {
+                'document-title': 'Verification Page - 哲风科技WAF Security',
+                'page-title': 'Security Check',
+                'page-subtitle': 'Complete the verification to continue',
+                'footer-text': 'This site is protected by 哲风科技 WAF',
+                'lang-toggle-label': 'Language',
+                'captcha.header': 'Drag the slider to verify',
+                'success.verified_reload': 'Verified. Reloading...',
+                'tip.retry': 'Please try again',
+                'error.component_load': 'Verification component failed to load. Please refresh or contact admin.',
+                'error.fetch_data': 'Failed to fetch data',
+                'error.fetch_data_failed': 'Failed to fetch verification data',
+                'error.network_request': 'Network request failed. Please check your connection.',
+                'error.missing_verify_info': 'Verification info missing. Please refresh and retry.',
+                'error.verify_request': 'Verification request failed',
+                'error.verify_failed': 'Verification failed',
+                'error.verify_network': 'Network error during verification',
+                'error.unknown': 'Unknown error'
+            }
+        };
+        function normalizeLang(tag) { return (tag || '').toLowerCase(); }
+        function mapToSupported(tag) {
+            const t = normalizeLang(tag);
+            if (!t) return null;
+            if (t.startsWith('en')) return 'en';
+            if (t.startsWith('zh-cn') || t.startsWith('zh-sg') || t === 'zh' || t.includes('hans')) return 'zh-CN';
+            if (t.startsWith('zh-tw') || t.startsWith('zh-hk') || t.startsWith('zh-mo') || t.includes('hant')) return 'zh-TW';
+            return null;
+        }
+        function detectBrowserLanguage() {
+            const langs = (navigator.languages && navigator.languages.length)
+                ? navigator.languages
+                : [navigator.language || navigator.userLanguage];
+            for (const l of langs) {
+                const m = mapToSupported(l);
+                if (m) return m;
+            }
+            return 'en';
+        }
+        function translate(lang, key, fallback) {
+            const base = languageResources['en'];
+            const res = languageResources[lang] || base;
+            if (res && res[key] != null) return res[key];
+            if (base && base[key] != null) return base[key];
+            return fallback || '';
+        }
+        function setLanguage(lang) {
+            const base = languageResources['en'];
+            const res = languageResources[lang] || base;
+            const r = Object.assign({}, base, res);
+            for (const k in r) {
+                if (k === 'lang-toggle-label') continue;
+                const el = document.getElementById(k);
+                if (el) el.textContent = r[k];
+            }
+            const toggleLabel = document.getElementById('lang-toggle-label');
+            if (toggleLabel) {
+                toggleLabel.textContent = 'Language';
+            }
+            document.documentElement.lang = lang;
+            document.title = r['document-title'] || r['page-title'];
+            window.__waf_i18n = {
+                lang,
+                t: (key, fallback) => translate(lang, key, fallback),
+                setLang: (nextLang) => setLanguage(nextLang)
+            };
+            if (typeof window.__updateCaptchaHeader === 'function') {
+                window.__updateCaptchaHeader();
+            }
+        }
+        function initLanguageSwitcher() {
+            const toggle = document.getElementById('lang-toggle');
+            const menu = document.getElementById('lang-menu');
+            if (!toggle || !menu) return;
+            function closeMenu() {
+                menu.style.display = 'none';
+                menu.setAttribute('data-open', '0');
+            }
+            function openMenu() {
+                menu.style.display = 'flex';
+                menu.setAttribute('data-open', '1');
+            }
+            toggle.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const isOpen = menu.getAttribute('data-open') === '1';
+                if (isOpen) {
+                    closeMenu();
+                } else {
+                    openMenu();
+                }
+            });
+            menu.addEventListener('click', function (e) {
+                const target = e.target;
+                if (!target) return;
+                if (target.tagName !== 'BUTTON') return;
+                const lang = target.getAttribute('data-lang');
+                if (!lang) return;
+                setLanguage(lang);
+                closeMenu();
+            });
+            document.addEventListener('click', function () {
+                closeMenu();
+            });
+        }
+        setLanguage(detectBrowserLanguage());
+        initLanguageSwitcher();
+    

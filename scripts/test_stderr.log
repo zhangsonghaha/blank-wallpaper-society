@@ -1,0 +1,24 @@
+模式: 自适应爬取
+目标URL: https://haowallpaper.com/mobileView
+爬取方式: stealthy
+数量: 5
+[Adaptive] 目标URL: https://haowallpaper.com/mobileView
+[Adaptive] 爬取模式: stealthy
+[Adaptive] 使用隐身浏览器获取: https://haowallpaper.com/mobileView
+[Adaptive] 检测到 WAF 验证页面: Verification Page - 哲风科技WAF Security
+[Adaptive] 未找到滑块元素
+[2026-05-14 23:37:26] INFO: Fetched (418) <GET https://haowallpaper.com/mobileView> (referer: https://www.google.com/)
+[Adaptive] 隐身浏览器获取成功，状态码: 418
+[Adaptive] 页面仍为 WAF 验证页，尝试通过 API 直接绕过...
+[Adaptive] WAF API: https://haowallpaper.com/_waf/_528d711ff1749436a73410e1b947e0b0.sjs
+[Adaptive] 验证码: key=20260514233726965024..., tile=(5, 98)
+[Adaptive] WAF 验证失败(1/3): {'code': 1}
+[Adaptive] 验证码: key=20260514233728778024..., tile=(68, 5)
+[Adaptive] WAF 验证失败(2/3): {'code': 1}
+[Adaptive] 验证码: key=20260514233730535024..., tile=(225, 120)
+[Adaptive] WAF 验证失败(3/3): {'code': 1}
+[Adaptive] WAF 验证所有尝试均失败，返回原始页面
+[Adaptive] 找到 2 个 <img> 标签
+[Adaptive] 找到 0 个 <video> 标签
+[Adaptive] 共提取 0 张图片
+结果已保存到: scripts\test_output.json

@@ -18,6 +18,8 @@ import {
   Link,
   Zap,
   Shield,
+  Layers,
+  Filter,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,6 +43,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 
 /* ==================== 类型定义 ==================== */
 
@@ -61,6 +64,8 @@ interface CrawlResult {
   tags: string;
   category: string;
   source: string;
+  media_type?: "image" | "video";
+  video_url?: string;
 }
 
 interface HistoryRecord {
@@ -73,6 +78,25 @@ interface HistoryRecord {
   tags: string;
   category: string;
   created_at: string;
+}
+
+interface CrawlLog {
+  id: number;
+  source: string;
+  source_url: string | null;
+  crawl_mode: string;
+  category: string | null;
+  tags: string | null;
+  pages: number;
+  requested_count: number;
+  success_count: number;
+  fail_count: number;
+  dedup_skipped: number;
+  status: string;
+  error_message: string | null;
+  started_at: string;
+  finished_at: string | null;
+  duration_seconds: number | null;
 }
 
 type CrawlStatus = "idle" | "crawling" | "processing" | "done" | "error";
@@ -88,6 +112,10 @@ export default function CrawlTab() {
   const [mode, setMode] = useState<"random" | "sequential">("random");
   const [count, setCount] = useState(5);
   const [minWidth, setMinWidth] = useState(800);
+  const [pages, setPages] = useState(1);
+  const [dedup, setDedup] = useState(true);
+  const [manualCategory, setManualCategory] = useState("");
+  const [manualTags, setManualTags] = useState("");
   const [status, setStatus] = useState<CrawlStatus>("idle");
   const [progressText, setProgressText] = useState("");
   const [results, setResults] = useState<CrawlResult[]>([]);
@@ -96,6 +124,8 @@ export default function CrawlTab() {
   const [historyPage, setHistoryPage] = useState(1);
   const [loadingSources, setLoadingSources] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [crawlLogs, setCrawlLogs] = useState<CrawlLog[]>([]);
+  const [crawlLogsTotal, setCrawlLogsTotal] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
 
   /* ==================== 加载爬取源 ==================== */
@@ -127,6 +157,8 @@ export default function CrawlTab() {
         const data = await res.json();
         setHistory(data.history || []);
         setHistoryTotal(data.total || 0);
+        setCrawlLogs(data.crawlLogs || []);
+        setCrawlLogsTotal(data.crawlLogsTotal || 0);
       }
     } catch (err) {
       console.error("加载爬取历史失败:", err);
@@ -179,11 +211,19 @@ export default function CrawlTab() {
                 fetchMode,
                 count,
                 minWidth,
+                pages,
+                dedup,
+                category: manualCategory || undefined,
+                tags: manualTags || undefined,
               }
             : {
                 source: selectedSource,
                 mode,
                 count,
+                pages,
+                dedup,
+                category: manualCategory || undefined,
+                tags: manualTags || undefined,
               }
         ),
       });
@@ -201,7 +241,7 @@ export default function CrawlTab() {
       setResults(data.results || []);
       toast.success(data.message || `爬取完成，成功 ${data.successCount} 张`);
       setProgressText(
-        `成功: ${data.successCount} 张 | 失败: ${data.failCount} 张`
+        `成功: ${data.successCount} 张 | 失败: ${data.failCount} 张${data.dedupSkipped > 0 ? ` | 去重跳过: ${data.dedupSkipped} 张` : ""}`
       );
 
       // 刷新历史记录
@@ -353,7 +393,7 @@ export default function CrawlTab() {
                 {/* 数量 + 最小宽度 */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">爬取数量</Label>
+                    <Label className="text-sm font-medium">每页数量</Label>
                     <Input
                       type="number"
                       min={1}
@@ -380,87 +420,255 @@ export default function CrawlTab() {
                     />
                   </div>
                 </div>
+
+                {/* 分页 + 去重 */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5" />
+                      连续爬取页数
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={pages}
+                      onChange={(e) =>
+                        setPages(Math.min(Math.max(parseInt(e.target.value) || 1, 1), 10))
+                      }
+                      placeholder="1-10"
+                    />
+                    <p className="text-xs text-[var(--color-mute)]">
+                      {pages > 1 ? `将连续爬取 ${pages} 页，预计最多 ${count * pages} 张` : "仅爬取当前页"}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-1.5">
+                      <Filter className="w-3.5 h-3.5" />
+                      去重处理
+                    </Label>
+                    <div className="flex items-center gap-2 h-10">
+                      <Switch
+                        checked={dedup}
+                        onCheckedChange={setDedup}
+                      />
+                      <span className="text-sm">{dedup ? "开启" : "关闭"}</span>
+                    </div>
+                    <p className="text-xs text-[var(--color-mute)]">
+                      {dedup ? "自动跳过已爬取的重复图片" : "不检查重复，可能导入相同图片"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 手动分类和标签 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 bg-muted/30 rounded-lg border border-dashed">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-1.5">
+                      <Tag className="w-3.5 h-3.5" />
+                      手动分类（可选）
+                    </Label>
+                    <Select value={manualCategory || "__auto__"} onValueChange={(v) => setManualCategory(v === "__auto__" ? "" : (v ?? ""))}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="自动识别 / 选择分类" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__auto__">自动识别</SelectItem>
+                        <SelectItem value="自然风光">自然风光</SelectItem>
+                        <SelectItem value="城市建筑">城市建筑</SelectItem>
+                        <SelectItem value="人像摄影">人像摄影</SelectItem>
+                        <SelectItem value="美食">美食</SelectItem>
+                        <SelectItem value="旅行">旅行</SelectItem>
+                        <SelectItem value="艺术">艺术</SelectItem>
+                        <SelectItem value="动物">动物</SelectItem>
+                        <SelectItem value="极简">极简</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-[var(--color-mute)]">
+                      网站无法自动提取分类时，使用此分类
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-1.5">
+                      <Tag className="w-3.5 h-3.5" />
+                      手动标签（可选）
+                    </Label>
+                    <Input
+                      type="text"
+                      value={manualTags}
+                      onChange={(e) => setManualTags(e.target.value)}
+                      placeholder="多个标签用逗号分隔，如：风景,山脉,日落"
+                    />
+                    <p className="text-xs text-[var(--color-mute)]">
+                      网站无法自动提取标签时，追加这些标签
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
           {/* ===== 固定源模式 ===== */}
           {crawlMode === "source" && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">爬取源</Label>
-                {loadingSources ? (
-                  <Skeleton className="h-10 w-full" />
-                ) : (
-                  <Select value={selectedSource} onValueChange={(v) => v && setSelectedSource(v)}>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">爬取源</Label>
+                  {loadingSources ? (
+                    <Skeleton className="h-10 w-full" />
+                  ) : (
+                    <Select value={selectedSource} onValueChange={(v) => v && setSelectedSource(v)}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="选择爬取源" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sources.map((source) => (
+                          <SelectItem key={source.id} value={source.id}>
+                            <div className="flex items-center gap-2">
+                              <Globe className="w-3 h-3" />
+                              {source.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {selectedSource && (
+                    <p className="text-xs text-[var(--color-mute)]">
+                      {sources.find((s) => s.id === selectedSource)?.description}
+                    </p>
+                  )}
+                </div>
+
+                {/* 模式选择 */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">爬取模式</Label>
+                  <Select
+                    value={mode}
+                    onValueChange={(v) => setMode(v as "random" | "sequential")}
+                  >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="选择爬取源" />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {sources.map((source) => (
-                        <SelectItem key={source.id} value={source.id}>
-                          <div className="flex items-center gap-2">
-                            <Globe className="w-3 h-3" />
-                            {source.name}
-                          </div>
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="random">
+                        <div className="flex items-center gap-2">
+                          <Shuffle className="w-3 h-3" />
+                          随机爬取
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="sequential">
+                        <div className="flex items-center gap-2">
+                          <ListOrdered className="w-3 h-3" />
+                          顺序爬取
+                        </div>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
-                )}
-                {selectedSource && (
                   <p className="text-xs text-[var(--color-mute)]">
-                    {sources.find((s) => s.id === selectedSource)?.description}
+                    {mode === "random" ? "随机获取热门壁纸" : "按最新时间顺序获取"}
                   </p>
-                )}
+                </div>
+
+                {/* 数量输入 */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">每页数量</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={count}
+                    onChange={(e) =>
+                      setCount(Math.min(Math.max(parseInt(e.target.value) || 1, 1), 50))
+                    }
+                    placeholder="1-50"
+                  />
+                  <p className="text-xs text-[var(--color-mute)]">
+                    建议 5-20 张，数量越多耗时越长
+                  </p>
+                </div>
               </div>
 
-              {/* 模式选择 */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">爬取模式</Label>
-                <Select
-                  value={mode}
-                  onValueChange={(v) => setMode(v as "random" | "sequential")}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="random">
-                      <div className="flex items-center gap-2">
-                        <Shuffle className="w-3 h-3" />
-                        随机爬取
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="sequential">
-                      <div className="flex items-center gap-2">
-                        <ListOrdered className="w-3 h-3" />
-                        顺序爬取
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-[var(--color-mute)]">
-                  {mode === "random" ? "随机获取热门壁纸" : "按最新时间顺序获取"}
-                </p>
+              {/* 分页 + 去重 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5" />
+                    连续爬取页数
+                  </Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={pages}
+                    onChange={(e) =>
+                      setPages(Math.min(Math.max(parseInt(e.target.value) || 1, 1), 10))
+                    }
+                    placeholder="1-10"
+                  />
+                  <p className="text-xs text-[var(--color-mute)]">
+                    {pages > 1 ? `将连续爬取 ${pages} 页，预计最多 ${count * pages} 张` : "仅爬取当前页"}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium flex items-center gap-1.5">
+                    <Filter className="w-3.5 h-3.5" />
+                    去重处理
+                  </Label>
+                  <div className="flex items-center gap-2 h-10">
+                    <Switch
+                      checked={dedup}
+                      onCheckedChange={setDedup}
+                    />
+                    <span className="text-sm">{dedup ? "开启" : "关闭"}</span>
+                  </div>
+                  <p className="text-xs text-[var(--color-mute)]">
+                    {dedup ? "自动跳过已爬取的重复图片" : "不检查重复，可能导入相同图片"}
+                  </p>
+                </div>
               </div>
 
-              {/* 数量输入 */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">爬取数量</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={count}
-                  onChange={(e) =>
-                    setCount(Math.min(Math.max(parseInt(e.target.value) || 1, 1), 50))
-                  }
-                  placeholder="1-50"
-                />
-                <p className="text-xs text-[var(--color-mute)]">
-                  建议 5-20 张，数量越多耗时越长
-                </p>
+              {/* 手动分类和标签 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 bg-muted/30 rounded-lg border border-dashed">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5" />
+                    手动分类（可选）
+                  </Label>
+                  <Select value={manualCategory || "__auto__"} onValueChange={(v) => setManualCategory(v === "__auto__" ? "" : (v ?? ""))}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="自动识别 / 选择分类" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__auto__">自动识别</SelectItem>
+                      <SelectItem value="自然风光">自然风光</SelectItem>
+                      <SelectItem value="城市建筑">城市建筑</SelectItem>
+                      <SelectItem value="人像摄影">人像摄影</SelectItem>
+                      <SelectItem value="美食">美食</SelectItem>
+                      <SelectItem value="旅行">旅行</SelectItem>
+                      <SelectItem value="艺术">艺术</SelectItem>
+                      <SelectItem value="动物">动物</SelectItem>
+                      <SelectItem value="极简">极简</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-[var(--color-mute)]">
+                    网站无法自动提取分类时，使用此分类
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5" />
+                    手动标签（可选）
+                  </Label>
+                  <Input
+                    type="text"
+                    value={manualTags}
+                    onChange={(e) => setManualTags(e.target.value)}
+                    placeholder="多个标签用逗号分隔，如：风景,山脉,日落"
+                  />
+                  <p className="text-xs text-[var(--color-mute)]">
+                    网站无法自动提取标签时，追加这些标签
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -549,6 +757,12 @@ export default function CrawlTab() {
                         <ImageIcon className="w-8 h-8 text-muted-foreground" />
                       </div>
                     )}
+                    {/* 动态壁纸标识 */}
+                    {item.media_type === "video" && (
+                      <span className="absolute top-1 right-1 text-[9px] font-bold text-white bg-gradient-to-r from-purple-500 to-pink-500 px-1.5 py-0.5 rounded">
+                        LIVE
+                      </span>
+                    )}
                   </div>
                   {/* 信息 */}
                   <div className="p-2 space-y-1">
@@ -615,7 +829,7 @@ export default function CrawlTab() {
             </Button>
           </div>
           <CardDescription>
-            共 {historyTotal} 条爬取记录
+            共 {historyTotal} 条爬取图片 | {crawlLogsTotal} 次爬取任务
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -631,7 +845,7 @@ export default function CrawlTab() {
                 </div>
               ))}
             </div>
-          ) : history.length === 0 ? (
+          ) : history.length === 0 && crawlLogs.length === 0 ? (
             <div className="text-center py-8 text-[var(--color-mute)]">
               <Bug className="w-10 h-10 mx-auto mb-2 opacity-30" />
               <p className="text-sm">暂无爬取记录</p>
@@ -639,82 +853,159 @@ export default function CrawlTab() {
             </div>
           ) : (
             <>
-              <div className="space-y-2">
-                {history.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors"
-                  >
-                    {/* 缩略图 */}
-                    <div className="w-16 h-12 rounded overflow-hidden bg-muted flex-shrink-0">
-                      {item.thumbnail_url ? (
-                        <img
-                          src={item.thumbnail_url}
-                          alt={item.title}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <ImageIcon className="w-4 h-4 text-muted-foreground" />
+              {/* 爬取任务日志 */}
+              {crawlLogs.length > 0 && (
+                <div className="mb-4">
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5" />
+                    爬取任务记录
+                  </h4>
+                  <div className="space-y-2">
+                    {crawlLogs.slice(0, 10).map((log) => (
+                      <div
+                        key={log.id}
+                        className="flex items-center gap-3 p-2 rounded-lg border text-sm"
+                      >
+                        {/* 状态标识 */}
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          log.status === "completed" ? "bg-green-500" :
+                          log.status === "failed" ? "bg-red-500" :
+                          "bg-yellow-500"
+                        }`} />
+                        {/* 任务信息 */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium truncate">{log.source}</span>
+                            {log.category && (
+                              <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                {log.category}
+                              </Badge>
+                            )}
+                            {log.tags && (
+                              <span className="text-[10px] text-muted-foreground truncate max-w-32">
+                                {log.tags}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-[var(--color-mute)]">
+                            <span className="text-green-600">{log.success_count}成功</span>
+                            {log.fail_count > 0 && <span className="text-red-500">{log.fail_count}失败</span>}
+                            {log.dedup_skipped > 0 && <span className="text-yellow-600">{log.dedup_skipped}跳过</span>}
+                            {log.duration_seconds && <span>{log.duration_seconds}秒</span>}
+                            <span>
+                              {new Date(log.started_at).toLocaleDateString("zh-CN", {
+                                month: "2-digit",
+                                day: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                    {/* 信息 */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{item.title}</p>
-                      <div className="flex items-center gap-2 text-xs text-[var(--color-mute)]">
-                        {item.category && <span>{item.category}</span>}
-                        <span>{item.width}x{item.height}</span>
-                        <span>
-                          {new Date(item.created_at).toLocaleDateString("zh-CN", {
-                            month: "2-digit",
-                            day: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
+                        {log.source_url && (
+                          <a
+                            href={log.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
                       </div>
-                    </div>
-                    {/* 查看按钮 */}
-                    <a
-                      href={item.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Button variant="ghost" size="sm">
-                        <ExternalLink className="w-3 h-3" />
-                      </Button>
-                    </a>
-                  </div>
-                ))}
-              </div>
-
-              {/* 分页 */}
-              {historyTotal > 12 && (
-                <div className="flex items-center justify-between pt-4">
-                  <p className="text-xs text-[var(--color-mute)]">
-                    第 {historyPage} 页 / 共 {Math.ceil(historyTotal / 12)} 页
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={historyPage <= 1}
-                      onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
-                    >
-                      上一页
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={historyPage >= Math.ceil(historyTotal / 12)}
-                      onClick={() => setHistoryPage((p) => p + 1)}
-                    >
-                      下一页
-                    </Button>
+                    ))}
                   </div>
                 </div>
+              )}
+
+              {/* 爬取图片列表 */}
+              {history.length > 0 && (
+                <>
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    已爬取图片
+                  </h4>
+                  <div className="space-y-2">
+                    {history.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors"
+                      >
+                        {/* 缩略图 */}
+                        <div className="w-16 h-12 rounded overflow-hidden bg-muted flex-shrink-0">
+                          {item.thumbnail_url ? (
+                            <img
+                              src={item.thumbnail_url}
+                              alt={item.title}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                            </div>
+                          )}
+                        </div>
+                        {/* 信息 */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{item.title}</p>
+                          <div className="flex items-center gap-2 text-xs text-[var(--color-mute)]">
+                            {item.category && <span>{item.category}</span>}
+                            <span>{item.width}x{item.height}</span>
+                            {item.tags && (
+                              <span className="truncate max-w-32">{item.tags.split(",").slice(0, 3).join(", ")}</span>
+                            )}
+                            <span>
+                              {new Date(item.created_at).toLocaleDateString("zh-CN", {
+                                month: "2-digit",
+                                day: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                        {/* 查看按钮 */}
+                        <a
+                          href={item.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Button variant="ghost" size="sm">
+                            <ExternalLink className="w-3 h-3" />
+                          </Button>
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 分页 */}
+                  {historyTotal > 12 && (
+                    <div className="flex items-center justify-between pt-4">
+                      <p className="text-xs text-[var(--color-mute)]">
+                        第 {historyPage} 页 / 共 {Math.ceil(historyTotal / 12)} 页
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={historyPage <= 1}
+                          onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                        >
+                          上一页
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={historyPage >= Math.ceil(historyTotal / 12)}
+                          onClick={() => setHistoryPage((p) => p + 1)}
+                        >
+                          下一页
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
