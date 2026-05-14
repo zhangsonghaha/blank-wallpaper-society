@@ -79,6 +79,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import DashboardTab from "./DashboardTab";
 import ReviewTab from "./ReviewTab";
 import UsersTab from "./UsersTab";
+import CategoriesTab from "./CategoriesTab";
+import NotificationsTab from "./NotificationsTab";
+import SettingsTab from "./SettingsTab";
 
 interface Category {
   id: number;
@@ -564,6 +567,18 @@ export default function AdminClient() {
       case "users":
         content = <UsersTab />;
         break;
+      case "categories":
+        content = <CategoriesTab />;
+        break;
+      case "notifications":
+        content = <NotificationsTab />;
+        break;
+      case "reports":
+        content = <ReviewTab />;
+        break;
+      case "settings":
+        content = <SettingsTab />;
+        break;
       default:
         content = <div className="p-6">功能开发中...</div>;
     }
@@ -860,7 +875,6 @@ export default function AdminClient() {
         initial={false}
         animate={{
           width: sidebarCollapsed ? "80px" : "260px",
-          x: mobileMenuOpen ? 0 : -260,
         }}
         className={`fixed lg:relative top-0 left-0 h-screen bg-white border-r z-50 transition-all duration-300 ${
           mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"

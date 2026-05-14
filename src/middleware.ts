@@ -59,6 +59,8 @@ export async function middleware(request: NextRequest) {
       "/api/admin/review",
       "/api/admin/users",
       "/api/admin/stats",
+      "/api/admin/notifications",
+      "/api/admin/settings",
     ];
 
     // GET /api/images 公开

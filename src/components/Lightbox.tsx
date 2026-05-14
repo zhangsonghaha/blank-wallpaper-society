@@ -781,6 +781,7 @@ export default function Lightbox({
 
       {/* Add to Collection Dialog */}
       <AddToCollectionDialog
+        key={`collection-dialog-${currentImage?.id ?? 0}`}
         open={addToCollectionOpen}
         onOpenChange={setAddToCollectionOpen}
         imageId={currentImage?.id ?? null}
@@ -789,6 +790,7 @@ export default function Lightbox({
       {/* Comment Section */}
       {currentImage && (
         <CommentSection
+          key={`comment-section-${currentImage.id}`}
           imageId={currentImage.id}
           isOpen={commentOpen}
           onClose={() => setCommentOpen(false)}
