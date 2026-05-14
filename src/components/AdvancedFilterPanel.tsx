@@ -333,7 +333,7 @@ export default function AdvancedFilterPanel({
                     <button
                       key={option.value}
                       onClick={() => setLocalSort(option.value as any)}
-                      className={`px-4 py-2 text-sm rounded-xl transition-colors font-medium ${\
+                      className={`px-4 py-2 text-sm rounded-xl transition-colors font-medium ${
                         localSort === option.value
                           ? "bg-[var(--color-primary)] text-white"
                           : "bg-[var(--color-surface-card)] text-[var(--color-ink)] hover:bg-[var(--color-secondary-bg)]"

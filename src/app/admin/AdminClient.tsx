@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Toaster, toast } from "sonner";
 import {
@@ -22,6 +22,13 @@ import {
   LayoutDashboard,
   ShieldCheck,
   Users,
+  X,
+  Menu,
+  PanelLeft,
+  Settings,
+  FolderTree,
+  Bell,
+  FileText,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -120,6 +127,15 @@ const getCategoryLabel = (slug: string, categories: Category[]) => {
   return cat ? cat.name : slug;
 };
 
+// 标签页接口
+interface TabItem {
+  id: string;
+  title: string;
+  icon: React.ReactNode;
+  content: React.ReactNode;
+  closable: boolean;
+}
+
 export default function AdminClient() {
   const [images, setImages] = useState<ImageRecord[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -131,6 +147,20 @@ export default function AdminClient() {
   const [total, setTotal] = useState(0);
   const [selectedImage, setSelectedImage] = useState<ImageRecord | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  
+  // 布局状态
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [tabs, setTabs] = useState<TabItem[]>([
+    {
+      id: "dashboard",
+      title: "仪表盘",
+      icon: <LayoutDashboard className="w-4 h-4" />,
+      content: <DashboardTab />,
+      closable: false,
+    },
+  ]);
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -167,6 +197,400 @@ export default function AdminClient() {
   });
 
   const limit = 12;
+
+  // 菜单配置
+  const menuItems = [
+    {
+      id: "dashboard",
+      title: "仪表盘",
+      icon: <LayoutDashboard className="w-5 h-5" />,
+    },
+    {
+      id: "images",
+      title: "图片管理",
+      icon: <ImageIcon className="w-5 h-5" />,
+    },
+    {
+      id: "review",
+      title: "审核管理",
+      icon: <ShieldCheck className="w-5 h-5" />,
+    },
+    {
+      id: "users",
+      title: "用户管理",
+      icon: <Users className="w-5 h-5" />,
+    },
+    {
+      id: "categories",
+      title: "分类管理",
+      icon: <FolderTree className="w-5 h-5" />,
+    },
+    {
+      id: "notifications",
+      title: "通知管理",
+      icon: <Bell className="w-5 h-5" />,
+    },
+    {
+      id: "reports",
+      title: "举报管理",
+      icon: <FileText className="w-5 h-5" />,
+    },
+    {
+      id: "settings",
+      title: "系统设置",
+      icon: <Settings className="w-5 h-5" />,
+    },
+  ];
+
+  // 切换标签页
+  const switchTab = useCallback((tabId: string) => {
+    const existingTab = tabs.find(tab => tab.id === tabId);
+    if (existingTab) {
+      setActiveTab(tabId);
+      return;
+    }
+
+    // 创建新标签页
+    const menuItem = menuItems.find(item => item.id === tabId);
+    if (!menuItem) return;
+
+    let content: React.ReactNode;
+    switch (tabId) {
+      case "dashboard":
+        content = <DashboardTab />;
+        break;
+      case "images":
+        content = (
+          <div className="space-y-6">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card>
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                    <ImageIcon className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-[var(--color-mute)]">图片总数</p>
+                    <div className="text-xl font-bold">
+                      {loading ? <Skeleton className="w-12 h-6" /> : stats.totalImages}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                    <Eye className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-[var(--color-mute)]">总浏览</p>
+                    <div className="text-xl font-bold">
+                      {loading ? <Skeleton className="w-12 h-6" /> : stats.totalViews}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                    <Heart className="w-5 h-5 text-red-500" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-[var(--color-mute)]">收藏</p>
+                    <div className="text-xl font-bold">
+                      {loading ? <Skeleton className="w-12 h-6" /> : stats.totalFavorites}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                    <FolderOpen className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-[var(--color-mute)]">分类</p>
+                    <div className="text-xl font-bold">
+                      {loading ? <Skeleton className="w-12 h-6" /> : stats.totalCategories}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Main Content */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <CardTitle>图片管理</CardTitle>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:w-64">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-mute)]" />
+                      <Input
+                        placeholder="搜索图片..."
+                        value={searchQuery}
+                        onChange={(e) => {
+                          setSearchQuery(e.target.value);
+                          setPage(1);
+                        }}
+                        className="pl-9 h-9 rounded-full text-sm"
+                      />
+                    </div>
+                    <Select
+                      value={categoryFilter}
+                      onValueChange={(v) => {
+                        if (v) setCategoryFilter(v);
+                        setPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="w-32 h-9 rounded-full text-sm">
+                        <SelectValue placeholder="全部分类" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">全部分类</SelectItem>
+                        {categories.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.slug}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <div className="space-y-3">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                    ))}
+                  </div>
+                ) : images.length === 0 ? (
+                  <div className="text-center py-16">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--color-surface-card)] flex items-center justify-center">
+                      <ImageIcon className="w-8 h-8 text-[var(--color-ash)]" />
+                    </div>
+                    <h3 className="text-lg font-semibold mb-1">还没有图片</h3>
+                    <p className="text-sm text-[var(--color-mute)] mb-4">
+                      点击右上角"上传图片"按钮开始
+                    </p>
+                    <Button
+                      onClick={() => setUploadOpen(true)}
+                      variant="outline"
+                      className="rounded-full"
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      上传第一张图片
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-xl border overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[300px]">图片</TableHead>
+                            <TableHead>分类</TableHead>
+                            <TableHead>尺寸</TableHead>
+                            <TableHead>大小</TableHead>
+                            <TableHead>
+                              <div className="flex items-center gap-1">
+                                <Eye className="w-3.5 h-3.5" /> 浏览
+                              </div>
+                            </TableHead>
+                            <TableHead>上传时间</TableHead>
+                            <TableHead className="w-[80px]">操作</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {images.map((image) => (
+                            <TableRow
+                              key={image.id}
+                              className="cursor-pointer hover:bg-[var(--color-surface-soft)]"
+                              onClick={() => {
+                                setSelectedImage(image);
+                                setDetailOpen(true);
+                              }}
+                            >
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-[var(--color-surface-card)]">
+                                    <img
+                                      src={image.thumbnail_url || image.url}
+                                      alt={image.title}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium truncate max-w-[200px]">
+                                      {image.title}
+                                    </p>
+                                    <p className="text-xs text-[var(--color-mute)] truncate max-w-[200px]">
+                                      {image.author || "未知作者"}
+                                    </p>
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {image.category ? (
+                                  <Badge
+                                    variant="secondary"
+                                    className="rounded-full text-xs"
+                                  >
+                                    {getCategoryLabel(image.category, categories)}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-xs text-[var(--color-mute)]">未分类</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm text-[var(--color-mute)]">
+                                {image.width}×{image.height}
+                              </TableCell>
+                              <TableCell className="text-sm text-[var(--color-mute)]">
+                                {formatSize(image.file_size)}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1 text-sm text-[var(--color-mute)]">
+                                  {image.view_count}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-sm text-[var(--color-mute)]">
+                                {formatDate(image.created_at)}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="w-8 h-8"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleFavorite(image);
+                                    }}
+                                  >
+                                    <Heart
+                                      className={`w-4 h-4 ${
+                                        image.is_favorite
+                                          ? "fill-red-500 text-red-500"
+                                          : "text-[var(--color-mute)]"
+                                      }`}
+                                    />
+                                  </Button>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger className="outline-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--color-surface-card)] transition-colors data-open:bg-[var(--color-surface-card)]">
+                                      <MoreHorizontal className="w-4 h-4 text-[var(--color-mute)]" />
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="rounded-xl">
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        className="cursor-pointer"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openEdit(image);
+                                        }}
+                                      >
+                                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                        编辑
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        className="cursor-pointer"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          window.open(image.url, "_blank");
+                                        }}
+                                      >
+                                        <Download className="w-4 h-4 mr-2" />
+                                        查看原图
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        className="text-red-500 cursor-pointer"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDelete(image);
+                                        }}
+                                      >
+                                        <Trash2 className="w-4 h-4 mr-2" />
+                                        删除
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    <div className="flex items-center justify-between mt-4">
+                      <p className="text-sm text-[var(--color-mute)]">
+                        共 {total} 张图片，第 {page}/{totalPages} 页
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage((p) => Math.max(1, p - 1))}
+                          disabled={page === 1}
+                          className="rounded-full"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                          上一页
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                          disabled={page === totalPages}
+                          className="rounded-full"
+                        >
+                          下一页
+                          <ChevronRight className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        );
+        break;
+      case "review":
+        content = <ReviewTab />;
+        break;
+      case "users":
+        content = <UsersTab />;
+        break;
+      default:
+        content = <div className="p-6">功能开发中...</div>;
+    }
+
+    const newTab: TabItem = {
+      id: tabId,
+      title: menuItem.title,
+      icon: menuItem.icon,
+      content,
+      closable: tabId !== "dashboard",
+    };
+
+    setTabs(prev => [...prev, newTab]);
+    setActiveTab(tabId);
+  }, [tabs]);
+
+  // 关闭标签页
+  const closeTab = useCallback((tabId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (tabId === "dashboard") return;
+
+    setTabs(prev => prev.filter(tab => tab.id !== tabId));
+    if (activeTab === tabId) {
+      const remainingTabs = tabs.filter(tab => tab.id !== tabId);
+      setActiveTab(remainingTabs[remainingTabs.length - 1].id);
+    }
+  }, [activeTab, tabs]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -393,7 +817,7 @@ export default function AdminClient() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--color-surface-soft)]"
+    <div className="min-h-screen bg-[var(--color-surface-soft)] flex overflow-hidden"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -418,359 +842,177 @@ export default function AdminClient() {
         )}
       </AnimatePresence>
 
-      <div className="bg-white border-b sticky top-16 z-30 shadow-sm">
-        <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-[var(--color-ink)]">
-                管理后台
-              </h1>
-              <p className="text-sm text-[var(--color-mute)] mt-0.5">
-                管理你的图片资源
-              </p>
-            </div>
-            <Button
-              onClick={() => setUploadOpen(true)}
-              className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)] rounded-full gap-2"
+      {/* 移动端遮罩 */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setMobileMenuOpen(false)}
+            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* 侧边栏 */}
+      <motion.aside
+        initial={false}
+        animate={{
+          width: sidebarCollapsed ? "80px" : "260px",
+          x: mobileMenuOpen ? 0 : -260,
+        }}
+        className={`fixed lg:relative top-0 left-0 h-screen bg-white border-r z-50 transition-all duration-300 ${
+          mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        }`}
+      >
+        {/* 侧边栏头部 */}
+        <div className="h-16 border-b flex items-center justify-between px-4">
+          {!sidebarCollapsed && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="font-bold text-lg text-[var(--color-ink)]"
             >
-              <Upload className="w-4 h-4" />
-              上传图片
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-6">
-        <Tabs defaultValue="dashboard">
-          <TabsList variant="line" className="mb-6">
-            <TabsTrigger value="dashboard" className="gap-1.5">
-              <LayoutDashboard className="w-4 h-4" />
-              仪表盘
-            </TabsTrigger>
-            <TabsTrigger value="images" className="gap-1.5">
-              <ImageIcon className="w-4 h-4" />
-              图片管理
-            </TabsTrigger>
-            <TabsTrigger value="review" className="gap-1.5">
-              <ShieldCheck className="w-4 h-4" />
-              审核管理
-            </TabsTrigger>
-            <TabsTrigger value="users" className="gap-1.5">
-              <Users className="w-4 h-4" />
-              用户管理
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="dashboard">
-            <DashboardTab />
-          </TabsContent>
-
-          <TabsContent value="review">
-            <ReviewTab />
-          </TabsContent>
-
-          <TabsContent value="users">
-            <UsersTab />
-          </TabsContent>
-
-          <TabsContent value="images">
-          <div className="space-y-6">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                <ImageIcon className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-xs text-[var(--color-mute)]">图片总数</p>
-                <div className="text-xl font-bold">
-                  {loading ? <Skeleton className="w-12 h-6" /> : stats.totalImages}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                <Eye className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-xs text-[var(--color-mute)]">总浏览</p>
-                <div className="text-xl font-bold">
-                  {loading ? <Skeleton className="w-12 h-6" /> : stats.totalViews}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                <Heart className="w-5 h-5 text-red-500" />
-              </div>
-              <div>
-                <p className="text-xs text-[var(--color-mute)]">收藏</p>
-                <div className="text-xl font-bold">
-                  {loading ? <Skeleton className="w-12 h-6" /> : stats.totalFavorites}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-                <FolderOpen className="w-5 h-5 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-xs text-[var(--color-mute)]">分类</p>
-                <div className="text-xl font-bold">
-                  {loading ? <Skeleton className="w-12 h-6" /> : stats.totalCategories}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Main Content */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <CardTitle>图片管理</CardTitle>
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <div className="relative flex-1 sm:w-64">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-mute)]" />
-                  <Input
-                    placeholder="搜索图片..."
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setPage(1);
-                    }}
-                    className="pl-9 h-9 rounded-full text-sm"
-                  />
-                </div>
-                <Select
-                  value={categoryFilter}
-                  onValueChange={(v) => {
-                    if (v) setCategoryFilter(v);
-                    setPage(1);
-                  }}
-                >
-                  <SelectTrigger className="w-32 h-9 rounded-full text-sm">
-                    <SelectValue placeholder="全部分类" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部分类</SelectItem>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.slug}>
-                        {cat.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              管理后台
+            </motion.div>
+          )}
+          {sidebarCollapsed && (
+            <div className="w-full flex justify-center">
+              <PanelLeft className="w-6 h-6 text-[var(--color-primary)]" />
             </div>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-16 w-full rounded-lg" />
-                ))}
-              </div>
-            ) : images.length === 0 ? (
-              <div className="text-center py-16">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--color-surface-card)] flex items-center justify-center">
-                  <ImageIcon className="w-8 h-8 text-[var(--color-ash)]" />
-                </div>
-                <h3 className="text-lg font-semibold mb-1">还没有图片</h3>
-                <p className="text-sm text-[var(--color-mute)] mb-4">
-                  点击右上角"上传图片"按钮开始
-                </p>
-                <Button
-                  onClick={() => setUploadOpen(true)}
-                  variant="outline"
-                  className="rounded-full"
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  上传第一张图片
-                </Button>
-              </div>
-            ) : (
-              <>
-                <div className="rounded-xl border overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[300px]">图片</TableHead>
-                        <TableHead>分类</TableHead>
-                        <TableHead>尺寸</TableHead>
-                        <TableHead>大小</TableHead>
-                        <TableHead>
-                          <div className="flex items-center gap-1">
-                            <Eye className="w-3.5 h-3.5" /> 浏览
-                          </div>
-                        </TableHead>
-                        <TableHead>上传时间</TableHead>
-                        <TableHead className="w-[80px]">操作</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {images.map((image) => (
-                        <TableRow
-                          key={image.id}
-                          className="cursor-pointer hover:bg-[var(--color-surface-soft)]"
-                          onClick={() => {
-                            setSelectedImage(image);
-                            setDetailOpen(true);
-                          }}
-                        >
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-[var(--color-surface-card)]">
-                                <img
-                                  src={image.thumbnail_url || image.url}
-                                  alt={image.title}
-                                  className="w-full h-full object-cover"
-                                />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium truncate max-w-[200px]">
-                                  {image.title}
-                                </p>
-                                <p className="text-xs text-[var(--color-mute)] truncate max-w-[200px]">
-                                  {image.author || "未知作者"}
-                                </p>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {image.category ? (
-                              <Badge
-                                variant="secondary"
-                                className="rounded-full text-xs"
-                              >
-                                {getCategoryLabel(image.category, categories)}
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-[var(--color-mute)]">未分类</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-sm text-[var(--color-mute)]">
-                            {image.width}×{image.height}
-                          </TableCell>
-                          <TableCell className="text-sm text-[var(--color-mute)]">
-                            {formatSize(image.file_size)}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1 text-sm text-[var(--color-mute)]">
-                              {image.view_count}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-sm text-[var(--color-mute)]">
-                            {formatDate(image.created_at)}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="w-8 h-8"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleFavorite(image);
-                                }}
-                              >
-                                <Heart
-                                  className={`w-4 h-4 ${
-                                    image.is_favorite
-                                      ? "fill-red-500 text-red-500"
-                                      : "text-[var(--color-mute)]"
-                                  }`}
-                                />
-                              </Button>
-                              <DropdownMenu>
-                                  <DropdownMenuTrigger className="outline-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--color-surface-card)] transition-colors data-open:bg-[var(--color-surface-card)]">
-                                    <MoreHorizontal className="w-4 h-4 text-[var(--color-mute)]" />
-                                  </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="rounded-xl">
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    className="cursor-pointer"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openEdit(image);
-                                    }}
-                                  >
-                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                    </svg>
-                                    编辑
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    className="cursor-pointer"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      window.open(image.url, "_blank");
-                                    }}
-                                  >
-                                    <Download className="w-4 h-4 mr-2" />
-                                    查看原图
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    className="text-red-500 cursor-pointer"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDelete(image);
-                                    }}
-                                  >
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    删除
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+          )}
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="hidden lg:flex items-center justify-center w-8 h-8 rounded-lg hover:bg-[var(--color-surface-soft)] transition-colors"
+          >
+            <ChevronLeft className={`w-4 h-4 transition-transform ${sidebarCollapsed ? "rotate-180" : ""}`} />
+          </button>
+          <button
+            onClick={() => setMobileMenuOpen(false)}
+            className="lg:hidden flex items-center justify-center w-8 h-8 rounded-lg hover:bg-[var(--color-surface-soft)] transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
 
-                <div className="flex items-center justify-between mt-4">
-                  <p className="text-sm text-[var(--color-mute)]">
-                    共 {total} 张图片，第 {page}/{totalPages} 页
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                      className="rounded-full"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                      上一页
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={page === totalPages}
-                      className="rounded-full"
-                    >
-                      下一页
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  </div>
+        {/* 菜单列表 */}
+        <nav className="p-3 space-y-1">
+          {menuItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => {
+                switchTab(item.id);
+                setMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group ${
+                activeTab === item.id
+                  ? "bg-[var(--color-primary)] text-white"
+                  : "text-[var(--color-mute)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]"
+              }`}
+            >
+              <div className="flex-shrink-0">
+                {item.icon}
+              </div>
+              {!sidebarCollapsed && (
+                <motion.span
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-sm font-medium flex-1 text-left"
+                >
+                  {item.title}
+                </motion.span>
+              )}
+              {sidebarCollapsed && (
+                <div className="absolute left-full ml-2 px-2 py-1 rounded bg-[var(--color-ink)] text-white text-xs opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+                  {item.title}
                 </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </button>
+          ))}
+        </nav>
+      </motion.aside>
+
+      {/* 主内容区 */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* 顶部导航栏 */}
+        <header className="h-16 bg-white border-b sticky top-0 z-30 flex items-center justify-between px-4 lg:px-6">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="lg:hidden flex items-center justify-center w-10 h-10 rounded-lg hover:bg-[var(--color-surface-soft)] transition-colors"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <h1 className="text-xl font-bold text-[var(--color-ink)] hidden lg:block">
+              {menuItems.find(item => item.id === activeTab)?.title || "管理后台"}
+            </h1>
           </div>
-          </TabsContent>
-        </Tabs>
+          <Button
+            onClick={() => setUploadOpen(true)}
+            className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)] rounded-full gap-2"
+          >
+            <Upload className="w-4 h-4" />
+            上传图片
+          </Button>
+        </header>
+
+        {/* 标签页栏 */}
+        <div className="bg-white border-b h-12 flex items-center px-4 overflow-x-auto hide-scrollbar">
+          <style jsx global>{`
+            .hide-scrollbar::-webkit-scrollbar {
+              display: none;
+            }
+            .hide-scrollbar {
+              -ms-overflow-style: none;
+              scrollbar-width: none;
+            }
+          `}</style>
+          <div className="flex items-center gap-1 h-full">
+            {tabs.map((tab) => (
+              <div
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`h-full flex items-center gap-2 px-4 border-b-2 transition-all cursor-pointer group ${
+                  activeTab === tab.id
+                    ? "border-[var(--color-primary)] text-[var(--color-primary)]"
+                    : "border-transparent text-[var(--color-mute)] hover:text-[var(--color-ink)]"
+                }`}
+              >
+                <div className="w-4 h-4 flex-shrink-0">
+                  {tab.icon}
+                </div>
+                <span className="text-sm font-medium whitespace-nowrap">
+                  {tab.title}
+                </span>
+                {tab.closable && (
+                  <button
+                    onClick={(e) => closeTab(tab.id, e)}
+                    className="ml-1 w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-[var(--color-surface-soft)] transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 内容区 */}
+        <main className="flex-1 p-4 lg:p-6 overflow-auto">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="h-full"
+            >
+              {tabs.find(tab => tab.id === activeTab)?.content}
+            </motion.div>
+          </AnimatePresence>
+        </main>
       </div>
 
       {/* Upload Dialog */}
