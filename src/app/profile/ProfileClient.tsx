@@ -34,9 +34,12 @@ import {
   ChevronRight,
   UserPlus,
   UserCheck,
+  Trophy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import LevelBadge from "@/components/LevelBadge";
+import AchievementCard from "@/components/AchievementCard";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -81,6 +84,32 @@ interface FollowStats {
   following: number;
 }
 
+interface LevelData {
+  userId: number;
+  level: number;
+  title: string;
+  exp: number;
+  nextExp: number;
+  prevExp: number;
+  expProgress: number;
+}
+
+interface AchievementData {
+  id: number;
+  slug: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: string;
+  conditionType: string;
+  conditionValue: number;
+  expReward: number;
+  unlocked: boolean;
+  unlockedAt?: string;
+  progress?: number;
+  currentValue?: number;
+}
+
 export default function ProfileClient({
   user,
   stats,
@@ -99,6 +128,11 @@ export default function ProfileClient({
 
   const isAdmin = user.role === "admin";
   const userInitial = user.name?.[0] || user.email?.[0] || "?";
+
+  // 等级与成就
+  const [levelData, setLevelData] = useState<LevelData | null>(null);
+  const [achievements, setAchievements] = useState<AchievementData[]>([]);
+  const [loadingLevel, setLoadingLevel] = useState(true);
 
   // 收藏图片
   const [favoriteImages, setFavoriteImages] = useState<any[]>([]);
@@ -205,6 +239,24 @@ export default function ProfileClient({
   useEffect(() => {
     fetchDownloads(downloadPage);
   }, [downloadPage, fetchDownloads]);
+
+  // 加载等级与成就
+  useEffect(() => {
+    setLoadingLevel(true);
+    fetch("/api/user/level")
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then((data) => {
+        if (data) {
+          setLevelData(data.level);
+          setAchievements(data.achievements?.list || []);
+        }
+        setLoadingLevel(false);
+      })
+      .catch(() => setLoadingLevel(false));
+  }, []);
 
   // 加载关注统计
   const fetchFollowStats = useCallback(() => {
@@ -471,6 +523,28 @@ export default function ProfileClient({
                         {formatDate(user.createdAt)} 加入
                       </Badge>
                     </div>
+                    {/* 等级徽章 + 经验值进度条 */}
+                    {!loadingLevel && levelData && (
+                      <div className="mt-3 space-y-2">
+                        <div className="flex items-center gap-3 justify-center md:justify-start">
+                          <LevelBadge level={levelData.level} title={levelData.title} size="md" />
+                        </div>
+                        <div className="max-w-xs mx-auto md:mx-0">
+                          <div className="flex items-center justify-between text-[10px] text-[var(--color-mute)] mb-1">
+                            <span>EXP {levelData.exp}</span>
+                            <span>{levelData.nextExp}</span>
+                          </div>
+                          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${levelData.expProgress * 100}%` }}
+                              transition={{ duration: 0.8, ease: "easeOut" }}
+                              className="h-full bg-gradient-to-r from-[var(--color-primary)] to-purple-500 rounded-full"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -696,6 +770,10 @@ export default function ProfileClient({
                           {uploadStats.pending}
                         </span>
                       )}
+                    </TabsTrigger>
+                    <TabsTrigger value="achievements">
+                      <Trophy className="w-4 h-4" />
+                      成就
                     </TabsTrigger>
                   </TabsList>
 
@@ -1138,6 +1216,43 @@ export default function ProfileClient({
                             去上传
                           </Link>
                         </div>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  {/* Achievements Tab */}
+                  <TabsContent value="achievements">
+                    <div className="mt-4">
+                      {loadingLevel ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {Array.from({ length: 4 }).map((_, i) => (
+                            <div key={i} className="h-24 rounded-xl skeleton-pulse bg-[var(--color-surface-card)]" />
+                          ))}
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between mb-4">
+                            <p className="text-sm text-[var(--color-mute)]">
+                              已解锁 {achievements.filter((a) => a.unlocked).length} / {achievements.length} 个成就
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {achievements.map((ach) => (
+                              <AchievementCard
+                                key={ach.id}
+                                name={ach.name}
+                                description={ach.description}
+                                icon={ach.icon}
+                                unlocked={ach.unlocked}
+                                unlockedAt={ach.unlockedAt}
+                                progress={ach.progress}
+                                expReward={ach.expReward}
+                                currentValue={ach.currentValue}
+                                conditionValue={ach.conditionValue}
+                              />
+                            ))}
+                          </div>
+                        </>
                       )}
                     </div>
                   </TabsContent>

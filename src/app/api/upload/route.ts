@@ -4,7 +4,15 @@ import { query } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { extractColors } from "@/lib/color-extract";
 import { addWatermark, isWatermarkEnabled, getWatermarkText } from "@/lib/watermark";
+import { computePHash, hammingDistance } from "@/lib/phash";
+import { extractExif, ExifData } from "@/lib/exif";
+import { addExp, checkAchievements } from "@/lib/user-level";
+import { indexImage, dbRowToSearchData } from "@/lib/meilisearch";
+import { generateAndUploadVariants } from "@/lib/image-variants";
 import sharp from "sharp";
+
+// pHash 去重阈值：hamming distance <= 5 判定为重复
+const PHASH_THRESHOLD = 5;
 
 // 每日上传限制
 const DAILY_UPLOAD_LIMIT = 10;
@@ -136,6 +144,36 @@ export async function POST(request: NextRequest) {
         // 缩略图生成失败不影响主流程
       }
 
+      // 计算 pHash 并检测重复
+      let phash: string | null = null;
+      try {
+        phash = await computePHash(imageBuffer);
+        if (phash) {
+          const existingImages = await query(
+            "SELECT id, title, url, thumbnail_url, phash FROM images WHERE phash IS NOT NULL"
+          ) as any[];
+
+          for (const existing of existingImages) {
+            if (existing.phash && hammingDistance(phash, existing.phash) <= PHASH_THRESHOLD) {
+              return NextResponse.json(
+                {
+                  error: "检测到重复图片",
+                  duplicate: {
+                    id: existing.id,
+                    title: existing.title,
+                    url: existing.url,
+                    thumbnail_url: existing.thumbnail_url,
+                  },
+                },
+                { status: 409 }
+              );
+            }
+          }
+        }
+      } catch {
+        // pHash 计算失败不影响主流程
+      }
+
       // 提取颜色信息
       let dominantColor: string | null = null;
       let colorPalette: string | null = null;
@@ -147,13 +185,22 @@ export async function POST(request: NextRequest) {
         // 颜色提取失败不影响主流程
       }
 
+      // 提取 EXIF 数据
+      let exifData: ExifData | null = null;
+      try {
+        exifData = await extractExif(imageBuffer);
+      } catch {
+        // EXIF 提取失败不影响主流程
+      }
+      const exifJson = exifData && Object.keys(exifData).length > 0 ? JSON.stringify(exifData) : null;
+
       // 非管理员上传状态为 pending，管理员为 approved
       const status = isAdmin ? "approved" : "pending";
 
       // 写入数据库
       const result = await query(
-        `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by, phash, exif)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           title || "网络图片",
           description || "",
@@ -172,10 +219,40 @@ export async function POST(request: NextRequest) {
           dominantColor,
           colorPalette,
           userId,
+          phash,
+          exifJson,
         ]
       );
 
       const insertId = (result as any).insertId;
+
+      // 上传成功 → 加经验 + 检查成就（异步不阻塞）
+      addExp(userId, 10).catch(() => {});
+      checkAchievements(userId).catch(() => {});
+
+      // 管理员上传直接 approved → 自动索引到 Meilisearch
+      if (isAdmin) {
+        try {
+          const newImage = await query("SELECT * FROM images WHERE id = ?", [insertId]);
+          if ((newImage as any[]).length > 0) {
+            indexImage(dbRowToSearchData((newImage as any[])[0])).catch(() => {});
+          }
+        } catch {}
+      }
+
+      // 异步生成变体（不阻塞上传响应）
+      if (width > 0 && height > 0) {
+        generateAndUploadVariants(insertId, imageBuffer, width, height)
+          .then(async ({ variants, thumbnails }) => {
+            await query(
+              "UPDATE images SET variants = ?, thumbnails = ? WHERE id = ?",
+              [JSON.stringify(variants), JSON.stringify(thumbnails), insertId]
+            );
+          })
+          .catch((err) => {
+            console.error(`异步生成变体失败 (imageId=${insertId}):`, err);
+          });
+      }
 
       return NextResponse.json(
         {
@@ -259,7 +336,7 @@ export async function POST(request: NextRequest) {
       const watermarkEnabled = await isWatermarkEnabled();
       if (watermarkEnabled) {
         const watermarkText = await getWatermarkText();
-        processedBuffer = await addWatermark(buffer, watermarkText);
+        processedBuffer = Buffer.from(await addWatermark(buffer, watermarkText));
       }
     } catch {
       // 水印处理失败使用原图
@@ -286,6 +363,36 @@ export async function POST(request: NextRequest) {
       // 缩略图生成失败不影响主流程
     }
 
+    // 计算 pHash 并检测重复
+    let phash: string | null = null;
+    try {
+      phash = await computePHash(buffer);
+      if (phash) {
+        const existingImages = await query(
+          "SELECT id, title, url, thumbnail_url, phash FROM images WHERE phash IS NOT NULL"
+        ) as any[];
+
+        for (const existing of existingImages) {
+          if (existing.phash && hammingDistance(phash, existing.phash) <= PHASH_THRESHOLD) {
+            return NextResponse.json(
+              {
+                error: "检测到重复图片",
+                duplicate: {
+                  id: existing.id,
+                  title: existing.title,
+                  url: existing.url,
+                  thumbnail_url: existing.thumbnail_url,
+                },
+              },
+              { status: 409 }
+            );
+          }
+        }
+      }
+    } catch {
+      // pHash 计算失败不影响主流程
+    }
+
     // 提取颜色信息
     let dominantColor: string | null = null;
     let colorPalette: string | null = null;
@@ -296,6 +403,15 @@ export async function POST(request: NextRequest) {
     } catch {
       // 颜色提取失败不影响主流程
     }
+
+    // 提取 EXIF 数据
+    let exifData: ExifData | null = null;
+    try {
+      exifData = await extractExif(buffer);
+    } catch {
+      // EXIF 提取失败不影响主流程
+    }
+    const exifJson = exifData && Object.keys(exifData).length > 0 ? JSON.stringify(exifData) : null;
 
     // 获取表单其他字段
     const title = (formData.get("title") as string) || filename;
@@ -308,8 +424,8 @@ export async function POST(request: NextRequest) {
 
     // 写入数据库
     const result = await query(
-      `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by, phash, exif)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         title,
         description,
@@ -328,10 +444,36 @@ export async function POST(request: NextRequest) {
         dominantColor,
         colorPalette,
         userId,
+        phash,
+        exifJson,
       ]
     );
 
     const insertId = (result as any).insertId;
+
+    // 管理员上传直接 approved → 自动索引到 Meilisearch
+    if (isAdmin) {
+      try {
+        const newImage = await query("SELECT * FROM images WHERE id = ?", [insertId]);
+        if ((newImage as any[]).length > 0) {
+          indexImage(dbRowToSearchData((newImage as any[])[0])).catch(() => {});
+        }
+      } catch {}
+    }
+
+    // 异步生成变体（不阻塞上传响应）
+    if (width > 0 && height > 0) {
+      generateAndUploadVariants(insertId, processedBuffer, width, height)
+        .then(async ({ variants, thumbnails }) => {
+          await query(
+            "UPDATE images SET variants = ?, thumbnails = ? WHERE id = ?",
+            [JSON.stringify(variants), JSON.stringify(thumbnails), insertId]
+          );
+        })
+        .catch((err) => {
+          console.error(`异步生成变体失败 (imageId=${insertId}):`, err);
+        });
+    }
 
     return NextResponse.json(
       {

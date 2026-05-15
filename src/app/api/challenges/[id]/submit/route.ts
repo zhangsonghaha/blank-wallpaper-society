@@ -1,0 +1,86 @@
+import { NextRequest, NextResponse } from "next/server";
+import { query } from "@/lib/db";
+import { auth } from "@/lib/auth";
+
+// POST /api/challenges/[id]/submit - 投稿参赛
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "请先登录" }, { status: 401 });
+    }
+
+    const userId = (session.user as any).id;
+    const { id } = await params;
+    const challengeId = parseInt(id);
+
+    if (isNaN(challengeId)) {
+      return NextResponse.json({ error: "无效的活动ID" }, { status: 400 });
+    }
+
+    const body = await request.json();
+    const { imageId } = body;
+
+    if (!imageId) {
+      return NextResponse.json({ error: "请选择要投稿的图片" }, { status: 400 });
+    }
+
+    // 验证活动存在且正在进行
+    const challenge = (await query(
+      "SELECT * FROM challenges WHERE id = ? AND status = 'active'",
+      [challengeId]
+    )) as any[];
+
+    if (challenge.length === 0) {
+      return NextResponse.json({ error: "活动不存在或未开始" }, { status: 404 });
+    }
+
+    const now = new Date();
+    if (now < new Date(challenge[0].start_time) || now > new Date(challenge[0].end_time)) {
+      return NextResponse.json({ error: "活动未在进行期间" }, { status: 400 });
+    }
+
+    // 验证图片属于当前用户
+    const image = (await query(
+      "SELECT id FROM images WHERE id = ? AND uploaded_by = ? AND status = 'approved'",
+      [imageId, userId]
+    )) as any[];
+
+    if (image.length === 0) {
+      return NextResponse.json({ error: "图片不存在或不属于你" }, { status: 400 });
+    }
+
+    // 检查投稿数量限制
+    const existingSubs = (await query(
+      "SELECT COUNT(*) as count FROM challenge_submissions WHERE challenge_id = ? AND user_id = ?",
+      [challengeId, userId]
+    )) as any[];
+
+    if (existingSubs[0]?.count >= (challenge[0].max_submissions || 3)) {
+      return NextResponse.json({ error: `每人最多投稿${challenge[0].max_submissions || 3}次` }, { status: 400 });
+    }
+
+    // 检查是否重复投稿
+    const duplicate = (await query(
+      "SELECT id FROM challenge_submissions WHERE challenge_id = ? AND user_id = ? AND image_id = ?",
+      [challengeId, userId, imageId]
+    )) as any[];
+
+    if (duplicate.length > 0) {
+      return NextResponse.json({ error: "该图片已投稿" }, { status: 409 });
+    }
+
+    await query(
+      "INSERT INTO challenge_submissions (challenge_id, user_id, image_id) VALUES (?, ?, ?)",
+      [challengeId, userId, imageId]
+    );
+
+    return NextResponse.json({ message: "投稿成功" }, { status: 201 });
+  } catch (error: any) {
+    console.error("POST /api/challenges/[id]/submit error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

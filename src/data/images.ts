@@ -1,3 +1,16 @@
+export interface ExifData {
+  camera?: string;
+  lens?: string;
+  focalLength?: number;
+  aperture?: number;
+  shutterSpeed?: string;
+  iso?: number;
+  dateTaken?: string;
+  gps?: { lat: number; lng: number };
+  orientation?: number;
+  software?: string;
+}
+
 export interface GalleryImage {
   id: number;
   src: string;
@@ -12,6 +25,9 @@ export interface GalleryImage {
   video_url?: string;
   poster_url?: string;
   uploaded_by?: number;
+  exif?: ExifData | null;
+  author_level?: number;
+  author_level_title?: string;
 }
 
 export const categories = [

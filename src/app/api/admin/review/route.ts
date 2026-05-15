@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { query, safeQuery } from "@/lib/db";
+import { indexImage, deleteImage, dbRowToSearchData } from "@/lib/meilisearch";
+import { notifyReviewResult } from "@/lib/notification";
 
 // GET /api/admin/review - 获取待审核图片列表（分页），支持按状态筛选
 export async function GET(request: NextRequest) {
@@ -100,12 +102,14 @@ export async function PATCH(request: NextRequest) {
     }
 
     // 检查图片是否存在
-    const existing = await query("SELECT id, status FROM images WHERE id = ?", [
+    const existing = await query("SELECT id, status, title, uploaded_by FROM images WHERE id = ?", [
       imageId,
     ]);
     if ((existing as any[]).length === 0) {
       return NextResponse.json({ error: "图片不存在" }, { status: 404 });
     }
+
+    const imageInfo = (existing as any[])[0];
 
     const adminId = (session.user as any).id;
     const newStatus = action === "approve" ? "approved" : "rejected";
@@ -119,6 +123,37 @@ export async function PATCH(request: NextRequest) {
         imageId,
       ]
     );
+
+    // 自动同步 Meilisearch 索引
+    try {
+      if (action === "approve") {
+        // 审核通过 → 索引该图片
+        const imageRows = await query("SELECT * FROM images WHERE id = ?", [imageId]);
+        if ((imageRows as any[]).length > 0) {
+          indexImage(dbRowToSearchData((imageRows as any[])[0])).catch(() => {});
+        }
+      } else {
+        // 审核拒绝 → 从索引中删除
+        deleteImage(imageId).catch(() => {});
+      }
+    } catch {
+      // 索引操作失败不影响主流程
+    }
+
+    // 推送审核结果通知给上传者
+    try {
+      if (imageInfo.uploaded_by) {
+        await notifyReviewResult(
+          imageInfo.uploaded_by,
+          imageInfo.title || `图片#${imageId}`,
+          imageId,
+          action === "approve",
+          action === "reject" ? rejectReason?.trim() : undefined
+        );
+      }
+    } catch {
+      // 通知推送失败不影响主流程
+    }
 
     return NextResponse.json({
       message: action === "approve" ? "已通过审核" : "已拒绝",

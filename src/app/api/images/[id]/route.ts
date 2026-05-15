@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { deleteFile } from "@/lib/minio";
 import { auth } from "@/lib/auth";
+import { indexImage, deleteImage as deleteSearchIndex, dbRowToSearchData } from "@/lib/meilisearch";
 
 // GET /api/images/[id] - 获取单张图片
 export async function GET(
@@ -103,6 +104,19 @@ export async function PATCH(
       values
     );
 
+    // 更新 Meilisearch 索引
+    try {
+      const updatedImage = await query("SELECT * FROM images WHERE id = ?", [id]);
+      if ((updatedImage as any[]).length > 0) {
+        const img = (updatedImage as any[])[0];
+        if (img.status === "approved") {
+          indexImage(dbRowToSearchData(img)).catch(() => {});
+        } else {
+          deleteSearchIndex(Number(id)).catch(() => {});
+        }
+      }
+    } catch {}
+
     return NextResponse.json({ success: true, message: "更新成功" });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -137,6 +151,9 @@ export async function DELETE(
 
     // 删除数据库记录
     await query("DELETE FROM images WHERE id = ?", [id]);
+
+    // 从 Meilisearch 索引中删除
+    deleteSearchIndex(Number(id)).catch(() => {});
 
     return NextResponse.json({ message: "删除成功" });
   } catch (error: any) {

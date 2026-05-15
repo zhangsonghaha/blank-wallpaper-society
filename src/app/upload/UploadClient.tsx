@@ -16,6 +16,9 @@ import {
   FolderOpen,
   FileText,
   Info,
+  Sparkles,
+  Camera,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +57,28 @@ const MIN_WIDTH = 1920;
 const MIN_HEIGHT = 1080;
 const DAILY_LIMIT = 10;
 
+interface ExifData {
+  camera?: string;
+  lens?: string;
+  focalLength?: number;
+  aperture?: number;
+  shutterSpeed?: string;
+  iso?: number;
+  dateTaken?: string;
+  gps?: { lat: number; lng: number };
+  orientation?: number;
+  software?: string;
+}
+
+interface SmartFillResult {
+  suggestedTitle: string;
+  suggestedTags: string[];
+  suggestedCategory: string;
+  exif: ExifData;
+  dominantColor: string;
+  colorPalette: string[];
+}
+
 interface PreviewFile {
   file: File;
   preview: string;
@@ -63,6 +88,13 @@ interface PreviewFile {
   tags: string;
   valid: boolean;
   error?: string;
+  // 智能填充相关
+  smartFillLoading: boolean;
+  smartFilled: boolean;
+  suggestedTags: string[];
+  exif: ExifData | null;
+  dominantColor: string;
+  colorPalette: string[];
 }
 
 export default function UploadClient() {
@@ -98,6 +130,70 @@ export default function UploadClient() {
     return { valid: true };
   };
 
+  // 智能填充单个文件
+  const smartFillFile = useCallback(async (index: number) => {
+    setFiles((prev) => {
+      const newFiles = [...prev];
+      newFiles[index] = { ...newFiles[index], smartFillLoading: true };
+      return newFiles;
+    });
+
+    try {
+      const fileItem = files[index];
+      const formData = new FormData();
+      formData.append("file", fileItem.file);
+      if (fileItem.category) {
+        formData.append("category", fileItem.category);
+      }
+
+      const res = await fetch("/api/upload/smart-fill", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error("智能填充请求失败");
+      }
+
+      const data: SmartFillResult = await res.json();
+
+      setFiles((prev) => {
+        const newFiles = [...prev];
+        const current = newFiles[index];
+
+        // 更新表单字段（仅当用户未手动修改时才填充）
+        const updatedTags = current.tags
+          ? current.tags
+          : data.suggestedTags.join(",");
+
+        newFiles[index] = {
+          ...current,
+          title: current.title === current.file.name.replace(/\.[^.]+$/, "") 
+            ? (data.suggestedTitle || current.title)
+            : current.title,
+          category: current.category || data.suggestedCategory || current.category,
+          tags: updatedTags,
+          smartFillLoading: false,
+          smartFilled: true,
+          suggestedTags: data.suggestedTags,
+          exif: data.exif,
+          dominantColor: data.dominantColor,
+          colorPalette: data.colorPalette,
+        };
+        return newFiles;
+      });
+
+      toast.success("智能填充完成");
+    } catch (err) {
+      setFiles((prev) => {
+        const newFiles = [...prev];
+        newFiles[index] = { ...newFiles[index], smartFillLoading: false };
+        return newFiles;
+      });
+      toast.error("智能填充失败");
+    }
+  }, [files]);
+
   const addFiles = useCallback(
     (newFiles: FileList | File[]) => {
       const fileArray = Array.from(newFiles);
@@ -124,13 +220,86 @@ export default function UploadClient() {
           tags: "",
           valid: validation.valid,
           error: validation.error,
+          smartFillLoading: false,
+          smartFilled: false,
+          suggestedTags: [],
+          exif: null,
+          dominantColor: "",
+          colorPalette: [],
         };
       });
 
       setFiles((prev) => [...prev, ...newPreviewFiles]);
+
+      // 自动为每个文件执行智能填充
+      newPreviewFiles.forEach((_, i) => {
+        const globalIndex = files.length + i;
+        setTimeout(() => {
+          autoSmartFill(globalIndex, newPreviewFiles[i].file, newPreviewFiles[i].category);
+        }, 100 * i); // 错开请求，避免并发过多
+      });
     },
     [todayCount, files.length, isAdmin]
   );
+
+  // 自动智能填充（不显示 toast）
+  const autoSmartFill = useCallback(async (index: number, file: File, currentCategory: string) => {
+    setFiles((prev) => {
+      const newFiles = [...prev];
+      if (newFiles[index]) {
+        newFiles[index] = { ...newFiles[index], smartFillLoading: true };
+      }
+      return newFiles;
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (currentCategory) {
+        formData.append("category", currentCategory);
+      }
+
+      const res = await fetch("/api/upload/smart-fill", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error("smart fill failed");
+
+      const data: SmartFillResult = await res.json();
+
+      setFiles((prev) => {
+        const newFiles = [...prev];
+        const current = newFiles[index];
+        if (!current) return prev;
+
+        const defaultTitle = current.file.name.replace(/\.[^.]+$/, "");
+        newFiles[index] = {
+          ...current,
+          title: current.title === defaultTitle 
+            ? (data.suggestedTitle || current.title)
+            : current.title,
+          category: current.category || data.suggestedCategory || current.category,
+          tags: data.suggestedTags.join(","),
+          smartFillLoading: false,
+          smartFilled: true,
+          suggestedTags: data.suggestedTags,
+          exif: data.exif,
+          dominantColor: data.dominantColor,
+          colorPalette: data.colorPalette,
+        };
+        return newFiles;
+      });
+    } catch {
+      setFiles((prev) => {
+        const newFiles = [...prev];
+        if (newFiles[index]) {
+          newFiles[index] = { ...newFiles[index], smartFillLoading: false };
+        }
+        return newFiles;
+      });
+    }
+  }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -181,6 +350,35 @@ export default function UploadClient() {
     });
   };
 
+  // 添加推荐标签
+  const addSuggestedTag = (index: number, tag: string) => {
+    setFiles((prev) => {
+      const newFiles = [...prev];
+      const current = newFiles[index];
+      const existingTags = current.tags
+        ? current.tags.split(",").map((t) => t.trim()).filter(Boolean)
+        : [];
+      if (existingTags.includes(tag)) return prev;
+      existingTags.push(tag);
+      newFiles[index] = { ...current, tags: existingTags.join(",") };
+      return newFiles;
+    });
+  };
+
+  // 移除推荐标签
+  const removeTag = (index: number, tag: string) => {
+    setFiles((prev) => {
+      const newFiles = [...prev];
+      const current = newFiles[index];
+      const existingTags = current.tags
+        ? current.tags.split(",").map((t) => t.trim()).filter(Boolean)
+        : [];
+      const filtered = existingTags.filter((t) => t !== tag);
+      newFiles[index] = { ...current, tags: filtered.join(",") };
+      return newFiles;
+    });
+  };
+
   const handleUpload = async () => {
     const validFiles = files.filter((f) => f.valid);
     if (validFiles.length === 0) {
@@ -213,6 +411,12 @@ export default function UploadClient() {
             title: fileItem.title,
             status: "success",
             message: data.message,
+          });
+        } else if (res.status === 409 && data.duplicate) {
+          results.push({
+            title: fileItem.title,
+            status: "duplicate",
+            message: `与「${data.duplicate.title || "ID:" + data.duplicate.id}」相似度超过95%，已阻止上传`,
           });
         } else {
           results.push({
@@ -286,6 +490,7 @@ export default function UploadClient() {
                     </li>
                   )}
                   <li>非管理员上传的壁纸需经审核后才会公开显示</li>
+                  <li>上传后将自动智能填充标题、标签和分类</li>
                 </ul>
               </div>
             </CardContent>
@@ -396,6 +601,27 @@ export default function UploadClient() {
                               <AlertCircle className="w-8 h-8 text-red-500" />
                             </div>
                           )}
+                          {/* Smart fill loading overlay */}
+                          {fileItem.smartFillLoading && (
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                              <div className="flex flex-col items-center gap-2">
+                                <Loader2 className="w-6 h-6 text-white animate-spin" />
+                                <span className="text-xs text-white">智能分析中...</span>
+                              </div>
+                            </div>
+                          )}
+                          {/* Dominant color indicator */}
+                          {fileItem.dominantColor && !fileItem.smartFillLoading && (
+                            <div className="absolute bottom-2 left-2 flex items-center gap-1">
+                              <div
+                                className="w-4 h-4 rounded-full border border-white/50 shadow-sm"
+                                style={{ backgroundColor: fileItem.dominantColor }}
+                              />
+                              <span className="text-[10px] text-white font-medium drop-shadow-sm">
+                                {fileItem.dominantColor}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Form Fields */}
@@ -406,6 +632,30 @@ export default function UploadClient() {
                               {fileItem.error}
                             </div>
                           )}
+
+                          {/* Smart fill button */}
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => smartFillFile(index)}
+                              disabled={fileItem.smartFillLoading}
+                              className="rounded-full text-xs h-7 gap-1 border-[var(--color-primary)]/30 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/5"
+                            >
+                              {fileItem.smartFillLoading ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Sparkles className="w-3 h-3" />
+                              )}
+                              智能填充
+                            </Button>
+                            {fileItem.smartFilled && (
+                              <span className="text-xs text-green-600 dark:text-green-400">
+                                已自动填充
+                              </span>
+                            )}
+                          </div>
+
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
                               <Label className="text-xs text-[var(--color-mute)]">
@@ -444,6 +694,24 @@ export default function UploadClient() {
                               </Select>
                             </div>
                           </div>
+
+                          {/* EXIF info */}
+                          {fileItem.exif && (fileItem.exif.camera || fileItem.exif.lens || fileItem.exif.focalLength) && (
+                            <div className="flex items-center gap-2 text-xs text-[var(--color-mute)] bg-[var(--color-surface-card)] px-3 py-2 rounded-lg">
+                              <Camera className="w-3.5 h-3.5 shrink-0" />
+                              <span className="truncate">
+                                {[
+                                  fileItem.exif.camera,
+                                  fileItem.exif.lens,
+                                  fileItem.exif.focalLength && `${fileItem.exif.focalLength}mm`,
+                                  fileItem.exif.aperture && `f/${fileItem.exif.aperture}`,
+                                  fileItem.exif.shutterSpeed,
+                                  fileItem.exif.iso && `ISO ${fileItem.exif.iso}`,
+                                ].filter(Boolean).join(" · ")}
+                              </span>
+                            </div>
+                          )}
+
                           <div>
                             <Label className="text-xs text-[var(--color-mute)]">
                               描述
@@ -458,20 +726,75 @@ export default function UploadClient() {
                               rows={2}
                             />
                           </div>
+
+                          {/* Tags as chips */}
                           <div>
                             <Label className="text-xs text-[var(--color-mute)]">
                               <Tag className="w-3 h-3 inline mr-1" />
-                              标签（用逗号分隔）
+                              标签
                             </Label>
+                            {/* Current tags as chips */}
+                            <div className="flex flex-wrap gap-1.5 mt-1.5 mb-2">
+                              {fileItem.tags.split(",").map((t) => t.trim()).filter(Boolean).map((tag) => (
+                                <Badge
+                                  key={tag}
+                                  variant="secondary"
+                                  className="rounded-full text-xs pr-1 gap-0.5 bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+                                >
+                                  {tag}
+                                  <button
+                                    onClick={() => removeTag(index, tag)}
+                                    className="w-4 h-4 rounded-full hover:bg-[var(--color-primary)]/20 flex items-center justify-center"
+                                  >
+                                    <X className="w-2.5 h-2.5" />
+                                  </button>
+                                </Badge>
+                              ))}
+                            </div>
                             <Input
                               value={fileItem.tags}
                               onChange={(e) =>
                                 updateFile(index, "tags", e.target.value)
                               }
-                              placeholder="自然,风景,山脉"
-                              className="mt-1 rounded-lg h-9 text-sm"
+                              placeholder="输入标签，用逗号分隔"
+                              className="rounded-lg h-9 text-sm"
                             />
+                            {/* Suggested tags */}
+                            {fileItem.suggestedTags.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                <span className="text-[10px] text-[var(--color-ash)] mr-1">推荐：</span>
+                                {fileItem.suggestedTags
+                                  .filter((st) => !fileItem.tags.split(",").map((t) => t.trim()).includes(st))
+                                  .map((tag) => (
+                                    <button
+                                      key={tag}
+                                      onClick={() => addSuggestedTag(index, tag)}
+                                      className="inline-flex items-center gap-0.5 text-[10px] px-2 py-0.5 rounded-full border border-dashed border-[var(--color-hairline)] text-[var(--color-mute)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors"
+                                    >
+                                      <Plus className="w-2.5 h-2.5" />
+                                      {tag}
+                                    </button>
+                                  ))}
+                              </div>
+                            )}
                           </div>
+
+                          {/* Color palette */}
+                          {fileItem.colorPalette.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-[var(--color-ash)]">色板：</span>
+                              <div className="flex gap-1">
+                                {fileItem.colorPalette.map((color, i) => (
+                                  <div
+                                    key={i}
+                                    className="w-5 h-5 rounded-full border border-[var(--color-hairline)] shadow-sm"
+                                    style={{ backgroundColor: color }}
+                                    title={color}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </CardContent>
@@ -541,6 +864,8 @@ export default function UploadClient() {
                     >
                       {result.status === "success" ? (
                         <CheckCircle className="w-5 h-5 text-green-500 shrink-0" />
+                      ) : result.status === "duplicate" ? (
+                        <AlertCircle className="w-5 h-5 text-orange-500 shrink-0" />
                       ) : (
                         <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
                       )}
@@ -552,6 +877,8 @@ export default function UploadClient() {
                           className={`text-xs ${
                             result.status === "success"
                               ? "text-green-600"
+                              : result.status === "duplicate"
+                              ? "text-orange-600"
                               : "text-red-500"
                           }`}
                         >
@@ -565,6 +892,14 @@ export default function UploadClient() {
                         >
                           <Clock className="w-3 h-3 mr-1" />
                           待审核
+                        </Badge>
+                      )}
+                      {result.status === "duplicate" && (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 text-orange-600 border-orange-300 bg-orange-50"
+                        >
+                          重复
                         </Badge>
                       )}
                     </div>

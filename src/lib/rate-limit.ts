@@ -1,5 +1,32 @@
 import { query } from "@/lib/db";
 
+// ========== API 套餐配置 ==========
+export const API_TIERS = {
+  free: {
+    name: "免费版",
+    rateLimit: 100, // 次/小时
+    dailyLimit: 1000,
+    price: 0,
+    features: ["基础壁纸搜索", "标准分辨率下载", "100次/小时"],
+  },
+  pro: {
+    name: "专业版",
+    rateLimit: 1000, // 次/小时
+    dailyLimit: 10000,
+    price: 29,
+    features: ["高级搜索过滤", "高清分辨率下载", "1000次/小时", "优先支持"],
+  },
+  enterprise: {
+    name: "企业版",
+    rateLimit: -1, // 无限
+    dailyLimit: -1,
+    price: 99,
+    features: ["无限API调用", "原始分辨率下载", "专属支持", "SLA保障"],
+  },
+} as const;
+
+export type ApiTier = keyof typeof API_TIERS;
+
 // ========== 内存限流存储 ==========
 interface RateLimitEntry {
   count: number;
@@ -173,12 +200,15 @@ export async function findApiKeyByKey(rawKey: string): Promise<{
 }
 
 /**
- * 获取API Key的使用统计
+ * 获取API Key的使用统计（增强版）
  */
 export async function getApiKeyUsageStats(apiKeyId: number): Promise<{
   today: number;
   last7days: number;
   last30days: number;
+  hourlyBreakdown: Array<{ hour: string; count: number }>;
+  errorRate: number;
+  topEndpoints: Array<{ endpoint: string; count: number }>;
 }> {
   const today = (await query(
     "SELECT COUNT(*) as count FROM api_usage_logs WHERE api_key_id = ? AND created_at >= CURDATE()",
@@ -195,10 +225,44 @@ export async function getApiKeyUsageStats(apiKeyId: number): Promise<{
     [apiKeyId]
   )) as any[];
 
+  // 24小时分布
+  const hourlyBreakdown = (await query(
+    `SELECT DATE_FORMAT(created_at, '%Y-%m-%d %H:00') as hour, COUNT(*) as count
+     FROM api_usage_logs
+     WHERE api_key_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+     GROUP BY hour ORDER BY hour`,
+    [apiKeyId]
+  )) as any[];
+
+  // 错误率
+  const errorStats = (await query(
+    `SELECT
+       COUNT(*) as total,
+       SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) as errors
+     FROM api_usage_logs
+     WHERE api_key_id = ? AND created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)`,
+    [apiKeyId]
+  )) as any[];
+  const total7d = errorStats[0]?.total || 0;
+  const errors7d = errorStats[0]?.errors || 0;
+  const errorRate = total7d > 0 ? errors7d / total7d : 0;
+
+  // 热门端点
+  const topEndpoints = (await query(
+    `SELECT endpoint, COUNT(*) as count
+     FROM api_usage_logs
+     WHERE api_key_id = ? AND created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+     GROUP BY endpoint ORDER BY count DESC LIMIT 10`,
+    [apiKeyId]
+  )) as any[];
+
   return {
     today: today[0]?.count || 0,
     last7days: last7[0]?.count || 0,
     last30days: last30[0]?.count || 0,
+    hourlyBreakdown,
+    errorRate: Math.round(errorRate * 10000) / 100, // 百分比，保留2位
+    topEndpoints,
   };
 }
 

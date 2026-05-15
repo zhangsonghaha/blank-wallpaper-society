@@ -1,0 +1,184 @@
+import { NextRequest, NextResponse } from "next/server";
+import { query } from "@/lib/db";
+import { auth } from "@/lib/auth";
+
+// GET /api/daily-wallpaper/personal - 基于用户偏好的个性化每日推荐
+export async function GET(request: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "请先登录" }, { status: 401 });
+    }
+
+    const userId = (session.user as any).id;
+
+    // 1. 统计用户收藏图片的分类偏好
+    const categoryPrefs = (await query(
+      `SELECT i.category, COUNT(*) as cnt
+       FROM favorites f
+       INNER JOIN images i ON f.image_id = i.id
+       WHERE f.user_id = ? AND i.category IS NOT NULL AND i.category != ''
+       GROUP BY i.category
+       ORDER BY cnt DESC
+       LIMIT 5`,
+      [userId]
+    )) as any[];
+
+    // 2. 统计用户收藏图片的标签偏好
+    const tagPrefs = (await query(
+      `SELECT i.tags
+       FROM favorites f
+       INNER JOIN images i ON f.image_id = i.id
+       WHERE f.user_id = ? AND i.tags IS NOT NULL AND i.tags != ''
+       LIMIT 100`,
+      [userId]
+    )) as any[];
+
+    // 提取并统计标签频率
+    const tagCounts: Record<string, number> = {};
+    for (const row of tagPrefs) {
+      if (row.tags) {
+        const tags = row.tags.split(",").map((t: string) => t.trim()).filter(Boolean);
+        for (const tag of tags) {
+          tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+        }
+      }
+    }
+    const topTags = Object.entries(tagCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([tag]) => tag);
+
+    // 3. 获取用户已收藏的图片 ID（用于排除）
+    const favoritedIds = (await query(
+      `SELECT image_id FROM favorites WHERE user_id = ?`,
+      [userId]
+    )) as any[];
+    const excludeIds = favoritedIds.map((r: any) => r.image_id);
+
+    // 4. 基于偏好查询推荐图片
+    let recommendedImages: any[] = [];
+
+    if (categoryPrefs.length > 0) {
+      // 按偏好分类权重查询
+      const categories = categoryPrefs.map((c: any) => c.category);
+      const placeholders = categories.map(() => "?").join(",");
+
+      // 构建标签 LIKE 条件
+      let tagConditions = "";
+      const tagParams: string[] = [];
+      if (topTags.length > 0) {
+        tagConditions = topTags.map(() => " OR i.tags LIKE ?").join("");
+        topTags.forEach((tag) => tagParams.push(`%${tag}%`));
+      }
+
+      const excludePlaceholders = excludeIds.length > 0
+        ? excludeIds.map(() => "?").join(",")
+        : "0";
+
+      let sql = `
+        SELECT i.id, i.title, i.description, i.url, i.thumbnail_url, 
+               i.width, i.height, i.category, i.tags, i.author,
+               i.view_count, i.download_count, i.favorite_count, 
+               i.created_at, i.dominant_color, i.media_type, i.video_url
+        FROM images i
+        WHERE i.status = 'approved'
+          AND i.id NOT IN (${excludePlaceholders})
+          AND (i.category IN (${placeholders})${tagConditions})
+        ORDER BY COALESCE(i.favorite_count, 0) * 5 + COALESCE(i.download_count, 0) * 2 + COALESCE(i.view_count, 0) * 0.1 DESC
+        LIMIT 20
+      `;
+
+      const params = [...excludeIds, ...categories, ...tagParams];
+      recommendedImages = (await query(sql, params)) as any[];
+    }
+
+    // 5. 如果偏好推荐不够，补充热门图片
+    if (recommendedImages.length < 5) {
+      const existingIds = new Set(recommendedImages.map((img: any) => img.id));
+      const allExcludeIds = [...excludeIds, ...Array.from(existingIds)];
+      const excludePlaceholders = allExcludeIds.length > 0
+        ? allExcludeIds.map(() => "?").join(",")
+        : "0";
+
+      const fallbackImages = (await query(
+        `SELECT id, title, description, url, thumbnail_url, 
+                width, height, category, tags, author,
+                view_count, download_count, favorite_count, 
+                created_at, dominant_color, media_type, video_url
+         FROM images
+         WHERE status = 'approved'
+           AND id NOT IN (${excludePlaceholders})
+         ORDER BY COALESCE(favorite_count, 0) * 5 + COALESCE(download_count, 0) * 2 + COALESCE(view_count, 0) * 0.1 DESC
+         LIMIT ?`,
+        [...allExcludeIds, String(10 - recommendedImages.length)]
+      )) as any[];
+
+      recommendedImages = [...recommendedImages, ...fallbackImages];
+    }
+
+    // 6. 使用日期 seed 从候选中选取 5 张
+    const today = new Date().toISOString().split("T")[0];
+    const seed = hashCode(today + String(userId));
+    const selected = seededPick(recommendedImages, seed, 5);
+
+    return NextResponse.json({
+      success: true,
+      date: today,
+      recommendations: selected,
+      preferences: {
+        categories: categoryPrefs.map((c: any) => ({
+          name: c.category,
+          count: c.cnt,
+        })),
+        tags: topTags.slice(0, 5),
+      },
+    });
+  } catch (error: any) {
+    console.error("GET /api/daily-wallpaper/personal error:", error);
+    return NextResponse.json(
+      { error: error.message || "获取个性化推荐失败" },
+      { status: 500 }
+    );
+  }
+}
+
+/** 简单 hash 函数 */
+function hashCode(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+/** 基于种子选取指定数量的图片 */
+function seededPick(images: any[], seed: number, count: number): any[] {
+  if (images.length <= count) return images;
+
+  let s = seed;
+  const nextRandom = () => {
+    s = (s * 1664525 + 1013904223) & 0xffffffff;
+    return (s >>> 0) / 0xffffffff;
+  };
+
+  const selected: any[] = [];
+  const usedIndices = new Set<number>();
+
+  for (let i = 0; i < count; i++) {
+    let idx = Math.floor(nextRandom() * images.length);
+    let attempts = 0;
+    while (usedIndices.has(idx) && attempts < 100) {
+      idx = Math.floor(nextRandom() * images.length);
+      attempts++;
+    }
+    if (!usedIndices.has(idx)) {
+      usedIndices.add(idx);
+      selected.push(images[idx]);
+    }
+  }
+
+  return selected;
+}

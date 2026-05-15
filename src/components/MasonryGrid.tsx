@@ -9,9 +9,22 @@ import ColorSearch from "./ColorSearch";
 import AdvancedFilterPanel from "./AdvancedFilterPanel";
 import { useSearch } from "@/context/SearchContext";
 import Link from "next/link";
-import { ChevronRight, Users, Image as ImageIcon, Filter } from "lucide-react";
+import { ChevronRight, Users, Image as ImageIcon, Filter, Sparkles } from "lucide-react";
 import HotRankings from "./HotRankings";
 import RecommendForYou from "./RecommendForYou";
+
+interface ExifData {
+  camera?: string;
+  lens?: string;
+  focalLength?: number;
+  aperture?: number;
+  shutterSpeed?: string;
+  iso?: number;
+  dateTaken?: string;
+  gps?: { lat: number; lng: number };
+  orientation?: number;
+  software?: string;
+}
 
 interface ImageRecord {
   id: number;
@@ -37,6 +50,9 @@ interface ImageRecord {
   video_url?: string | null;
   poster_url?: string | null;
   uploaded_by?: number | null;
+  exif?: string | ExifData | null;
+  author_level?: number | null;
+  author_level_title?: string | null;
 }
 
 interface CategoryRecord {
@@ -74,6 +90,8 @@ export default function MasonryGrid() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [authorLevels, setAuthorLevels] = useState<Record<number, { level: number; title: string }>>({});
+  const [searchEngine, setSearchEngine] = useState<string>("");
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [totalCount, setTotalCount] = useState(0);
   const favoritesRef = useRef<HTMLDivElement>(null);
@@ -159,6 +177,7 @@ export default function MasonryGrid() {
         .then((data) => {
           setImages(data.data || []);
           setTotalCount(data.total || 0);
+          setSearchEngine(data._searchEngine || "");
           setVisibleCount(ITEMS_PER_PAGE);
           setLoading(false);
         })
@@ -181,6 +200,20 @@ export default function MasonryGrid() {
       })
       .catch(() => {});
   }, []);
+
+  // 批量获取作者等级信息
+  useEffect(() => {
+    if (images.length === 0) return;
+    const authorIds = [...new Set(images.map((img) => img.uploaded_by).filter(Boolean))] as number[];
+    if (authorIds.length === 0) return;
+
+    fetch(`/api/user/level/batch?ids=${authorIds.join(",")}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.data) setAuthorLevels(data.data);
+      })
+      .catch(() => {});
+  }, [images]);
 
   // 同步收藏数量到 Context
   useEffect(() => {
@@ -318,21 +351,33 @@ export default function MasonryGrid() {
   // 转换为 GalleryImage 格式供 Lightbox 使用
   const lightboxImages = useMemo(
     () =>
-      filteredImages.map((img) => ({
-        id: img.id,
-        src: img.url,
-        width: img.width || 600,
-        height: img.height || 800,
-        title: img.title,
-        description: img.description,
-        tags: img.tags ? img.tags.split(",").map((t) => t.trim()) : [],
-        author: img.author || "未知",
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${img.author || img.id}`,
-        media_type: img.media_type || "image",
-        video_url: img.video_url || undefined,
-        poster_url: img.poster_url || undefined,
-        uploaded_by: img.uploaded_by || undefined,
-      })),
+      filteredImages.map((img) => {
+        // 解析 exif JSON
+        let parsedExif: ExifData | null = null;
+        if (img.exif) {
+          try {
+            parsedExif = typeof img.exif === "string" ? JSON.parse(img.exif) : img.exif;
+          } catch {
+            parsedExif = null;
+          }
+        }
+        return {
+          id: img.id,
+          src: img.url,
+          width: img.width || 600,
+          height: img.height || 800,
+          title: img.title,
+          description: img.description,
+          tags: img.tags ? img.tags.split(",").map((t) => t.trim()) : [],
+          author: img.author || "未知",
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${img.author || img.id}`,
+          media_type: img.media_type || "image",
+          video_url: img.video_url || undefined,
+          poster_url: img.poster_url || undefined,
+          uploaded_by: img.uploaded_by || undefined,
+          exif: parsedExif,
+        };
+      }),
     [filteredImages]
   );
 
@@ -419,6 +464,12 @@ export default function MasonryGrid() {
                 </span>
               )}
               <span>共找到 <strong>{totalCount}</strong> 张图片</span>
+              {searchEngine === "meilisearch" && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-[10px] font-bold rounded-full">
+                  <Sparkles className="w-3 h-3" />
+                  智能搜索
+                </span>
+              )}
               <button
                 onClick={() => {
                   setSearchQuery("");
@@ -606,6 +657,9 @@ export default function MasonryGrid() {
                           media_type: image.media_type || "image",
                           video_url: image.video_url || undefined,
                           poster_url: image.poster_url || undefined,
+                          uploaded_by: image.uploaded_by || undefined,
+                          author_level: image.uploaded_by != null && authorLevels[image.uploaded_by] ? authorLevels[image.uploaded_by].level : undefined,
+                          author_level_title: image.uploaded_by != null && authorLevels[image.uploaded_by] ? authorLevels[image.uploaded_by].title : undefined,
                         }}
                         index={globalIdx}
                         isFavorited={favorites.has(image.id)}

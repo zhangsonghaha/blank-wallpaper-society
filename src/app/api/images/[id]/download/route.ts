@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { getObject, objectExists, putBuffer, getPublicUrl } from "@/lib/minio";
 import { getResizedKey, RESOLUTION_MAP } from "@/lib/resolutions";
+import { addExp, checkAchievements } from "@/lib/user-level";
+import { findBestVariantForResolution, VariantInfo } from "@/lib/image-variants";
 import sharp from "sharp";
 
 // GET /api/images/[id]/download?resolution=1920x1080 - 下载指定分辨率的图片
@@ -25,6 +27,12 @@ export async function GET(
 
     // 增加下载计数
     await query("UPDATE images SET download_count = download_count + 1 WHERE id = ?", [id]);
+
+    // 下载成功 → 图片作者 +2 exp + 检查成就（异步不阻塞）
+    if (image.uploaded_by) {
+      addExp(image.uploaded_by, 2).catch(() => {});
+      checkAchievements(image.uploaded_by).catch(() => {});
+    }
 
     // 记录下载日志（异步不阻塞）
     const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() 
@@ -57,35 +65,51 @@ export async function GET(
         );
       }
 
-      const resizedKey = getResizedKey(
-        image.storage_key,
-        resInfo.width,
-        resInfo.height
-      );
+      // 优先使用预生成变体
+      const variantsInfo = image.variants ? (typeof image.variants === 'string' ? JSON.parse(image.variants) : image.variants) : null;
+      const matchedVariant = findBestVariantForResolution(resInfo.width, resInfo.height, variantsInfo);
 
-      // 检查缓存是否存在
-      const exists = await objectExists(resizedKey);
-      if (exists) {
-        buffer = await getObject(resizedKey);
+      if (matchedVariant) {
+        // 预生成变体存在，从 MinIO 获取变体文件
+        const publicUrlBase = getPublicUrl("");
+        const variantStorageKey = matchedVariant.url
+          .replace(publicUrlBase + "/", "")
+          .replace(publicUrlBase, "");
+        buffer = await getObject(variantStorageKey);
+        mimeType = "image/webp";
+        fileName = `${image.title || "image"}_${resolution}.webp`;
       } else {
-        // 实时生成
-        const originalBuffer = await getObject(image.storage_key);
-        buffer = await sharp(originalBuffer)
-          .resize(resInfo.width, resInfo.height, {
-            fit: "cover",
-            position: "center",
-          })
-          .webp({ quality: 90 })
-          .toBuffer();
+        // 回退到实时生成（旧图片无变体时的兼容逻辑）
+        const resizedKey = getResizedKey(
+          image.storage_key,
+          resInfo.width,
+          resInfo.height
+        );
 
-        // 异步缓存（不阻塞响应）
-        putBuffer(buffer, resizedKey, "image/webp").catch((err) => {
-          console.error("缓存缩放图失败:", err);
-        });
+        // 检查缓存是否存在
+        const exists = await objectExists(resizedKey);
+        if (exists) {
+          buffer = await getObject(resizedKey);
+        } else {
+          // 实时生成
+          const originalBuffer = await getObject(image.storage_key);
+          buffer = await sharp(originalBuffer)
+            .resize(resInfo.width, resInfo.height, {
+              fit: "cover",
+              position: "center",
+            })
+            .webp({ quality: 90 })
+            .toBuffer();
+
+          // 异步缓存（不阻塞响应）
+          putBuffer(buffer, resizedKey, "image/webp").catch((err) => {
+            console.error("缓存缩放图失败:", err);
+          });
+        }
+
+        mimeType = "image/webp";
+        fileName = `${image.title || "image"}_${resolution}.webp`;
       }
-
-      mimeType = "image/webp";
-      fileName = `${image.title || "image"}_${resolution}.webp`;
     } else {
       // 下载原文件（视频或无分辨率参数的图片）
       buffer = await getObject(image.storage_key);

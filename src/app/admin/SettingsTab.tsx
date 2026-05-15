@@ -12,6 +12,10 @@ import {
   Paintbrush,
   UserCheck,
   Key,
+  Search,
+  RefreshCw,
+  Trash2,
+  Database,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -134,6 +138,17 @@ export default function SettingsTab() {
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
+  /* ==================== 搜索管理状态 ==================== */
+  const [searchAvailable, setSearchAvailable] = useState(false);
+  const [searchStats, setSearchStats] = useState<{
+    numberOfDocuments: number;
+    isIndexing: boolean;
+    lastUpdate: string;
+  } | null>(null);
+  const [dbTotal, setDbTotal] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+
   /* ==================== 数据加载 ==================== */
 
   const loadData = useCallback(async () => {
@@ -161,6 +176,60 @@ export default function SettingsTab() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  /* ==================== 搜索管理数据加载 ==================== */
+
+  const loadSearchStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/search-sync");
+      if (!res.ok) return;
+      const data = await res.json();
+      setSearchAvailable(data.available);
+      setSearchStats(data.stats);
+      setDbTotal(data.dbTotal || 0);
+    } catch {
+      setSearchAvailable(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSearchStats();
+  }, [loadSearchStats]);
+
+  const handleSyncIndex = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/admin/search-sync", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`同步完成，已索引 ${data.synced} 张图片`);
+        loadSearchStats();
+      } else {
+        toast.error("同步失败", { description: data.error });
+      }
+    } catch {
+      toast.error("同步失败");
+    }
+    setSyncing(false);
+  };
+
+  const handleRebuildIndex = async () => {
+    if (!confirm("确定要重建索引吗？这会清空现有索引并重新同步所有图片。")) return;
+    setRebuilding(true);
+    try {
+      const res = await fetch("/api/admin/search-sync", { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`索引重建完成，已索引 ${data.synced} 张图片`);
+        loadSearchStats();
+      } else {
+        toast.error("重建失败", { description: data.error });
+      }
+    } catch {
+      toast.error("重建失败");
+    }
+    setRebuilding(false);
+  };
 
   /* ==================== 设置修改 ==================== */
 
@@ -354,6 +423,111 @@ export default function SettingsTab() {
           })}
         </div>
       )}
+
+      {/* Meilisearch 搜索管理 */}
+      <Card>
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-[var(--color-surface-card)] flex items-center justify-center">
+              <Search className="w-5 h-5 text-[var(--color-mute)]" />
+            </div>
+            <div>
+              <CardTitle className="text-base">搜索服务 (Meilisearch)</CardTitle>
+              <CardDescription className="text-xs">
+                全文搜索引擎配置与索引管理
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* 连接状态 */}
+          <div className="flex items-center gap-2">
+            <div className={`w-2.5 h-2.5 rounded-full ${searchAvailable ? "bg-emerald-500" : "bg-red-400"}`} />
+            <span className="text-sm">
+              {searchAvailable ? "Meilisearch 已连接" : "Meilisearch 未连接"}
+            </span>
+            <button
+              onClick={loadSearchStats}
+              className="ml-auto text-xs text-[var(--color-mute)] hover:text-[var(--color-ink)] transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {searchAvailable && searchStats && (
+            <>
+              {/* 索引统计 */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-[var(--color-surface-card)]">
+                  <div className="text-xs text-[var(--color-mute)] mb-1">索引文档数</div>
+                  <div className="text-lg font-bold text-[var(--color-ink)]">
+                    {searchStats.numberOfDocuments.toLocaleString()}
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg bg-[var(--color-surface-card)]">
+                  <div className="text-xs text-[var(--color-mute)] mb-1">数据库图片数</div>
+                  <div className="text-lg font-bold text-[var(--color-ink)]">
+                    {dbTotal.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              {/* 同步状态 */}
+              <div className="flex items-center gap-2 text-xs text-[var(--color-mute)]">
+                <Database className="w-3.5 h-3.5" />
+                {searchStats.isIndexing ? (
+                  <span className="text-amber-500">正在索引中...</span>
+                ) : searchStats.numberOfDocuments === dbTotal ? (
+                  <span className="text-emerald-600">索引已同步</span>
+                ) : (
+                  <span className="text-amber-500">
+                    未同步 ({dbTotal - searchStats.numberOfDocuments} 张待同步)
+                  </span>
+                )}
+                {searchStats.lastUpdate && (
+                  <span className="ml-auto">
+                    更新于 {new Date(searchStats.lastUpdate).toLocaleString("zh-CN")}
+                  </span>
+                )}
+              </div>
+
+              {/* 操作按钮 */}
+              <div className="flex items-center gap-2 pt-2">
+                <Button
+                  onClick={handleSyncIndex}
+                  disabled={syncing || rebuilding}
+                  variant="outline"
+                  className="rounded-full"
+                  size="sm"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? "animate-spin" : ""}`} />
+                  {syncing ? "同步中..." : "同步索引"}
+                </Button>
+                <Button
+                  onClick={handleRebuildIndex}
+                  disabled={syncing || rebuilding}
+                  variant="outline"
+                  className="rounded-full text-red-600 hover:text-red-700 hover:bg-red-50"
+                  size="sm"
+                >
+                  <Trash2 className={`w-3.5 h-3.5 mr-1.5 ${rebuilding ? "animate-spin" : ""}`} />
+                  {rebuilding ? "重建中..." : "重建索引"}
+                </Button>
+              </div>
+            </>
+          )}
+
+          {!searchAvailable && (
+            <div className="p-3 rounded-lg bg-amber-50 text-amber-700 text-xs">
+              <p className="font-medium mb-1">Meilisearch 未配置或不可用</p>
+              <p className="text-amber-600">
+                请确保已设置环境变量 MEILISEARCH_HOST 和 MEILISEARCH_API_KEY，
+                并且 Meilisearch 服务已启动。未配置时搜索将使用数据库 LIKE 查询。
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

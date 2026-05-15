@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import type { GalleryImage } from "@/data/images";
-import { Flag, Download, ChevronDown, Monitor, Smartphone, Tablet, X, FolderPlus, Pencil, Calendar, MessageCircle, Sparkles, UserPlus, UserCheck } from "lucide-react";
+import { Flag, Download, ChevronDown, Monitor, Smartphone, Tablet, X, FolderPlus, Pencil, Calendar, MessageCircle, Sparkles, UserPlus, UserCheck, Camera, ChevronUp, MonitorSmartphone } from "lucide-react";
+import DeviceMockup, { type DeviceType } from "./DeviceMockup";
+import DeviceSelector from "./DeviceSelector";
 import Link from "next/link";
 import AddToCollectionDialog from "./AddToCollectionDialog";
 import CommentSection from "./CommentSection";
@@ -61,6 +63,11 @@ export default function Lightbox({
   const [addToCollectionOpen, setAddToCollectionOpen] = useState(false);
   const [commentOpen, setCommentOpen] = useState(false);
   const [similarOpen, setSimilarOpen] = useState(false);
+  const [exifOpen, setExifOpen] = useState(false);
+
+  // 设备预览状态
+  const [devicePreview, setDevicePreview] = useState(false);
+  const [selectedDevice, setSelectedDevice] = useState<DeviceType>("desktop");
 
   const isFavorited = favoritedIds?.has(currentImage?.id) ?? false;
 
@@ -147,17 +154,21 @@ export default function Lightbox({
       if (downloadPanelOpen || reportOpen) return;
       switch (e.key) {
         case "Escape":
-          onClose();
+          if (devicePreview) {
+            setDevicePreview(false);
+          } else {
+            onClose();
+          }
           break;
         case "ArrowLeft":
-          onPrev();
+          if (!devicePreview) onPrev();
           break;
         case "ArrowRight":
-          onNext();
+          if (!devicePreview) onNext();
           break;
       }
     },
-    [isOpen, onClose, onPrev, onNext, downloadPanelOpen, reportOpen]
+    [isOpen, onClose, onPrev, onNext, downloadPanelOpen, reportOpen, devicePreview]
   );
 
   useEffect(() => {
@@ -182,6 +193,7 @@ export default function Lightbox({
     setDownloadPanelOpen(false);
     setDownloadingRes(null);
     setDownloadProgress(0);
+    setDevicePreview(false);
   }, [currentIndex]);
 
   // 获取作者关注状态
@@ -445,47 +457,88 @@ export default function Lightbox({
             className="relative max-w-[90vw] max-h-[85vh] flex flex-col items-center"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Loading Skeleton */}
-            {!isLoaded && (
-              <div className="w-[500px] h-[600px] rounded-2xl skeleton-pulse bg-white/10" />
+            {/* 设备预览切换按钮 */}
+            {!devicePreview && currentImage.media_type !== "video" && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setDevicePreview(true); }}
+                className="absolute top-3 right-3 z-10 px-3 py-1.5 flex items-center gap-1.5 rounded-full bg-black/50 text-white/80 text-xs font-medium hover:bg-black/70 hover:text-white transition-colors backdrop-blur-sm"
+              >
+                <MonitorSmartphone className="w-3.5 h-3.5" />
+                设备预览
+              </button>
             )}
 
-            {/* 动态壁纸或静态图片 */}
-            {currentImage.media_type === "video" && currentImage.video_url ? (
-              <video
-                key={`video-${currentImage.id}`}
-                src={currentImage.video_url}
-                poster={currentImage.poster_url || currentImage.src}
-                autoPlay
-                muted
-                loop
-                playsInline
-                controls
-                onLoadedData={() => setIsLoaded(true)}
-                className={`max-w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl ${
-                  isLoaded ? "opacity-100" : "opacity-0 absolute"
-                }`}
-                style={{ maxHeight: "75vh" }}
-              />
-            ) : (
-              <img
-                src={currentImage.src}
-                alt={currentImage.title}
-                onLoad={() => setIsLoaded(true)}
-                className={`max-w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl ${
-                  isLoaded ? "opacity-100" : "opacity-0 absolute"
-                }`}
-                style={{ maxHeight: "75vh" }}
-              />
-            )}
+            {/* 设备预览模式 */}
+            {devicePreview ? (
+              <div className="flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
+                {/* 退出设备预览按钮 */}
+                <button
+                  onClick={() => setDevicePreview(false)}
+                  className="px-3 py-1.5 flex items-center gap-1.5 rounded-full bg-white/10 text-white/80 text-xs font-medium hover:bg-white/20 hover:text-white transition-colors backdrop-blur-sm"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  退出设备预览
+                </button>
 
-            {/* 动态壁纸标识 */}
-            {currentImage.media_type === "video" && (
-              <div className="absolute top-3 left-3">
-                <span className="text-xs font-bold text-white bg-gradient-to-r from-purple-500 to-pink-500 px-2 py-1 rounded-full">
-                  LIVE
-                </span>
+                {/* 设备 Mockup */}
+                <DeviceMockup
+                  imageUrl={currentImage.src}
+                  imageWidth={currentImage.width}
+                  imageHeight={currentImage.height}
+                  deviceType={selectedDevice}
+                />
+
+                {/* 设备选择器 */}
+                <DeviceSelector
+                  selected={selectedDevice}
+                  onSelect={setSelectedDevice}
+                />
               </div>
+            ) : (
+              <>
+                {/* Loading Skeleton */}
+                {!isLoaded && (
+                  <div className="w-[500px] h-[600px] rounded-2xl skeleton-pulse bg-white/10" />
+                )}
+
+                {/* 动态壁纸或静态图片 */}
+                {currentImage.media_type === "video" && currentImage.video_url ? (
+                  <video
+                    key={`video-${currentImage.id}`}
+                    src={currentImage.video_url}
+                    poster={currentImage.poster_url || currentImage.src}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    controls
+                    onLoadedData={() => setIsLoaded(true)}
+                    className={`max-w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl ${
+                      isLoaded ? "opacity-100" : "opacity-0 absolute"
+                    }`}
+                    style={{ maxHeight: "75vh" }}
+                  />
+                ) : (
+                  <img
+                    src={currentImage.src}
+                    alt={currentImage.title}
+                    onLoad={() => setIsLoaded(true)}
+                    className={`max-w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl ${
+                      isLoaded ? "opacity-100" : "opacity-0 absolute"
+                    }`}
+                    style={{ maxHeight: "75vh" }}
+                  />
+                )}
+
+                {/* 动态壁纸标识 */}
+                {currentImage.media_type === "video" && (
+                  <div className="absolute top-3 left-3">
+                    <span className="text-xs font-bold text-white bg-gradient-to-r from-purple-500 to-pink-500 px-2 py-1 rounded-full">
+                      LIVE
+                    </span>
+                  </div>
+                )}
+              </>
             )}
 
             {/* Image Info */}
@@ -517,6 +570,75 @@ export default function Lightbox({
                   ))}
                 </div>
               </div>
+              {/* EXIF Info */}
+              {currentImage.exif && (currentImage.exif.camera || currentImage.exif.lens || currentImage.exif.focalLength || currentImage.exif.aperture || currentImage.exif.iso) && (
+                <div className="mt-2">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setExifOpen(!exifOpen); }}
+                    className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white/80 transition-colors mx-auto"
+                  >
+                    <Camera className="w-3 h-3" />
+                    <span>EXIF 信息</span>
+                    {exifOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+                  <AnimatePresence>
+                    {exifOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="mt-2 bg-white/10 rounded-xl px-4 py-3 backdrop-blur-sm overflow-hidden"
+                      >
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                          {currentImage.exif.camera && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-white/50 shrink-0">相机</span>
+                              <span className="text-white/90 truncate">{currentImage.exif.camera}</span>
+                            </div>
+                          )}
+                          {currentImage.exif.lens && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-white/50 shrink-0">镜头</span>
+                              <span className="text-white/90 truncate">{currentImage.exif.lens}</span>
+                            </div>
+                          )}
+                          {currentImage.exif.focalLength && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-white/50 shrink-0">焦距</span>
+                              <span className="text-white/90">{currentImage.exif.focalLength}mm</span>
+                            </div>
+                          )}
+                          {currentImage.exif.aperture && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-white/50 shrink-0">光圈</span>
+                              <span className="text-white/90">f/{currentImage.exif.aperture}</span>
+                            </div>
+                          )}
+                          {currentImage.exif.shutterSpeed && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-white/50 shrink-0">快门</span>
+                              <span className="text-white/90">{currentImage.exif.shutterSpeed}</span>
+                            </div>
+                          )}
+                          {currentImage.exif.iso && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-white/50 shrink-0">ISO</span>
+                              <span className="text-white/90">{currentImage.exif.iso}</span>
+                            </div>
+                          )}
+                          {currentImage.exif.dateTaken && (
+                            <div className="flex items-center gap-2 col-span-2">
+                              <span className="text-white/50 shrink-0">拍摄时间</span>
+                              <span className="text-white/90">{currentImage.exif.dateTaken}</span>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
             </motion.div>
           </motion.div>
 

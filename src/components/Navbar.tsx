@@ -24,6 +24,8 @@ import {
   Settings,
   Upload,
   Grid3X3,
+  Trophy,
+  Sparkles,
 } from "lucide-react";
 import NotificationBell from "./NotificationBell";
 
@@ -145,6 +147,22 @@ export default function Navbar() {
               >
                 标签
               </Link>
+              <Link
+                href="/challenges"
+                className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors flex items-center gap-1.5"
+              >
+                <Trophy className="w-4 h-4" />
+                挑战赛
+              </Link>
+              {isLoggedIn && (
+                <Link
+                  href="/ai-generate"
+                  className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors flex items-center gap-1.5"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  AI生成
+                </Link>
+              )}
               {isLoggedIn && (
                 <Link
                   href="/upload"

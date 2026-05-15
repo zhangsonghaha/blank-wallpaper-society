@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bell, Check, CheckCheck, Trash2, X } from "lucide-react";
+import { Bell, Check, CheckCheck, Trash2, X, Settings } from "lucide-react";
 import { useSession } from "next-auth/react";
+import Link from "next/link";
 
 interface Notification {
   id: number;
@@ -22,6 +23,8 @@ const typeIcons: Record<string, string> = {
   comment: "💬",
   review: "✅",
   follow: "👤",
+  achievement: "🏆",
+  favorite: "⭐",
 };
 
 const typeLabels: Record<string, string> = {
@@ -30,6 +33,8 @@ const typeLabels: Record<string, string> = {
   comment: "评论",
   review: "审核",
   follow: "关注",
+  achievement: "成就",
+  favorite: "收藏",
 };
 
 function timeAgo(dateStr: string) {
@@ -189,6 +194,14 @@ export default function NotificationBell() {
                     <CheckCheck className="w-4 h-4" />
                   </button>
                 )}
+                <Link
+                  href="/profile?tab=settings"
+                  className="p-1.5 rounded-full hover:bg-[var(--color-surface-card)] text-[var(--color-mute)] hover:text-[var(--color-ink)] transition-colors"
+                  title="通知设置"
+                  onClick={() => setIsOpen(false)}
+                >
+                  <Settings className="w-4 h-4" />
+                </Link>
                 <button
                   onClick={() => setIsOpen(false)}
                   className="p-1.5 rounded-full hover:bg-[var(--color-surface-card)] text-[var(--color-mute)] hover:text-[var(--color-ink)] transition-colors"

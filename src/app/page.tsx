@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import MasonryGrid from "@/components/MasonryGrid";
+import DailyWallpaperCard from "@/components/DailyWallpaperCard";
 
 export const metadata: Metadata = {
   title: "发现视觉灵感",
@@ -33,6 +34,7 @@ export default function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+      <DailyWallpaperCard />
       <MasonryGrid />
     </>
   );

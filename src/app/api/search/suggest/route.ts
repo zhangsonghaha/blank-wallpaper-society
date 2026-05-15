@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { isMeilisearchAvailable, searchSuggestions } from "@/lib/meilisearch";
 
 // GET /api/search/suggest?q=keyword - 搜索建议
 export async function GET(request: NextRequest) {
@@ -11,6 +12,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ suggestions: [], hot: [] });
     }
 
+    // 优先使用 Meilisearch 搜索建议
+    const meiliAvailable = await isMeilisearchAvailable();
+    if (meiliAvailable) {
+      const meiliResult = await searchSuggestions(q);
+      if (meiliResult && meiliResult.suggestions.length > 0) {
+        return NextResponse.json({
+          suggestions: meiliResult.suggestions,
+          _searchEngine: "meilisearch",
+        });
+      }
+    }
+
+    // 回退到 MySQL LIKE 搜索
     const keyword = `%${q}%`;
 
     // 搜索标题匹配

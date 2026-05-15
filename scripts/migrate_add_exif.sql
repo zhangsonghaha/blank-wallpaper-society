@@ -1,0 +1,2 @@
+-- 添加 EXIF 数据字段到 images 表
+ALTER TABLE images ADD COLUMN exif JSON DEFAULT NULL COMMENT 'EXIF 元数据 JSON' AFTER phash;

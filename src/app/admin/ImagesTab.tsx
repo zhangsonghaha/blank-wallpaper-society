@@ -19,6 +19,9 @@ import {
   ExternalLink,
   ZoomIn,
   Pencil,
+  Copy,
+  AlertTriangle,
+  Layers,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -146,6 +149,22 @@ export default function ImagesTab() {
   });
   const [editSaving, setEditSaving] = useState(false);
 
+  // 重复检测相关状态
+  const [activeTab, setActiveTab] = useState<"list" | "duplicates">("list");
+  const [duplicateGroups, setDuplicateGroups] = useState<any[]>([]);
+  const [duplicateLoading, setDuplicateLoading] = useState(false);
+  const [duplicateDeleteIds, setDuplicateDeleteIds] = useState<Set<number>>(new Set());
+  const [duplicateDeleting, setDuplicateDeleting] = useState(false);
+
+  // 变体生成相关状态
+  const [variantGenerating, setVariantGenerating] = useState(false);
+  const [variantStatus, setVariantStatus] = useState<{
+    totalImages: number;
+    withVariants: number;
+    withoutVariants: number;
+    progress: number;
+  } | null>(null);
+
   const [stats, setStats] = useState({
     totalImages: 0,
     totalViews: 0,
@@ -198,6 +217,11 @@ export default function ImagesTab() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // 首次加载变体状态
+  useEffect(() => {
+    loadVariantStatus();
+  }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -272,6 +296,13 @@ export default function ImagesTab() {
         setPreviewUrl("");
         setPage(1);
         loadData();
+      } else if (res.status === 409) {
+        // 重复图片提示
+        const dup = result.duplicate;
+        toast.error("检测到重复图片", {
+          description: `与「${dup?.title || "ID:" + dup?.id}」相似度超过95%，已阻止上传`,
+          duration: 5000,
+        });
       } else {
         toast.error("上传失败", { description: result.error });
       }
@@ -396,6 +427,96 @@ export default function ImagesTab() {
     setEditSaving(false);
   };
 
+  // 加载重复图片组
+  const loadDuplicates = async () => {
+    setDuplicateLoading(true);
+    try {
+      const res = await fetch("/api/admin/duplicates");
+      if (res.ok) {
+        const data = await res.json();
+        setDuplicateGroups(data.groups || []);
+      } else {
+        const data = await res.json();
+        toast.error("加载重复检测失败", { description: data.error });
+      }
+    } catch (err) {
+      toast.error("加载重复检测失败", { description: "网络错误" });
+    }
+    setDuplicateLoading(false);
+  };
+
+  // 切换重复检测中图片的选中状态
+  const toggleDuplicateSelect = (id: number) => {
+    setDuplicateDeleteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // 批量删除选中的重复图片
+  const handleDuplicateDelete = async () => {
+    if (duplicateDeleteIds.size === 0) return;
+    setDuplicateDeleting(true);
+    try {
+      const res = await fetch("/api/admin/duplicates", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(duplicateDeleteIds) }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("删除成功", { description: data.message });
+        setDuplicateDeleteIds(new Set());
+        loadDuplicates();
+        loadData();
+      } else {
+        toast.error("删除失败", { description: data.error });
+      }
+    } catch (err) {
+      toast.error("删除失败", { description: "网络错误" });
+    }
+    setDuplicateDeleting(false);
+  };
+
+  // 加载变体生成状态
+  const loadVariantStatus = async () => {
+    try {
+      const res = await fetch("/api/admin/generate-variants");
+      if (res.ok) {
+        const data = await res.json();
+        setVariantStatus(data);
+      }
+    } catch (err) {
+      console.error("加载变体状态失败:", err);
+    }
+  };
+
+  // 批量生成变体
+  const handleGenerateVariants = async () => {
+    setVariantGenerating(true);
+    try {
+      const res = await fetch("/api/admin/generate-variants?limit=50", {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("变体生成完成", {
+          description: data.message,
+          duration: 5000,
+        });
+        // 刷新状态
+        loadVariantStatus();
+      } else {
+        toast.error("变体生成失败", { description: data.error });
+      }
+    } catch (err) {
+      toast.error("变体生成失败", { description: "网络错误" });
+    }
+    setVariantGenerating(false);
+  };
+
   // 计算全选 checkbox 状态
   const allChecked = images.length > 0 && selectedIds.size === images.length;
   const someChecked = selectedIds.size > 0 && selectedIds.size < images.length;
@@ -458,11 +579,80 @@ export default function ImagesTab() {
         </Card>
       </div>
 
+      {/* 变体生成进度 */}
+      {variantStatus && variantStatus.withoutVariants > 0 && (
+        <Card className="border-amber-200 bg-amber-50/50">
+          <CardContent className="p-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                <Layers className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-amber-800">变体生成进度</p>
+                <p className="text-xs text-amber-600">
+                  已生成 {variantStatus.withVariants} / {variantStatus.totalImages} 张图片，
+                  剩余 {variantStatus.withoutVariants} 张待处理
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-32">
+                <div className="w-full bg-amber-200 rounded-full h-2">
+                  <div
+                    className="bg-amber-500 h-2 rounded-full transition-all"
+                    style={{ width: `${variantStatus.progress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-amber-600 text-right mt-1">{variantStatus.progress}%</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full text-xs h-8 gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-100"
+                disabled={variantGenerating}
+                onClick={handleGenerateVariants}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                {variantGenerating ? "生成中..." : "开始生成"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Main Content */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <CardTitle>图片管理</CardTitle>
+            <div className="flex items-center gap-3">
+              <CardTitle>图片管理</CardTitle>
+              <div className="flex items-center bg-[var(--color-surface-soft)] rounded-full p-0.5">
+                <button
+                  onClick={() => setActiveTab("list")}
+                  className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                    activeTab === "list"
+                      ? "bg-[var(--color-primary)] text-white"
+                      : "text-[var(--color-mute)] hover:text-foreground"
+                  }`}
+                >
+                  图片列表
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab("duplicates");
+                    loadDuplicates();
+                  }}
+                  className={`px-3 py-1 text-xs rounded-full transition-colors flex items-center gap-1 ${
+                    activeTab === "duplicates"
+                      ? "bg-[var(--color-primary)] text-white"
+                      : "text-[var(--color-mute)] hover:text-foreground"
+                  }`}
+                >
+                  <Copy className="w-3 h-3" />
+                  重复检测
+                </button>
+              </div>
+            </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <div className="relative flex-1 sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-mute)]" />
@@ -495,11 +685,131 @@ export default function ImagesTab() {
                   ))}
                 </SelectContent>
               </Select>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full text-xs h-9 gap-1.5 shrink-0"
+                disabled={variantGenerating}
+                onClick={handleGenerateVariants}
+                title="为未生成变体的图片批量生成多分辨率变体"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                {variantGenerating ? "生成中..." : "生成变体"}
+              </Button>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {activeTab === "duplicates" ? (
+            /* 重复检测面板 */
+            duplicateLoading ? (
+              <div className="space-y-3 py-8">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-32 w-full rounded-lg" />
+                ))}
+              </div>
+            ) : duplicateGroups.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--color-surface-card)] flex items-center justify-center">
+                  <Copy className="w-8 h-8 text-[var(--color-ash)]" />
+                </div>
+                <h3 className="text-lg font-semibold mb-1">未发现重复图片</h3>
+                <p className="text-sm text-[var(--color-mute)]">
+                  所有图片都是唯一的，没有检测到相似图片
+                </p>
+              </div>
+            ) : (
+              <>
+                {duplicateDeleteIds.size > 0 && (
+                  <div className="flex items-center gap-3 mb-3 px-4 py-2.5 bg-orange-50 rounded-xl border border-orange-200">
+                    <AlertTriangle className="w-4 h-4 text-orange-500" />
+                    <span className="text-sm font-medium text-orange-700">
+                      已选择 {duplicateDeleteIds.size} 张待删除
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full text-xs h-7"
+                      onClick={() => setDuplicateDeleteIds(new Set())}
+                    >
+                      取消选择
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="rounded-full text-xs h-7 gap-1"
+                      disabled={duplicateDeleting}
+                      onClick={handleDuplicateDelete}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      {duplicateDeleting ? "删除中..." : "删除选中"}
+                    </Button>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  {duplicateGroups.map((group, gi) => (
+                    <div
+                      key={gi}
+                      className="border rounded-xl p-4 bg-[var(--color-surface-soft)]"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="rounded-full">
+                            第 {gi + 1} 组
+                          </Badge>
+                          <span className="text-xs text-[var(--color-mute)]">
+                            {group.images.length} 张相似图片
+                          </span>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="rounded-full text-xs"
+                        >
+                          相似度 {group.similarity}%
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                        {group.images.map((img: any) => (
+                          <div
+                            key={img.id}
+                            className={`relative rounded-lg overflow-hidden border-2 cursor-pointer transition-colors ${
+                              duplicateDeleteIds.has(img.id)
+                                ? "border-red-400 ring-2 ring-red-200"
+                                : "border-transparent hover:border-[var(--color-primary)]"
+                            }`}
+                            onClick={() => toggleDuplicateSelect(img.id)}
+                          >
+                            <div className="aspect-square bg-[var(--color-surface-card)]">
+                              <img
+                                src={img.thumbnail_url || img.url}
+                                alt={img.title}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div className="absolute top-1 left-1">
+                              <Checkbox
+                                checked={duplicateDeleteIds.has(img.id)}
+                                onCheckedChange={() =>
+                                  toggleDuplicateSelect(img.id)
+                                }
+                              />
+                            </div>
+                            <div className="p-1.5 bg-background/80">
+                              <p className="text-xs truncate">{img.title}</p>
+                              <p className="text-[10px] text-[var(--color-mute)]">
+                                ID: {img.id}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )
+          ) : loading ? (
             <div className="space-y-3">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="h-16 w-full rounded-lg" />

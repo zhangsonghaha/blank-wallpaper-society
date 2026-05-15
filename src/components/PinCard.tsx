@@ -7,6 +7,7 @@ import { FolderPlus, Play } from "lucide-react";
 import Link from "next/link";
 import type { GalleryImage } from "@/data/images";
 import AddToCollectionDialog from "./AddToCollectionDialog";
+import LevelBadge from "./LevelBadge";
 
 interface PinCardProps {
   image: GalleryImage;
@@ -229,6 +230,9 @@ export default function PinCard({
                       <img src={image.avatar} alt={image.author} className="w-full h-full object-cover" />
                     </div>
                     <span className="text-xs font-semibold text-white drop-shadow-sm">{image.author}</span>
+                    {image.author_level != null && (
+                      <LevelBadge level={image.author_level} title={image.author_level_title || ""} size="sm" showTitle={false} />
+                    )}
                   </Link>
                 </div>
               </motion.div>
@@ -255,9 +259,12 @@ export default function PinCard({
           <h3 className="text-sm font-semibold text-[var(--color-ink)] truncate">{image.title}</h3>
           <Link
             href={image.uploaded_by ? `/creator/${image.uploaded_by}` : "#"}
-            className="text-xs text-[var(--color-mute)] mt-0.5 truncate hover:text-[var(--color-primary)] transition-colors"
+            className="text-xs text-[var(--color-mute)] mt-0.5 truncate hover:text-[var(--color-primary)] transition-colors inline-flex items-center gap-1"
           >
             {image.author}
+            {image.author_level != null && (
+              <LevelBadge level={image.author_level} title={image.author_level_title || ""} size="sm" showTitle={false} />
+            )}
           </Link>
           {/* Tags */}
           <div className="flex flex-wrap gap-1.5 mt-2">

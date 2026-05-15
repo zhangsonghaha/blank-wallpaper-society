@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { addExp, checkAchievements } from "@/lib/user-level";
+import { notifyNewFollower } from "@/lib/notification";
 
 // POST /api/users/[id]/follow - 关注/取关用户
 export async function POST(
@@ -53,6 +55,13 @@ export async function POST(
         "INSERT INTO user_follows (follower_id, following_id) VALUES (?, ?)",
         [userId, targetId]
       );
+      // 关注成功 → 被关注者 +5 exp + 检查成就（异步不阻塞）
+      addExp(targetId, 5).catch(() => {});
+      checkAchievements(targetId).catch(() => {});
+      // 通知被关注者
+      const followerName = (session.user as any).name || "用户";
+      notifyNewFollower(targetId, followerName, Number(userId)).catch(() => {});
+
       return NextResponse.json({ following: true, message: "已关注" });
     }
   } catch (error: any) {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { addExp, checkAchievements } from "@/lib/user-level";
+import { notifyNewFavorite } from "@/lib/notification";
 
 // POST /api/favorites/[imageId] - 添加收藏
 export async function POST(
@@ -56,6 +58,23 @@ export async function POST(
       `INSERT INTO favorites (user_id, image_id) VALUES (?, ?)`,
       [userId, id]
     );
+
+    // 收藏成功 → 图片作者 +5 exp + 检查成就（异步不阻塞）
+    query("SELECT uploaded_by, title FROM images WHERE id = ?", [id])
+      .then((rows) => {
+        const authorId = (rows as any[])?.[0]?.uploaded_by;
+        const imageTitle = (rows as any[])?.[0]?.title || `图片#${id}`;
+        if (authorId) {
+          addExp(authorId, 5).catch(() => {});
+          checkAchievements(authorId).catch(() => {});
+          // 通知图片作者
+          const userName = (session.user as any).name || "用户";
+          notifyNewFavorite(authorId, userName, imageTitle, id).catch(() => {});
+        }
+      })
+      .catch(() => {});
+    // 收藏者自身也检查成就（收藏达人）
+    checkAchievements(userId).catch(() => {});
 
     return NextResponse.json({ success: true, data: { imageId: id } }, { status: 201 });
   } catch (error: any) {

@@ -69,6 +69,7 @@ interface CrawlResult {
   poster_url?: string;
   original_video_url?: string;
   original_image_url?: string;
+  image_url?: string;
 }
 
 interface HistoryRecord {

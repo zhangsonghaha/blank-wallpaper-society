@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
           name,
           slug: name.replace(/\s+/g, "-"),
           count,
+          size: 1,
         }))
         .sort((a, b) => b.count - a.count)
         .slice(0, type === "popular" ? 30 : 200);

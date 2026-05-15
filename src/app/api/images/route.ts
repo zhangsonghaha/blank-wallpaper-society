@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { hexToRgb, colorDistance } from "@/lib/color-extract";
+import {
+  isMeilisearchAvailable,
+  searchWallpapers,
+  SearchOptions,
+} from "@/lib/meilisearch";
 
 // GET /api/images - 获取图片列表
 export async function GET(request: NextRequest) {
@@ -36,6 +41,65 @@ export async function GET(request: NextRequest) {
     if (category && category !== "all") {
       sql += " AND category = ?";
       params.push(category);
+    }
+
+    // 优先使用 Meilisearch 搜索（仅在有搜索关键词且无高级筛选时）
+    const useMeilisearch =
+      search &&
+      !minWidth && !maxWidth && !minHeight && !maxHeight &&
+      !resolutionPreset && !dateFrom && !dateTo && !tags &&
+      (await isMeilisearchAvailable());
+
+    if (useMeilisearch) {
+      const sortMap: Record<string, "newest" | "popular" | "downloads"> = {
+        latest: "newest",
+        popular: "popular",
+      };
+      const meiliResult = await searchWallpapers(search, {
+        category: category || undefined,
+        sort: sortMap[searchParams.get("sort") || ""] || undefined,
+        page,
+        limit,
+      });
+      if (meiliResult) {
+        // 颜色筛选在应用层处理
+        if (color) {
+          const targetRgb = hexToRgb(color);
+          const filtered = meiliResult.data.filter((item: any) => {
+            if (!item.dominant_color) return false;
+            const dominantRgb = hexToRgb(item.dominant_color);
+            const dist = colorDistance(targetRgb, dominantRgb);
+            let paletteMatch = false;
+            if (item.color_palette) {
+              for (const pc of item.color_palette) {
+                const pRgb = hexToRgb(pc);
+                if (colorDistance(targetRgb, pRgb) <= colorThreshold) {
+                  paletteMatch = true;
+                  break;
+                }
+              }
+            }
+            return dist <= colorThreshold || paletteMatch;
+          });
+          filtered.sort((a: any, b: any) => {
+            const distA = colorDistance(targetRgb, hexToRgb(a.dominant_color));
+            const distB = colorDistance(targetRgb, hexToRgb(b.dominant_color));
+            return distA - distB;
+          });
+          return NextResponse.json({
+            data: filtered,
+            total: filtered.length,
+            page,
+            limit,
+            totalPages: Math.ceil(filtered.length / limit),
+            _searchEngine: "meilisearch",
+          });
+        }
+        return NextResponse.json({
+          ...meiliResult,
+          _searchEngine: "meilisearch",
+        });
+      }
     }
 
     if (search) {

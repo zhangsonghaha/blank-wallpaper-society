@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { notifyCommentReply } from "@/lib/notification";
 
 // GET /api/images/[id]/comments - 获取图片评论列表
 export async function GET(
@@ -134,42 +135,21 @@ export async function POST(
         [parent_id]
       )) as any[];
       if (parentComment.length > 0 && parentComment[0].user_id !== userId) {
-        await query(
-          `INSERT INTO notifications (user_id, type, title, content, related_id, related_type)
-           VALUES (?, 'comment', ?, ?, ?, 'image')`,
-          [
-            parentComment[0].user_id,
-            "收到新回复",
-            `${session.user.name} 回复了你的评论`,
-            content.trim().substring(0, 100),
-            id,
-          ]
-        );
+        const imageInfo = (await query("SELECT title FROM images WHERE id = ?", [id])) as any[];
+        const imageTitle = imageInfo[0]?.title || `图片#${id}`;
+        const commenterName = (session.user as any).name || "用户";
+        notifyCommentReply(parentComment[0].user_id, commenterName, imageTitle, id).catch(() => {});
       }
     } else {
       // 如果是顶级评论，给图片作者发通知
-      const imageOwner = (await query(
-        "SELECT author FROM images WHERE id = ?",
+      const imageInfo = (await query(
+        "SELECT uploaded_by, title FROM images WHERE id = ?",
         [id]
       )) as any[];
-      if (imageOwner.length > 0) {
-        const ownerUser = (await query(
-          "SELECT id FROM users WHERE name = ? OR email = ?",
-          [imageOwner[0].author, imageOwner[0].author]
-        )) as any[];
-        if (ownerUser.length > 0 && ownerUser[0].id !== userId) {
-          await query(
-            `INSERT INTO notifications (user_id, type, title, content, related_id, related_type)
-             VALUES (?, 'comment', ?, ?, ?, 'image')`,
-            [
-              ownerUser[0].id,
-              "收到新评论",
-              `${session.user.name} 评论了你的图片`,
-              content.trim().substring(0, 100),
-              id,
-            ]
-          );
-        }
+      if (imageInfo.length > 0 && imageInfo[0].uploaded_by && imageInfo[0].uploaded_by !== userId) {
+        const commenterName = (session.user as any).name || "用户";
+        const imageTitle = imageInfo[0]?.title || `图片#${id}`;
+        notifyCommentReply(imageInfo[0].uploaded_by, commenterName, imageTitle, id).catch(() => {});
       }
     }
 
