@@ -28,6 +28,7 @@ import CategoriesTab from "./CategoriesTab";
 import NotificationsTab from "./NotificationsTab";
 import SettingsTab from "./SettingsTab";
 import CrawlTab from "./CrawlTab";
+import ReportTab from "./ReportTab";
 
 // 标签页接口
 interface TabItem {
@@ -136,7 +137,7 @@ export default function AdminClient() {
         content = <NotificationsTab />;
         break;
       case "reports":
-        content = <ReviewTab />;
+        content = <ReportTab />;
         break;
       case "settings":
         content = <SettingsTab />;
