@@ -296,6 +296,15 @@ export async function POST(request: NextRequest) {
       failCount,
       dedupSkipped,
       results: processedResults,
+      sourceResults: crawlResult.results.map((item: any, idx: number) => ({
+        ...item,
+        id: idx + 1,
+        original_video_url: item.video_url || null,
+        original_image_url: item.image_url || null,
+        url: item.image_url,
+        thumbnail_url: item.poster_url || item.image_url,
+        tags: Array.isArray(item.tags) ? item.tags.join(",") : (item.tags || ""),
+      })),
     });
   } catch (error: any) {
     console.error("POST /api/admin/crawl error:", error);

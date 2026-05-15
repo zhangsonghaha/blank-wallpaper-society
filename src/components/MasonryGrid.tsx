@@ -327,6 +327,9 @@ export default function MasonryGrid() {
         tags: img.tags ? img.tags.split(",").map((t) => t.trim()) : [],
         author: img.author || "未知",
         avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${img.author || img.id}`,
+        media_type: img.media_type || "image",
+        video_url: img.video_url || undefined,
+        poster_url: img.poster_url || undefined,
       })),
     [filteredImages]
   );

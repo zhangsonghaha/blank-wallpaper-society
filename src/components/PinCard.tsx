@@ -26,7 +26,6 @@ export default function PinCard({
   const [isHovered, setIsHovered] = useState(false);
   const [showSaveFeedback, setShowSaveFeedback] = useState(false);
   const [addToCollectionOpen, setAddToCollectionOpen] = useState(false);
-  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const isVideo = image.media_type === "video" && image.video_url;
@@ -81,15 +80,13 @@ export default function PinCard({
       onMouseEnter={() => {
         setIsHovered(true);
         if (isVideo && videoRef.current) {
-          setIsVideoPlaying(true);
-          setTimeout(() => videoRef.current?.play().catch(() => {}), 100);
+          videoRef.current.play().catch(() => {});
         }
       }}
       onMouseLeave={() => {
         setIsHovered(false);
-        if (isVideo) {
-          setIsVideoPlaying(false);
-          videoRef.current?.pause();
+        if (isVideo && videoRef.current) {
+          videoRef.current.pause();
         }
       }}
       onClick={onClick}
@@ -102,17 +99,19 @@ export default function PinCard({
             <div className="absolute inset-0 skeleton-pulse bg-[var(--color-surface-card)]" />
           )}
 
-          {isVideo && isVideoPlaying ? (
+          {/* 视频类型：始终用 video 元素渲染，避免 img 加载 mp4 导致白屏 */}
+          {isVideo ? (
             <video
               ref={videoRef}
               src={image.video_url}
-              poster={image.poster_url || image.src}
-              autoPlay
+              poster={image.poster_url || undefined}
               muted
               loop
               playsInline
+              preload="metadata"
               className="w-full h-full object-cover"
               onLoadedData={() => setIsLoaded(true)}
+              onLoadedMetadata={() => setIsLoaded(true)}
             />
           ) : (
             <img
@@ -126,9 +125,9 @@ export default function PinCard({
             />
           )}
 
-          {/* 动态壁纸播放指示器 */}
-          {isVideo && !isVideoPlaying && (
-            <div className="absolute inset-0 flex items-center justify-center">
+          {/* 动态壁纸播放指示器（未悬停时显示） */}
+          {isVideo && !isHovered && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="w-12 h-12 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
                 <Play className="w-5 h-5 text-white ml-0.5" />
               </div>

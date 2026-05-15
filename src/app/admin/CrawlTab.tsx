@@ -66,6 +66,9 @@ interface CrawlResult {
   source: string;
   media_type?: "image" | "video";
   video_url?: string;
+  poster_url?: string;
+  original_video_url?: string;
+  original_image_url?: string;
 }
 
 interface HistoryRecord {
@@ -100,6 +103,66 @@ interface CrawlLog {
 }
 
 type CrawlStatus = "idle" | "crawling" | "processing" | "done" | "error";
+
+/* ==================== 视频预览组件 ==================== */
+
+function VideoPreview({ videoUrl, posterUrl }: { videoUrl: string; posterUrl: string }) {
+  const [hasError, setHasError] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // 视频加载失败时显示封面图或占位
+  if (hasError) {
+    if (posterUrl) {
+      return (
+        <img
+          src={posterUrl}
+          alt="动态壁纸封面"
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+      );
+    }
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-muted">
+        <div className="text-center">
+          <ImageIcon className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
+          <span className="text-[10px] text-muted-foreground">视频加载失败</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full h-full">
+      <video
+        src={videoUrl}
+        poster={posterUrl}
+        className="w-full h-full object-cover"
+        muted
+        loop
+        preload="metadata"
+        playsInline
+        onLoadedData={() => setIsLoaded(true)}
+        onError={() => setHasError(true)}
+        onMouseEnter={(e) => {
+          const video = e.currentTarget;
+          video.play().catch(() => setHasError(true));
+        }}
+        onMouseLeave={(e) => {
+          const video = e.currentTarget;
+          video.pause();
+          video.currentTime = 0;
+        }}
+      />
+      {/* 未加载完成时的加载提示 */}
+      {!isLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-muted/50">
+          <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" />
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ==================== 爬虫管理组件 ==================== */
 
@@ -238,7 +301,8 @@ export default function CrawlTab() {
       }
 
       setStatus("done");
-      setResults(data.results || []);
+      // 优先展示未经下载上传的原始数据，方便用户确认
+      setResults(data.sourceResults || data.results || []);
       toast.success(data.message || `爬取完成，成功 ${data.successCount} 张`);
       setProgressText(
         `成功: ${data.successCount} 张 | 失败: ${data.failCount} 张${data.dedupSkipped > 0 ? ` | 去重跳过: ${data.dedupSkipped} 张` : ""}`
@@ -735,6 +799,9 @@ export default function CrawlTab() {
               <ImageIcon className="w-4 h-4" />
               本次爬取结果 ({results.length} 张)
             </CardTitle>
+            <CardDescription>
+              引用原始地址预览，点击下方"确认导入"按钮将数据保存到图库
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
@@ -743,14 +810,31 @@ export default function CrawlTab() {
                   key={item.id}
                   className="group relative rounded-lg border overflow-hidden bg-muted/30 hover:shadow-md transition-shadow"
                 >
-                  {/* 缩略图 */}
+                  {/* 缩略图/视频预览 */}
                   <div className="aspect-[4/3] relative">
-                    {item.thumbnail_url ? (
+                    {item.media_type === "video" && (item.original_video_url || item.video_url) ? (
+                      <VideoPreview
+                        videoUrl={item.original_video_url || item.video_url || ""}
+                        posterUrl={item.poster_url || item.thumbnail_url || item.original_image_url || item.image_url || ""}
+                      />
+                    ) : item.thumbnail_url || item.image_url || item.url ? (
                       <img
-                        src={item.thumbnail_url}
+                        src={item.thumbnail_url || item.image_url || item.url}
                         alt={item.title}
                         className="w-full h-full object-cover"
                         loading="lazy"
+                        onError={(e) => {
+                          // 图片加载失败时尝试显示占位
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          const parent = target.parentElement;
+                          if (parent) {
+                            const div = document.createElement('div');
+                            div.className = 'w-full h-full flex items-center justify-center bg-muted';
+                            div.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>';
+                            parent.appendChild(div);
+                          }
+                        }}
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-muted">

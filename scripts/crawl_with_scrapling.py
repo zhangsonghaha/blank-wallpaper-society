@@ -36,7 +36,7 @@ import tempfile
 import hashlib
 import re
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
 
 try:
     from scrapling.fetchers import Fetcher, StealthyFetcher, FetcherSession
@@ -131,71 +131,127 @@ class AdaptiveCrawler:
         self.min_height = min_height
         self.max_images = max_images
 
-    def crawl(self, url, mode="auto", count=10):
+    def _generate_page_urls(self, url, pages):
+        """基于传入的URL生成多页URL列表（支持常见的翻页参数模式）"""
+        urls = [url]
+        if pages <= 1:
+            return urls
+
+        parsed = urlparse(url)
+        query_params = parse_qs(parsed.query, keep_blank_values=True)
+
+        for page_num in range(2, pages + 1):
+            new_params = dict(query_params)
+
+            # 尝试替换常见的页码参数
+            page_replaced = False
+            for key in list(new_params.keys()):
+                if key.lower() in ('page', 'p', 'pg', 'pagina', 'offset'):
+                    new_params[key] = [str(page_num)]
+                    page_replaced = True
+                    break
+
+            if not page_replaced:
+                # 没有找到页码参数，尝试追加 page 参数
+                new_params['page'] = [str(page_num)]
+
+            # 重建查询字符串
+            # parse_qs 返回的是列表值，urlencode 的 doseq=True 可以正确处理
+            new_query = urlencode(new_params, doseq=True)
+            new_url = urlunparse((
+                parsed.scheme, parsed.netloc, parsed.path,
+                parsed.params, new_query, parsed.fragment
+            ))
+            urls.append(new_url)
+
+        return urls
+
+    def crawl(self, url, mode="auto", count=10, pages=1):
         """
-        爬取指定URL页面中的图片
+        爬取指定URL页面中的图片（支持多页连续爬取）
 
         Args:
             url: 目标页面URL
             mode: 爬取模式 - auto(自动选择)/static(静态)/stealthy(隐身浏览器)
-            count: 最大图片数量
+            count: 每页最大图片数量
+            pages: 连续爬取页数（默认1，最多10）
         """
         results = []
         parsed_url = urlparse(url)
         base_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        pages = min(max(pages, 1), 10)  # 限制 1-10 页
+
+        # 生成多页URL列表
+        page_urls = self._generate_page_urls(url, pages)
 
         print(f"[Adaptive] 目标URL: {url}", file=sys.stderr)
         print(f"[Adaptive] 爬取模式: {mode}", file=sys.stderr)
+        print(f"[Adaptive] 连续页数: {len(page_urls)} 页", file=sys.stderr)
 
-        try:
-            page = self._fetch_page(url, mode)
-            if page is None:
-                print(f"[Adaptive] 无法获取页面内容", file=sys.stderr)
-                return results
+        for page_idx, page_url in enumerate(page_urls):
+            if len(results) >= count * pages:
+                break
 
-            # 获取页面标题
-            page_title = self._get_page_title(page)
+            print(f"[Adaptive] ===== 正在爬取第 {page_idx + 1}/{len(page_urls)} 页: {page_url} =====", file=sys.stderr)
 
-            # 策略1: 提取 <img> 标签中的图片
-            img_results = self._extract_img_tags(page, base_domain, page_title, count)
-            results.extend(img_results)
+            try:
+                page = self._fetch_page(page_url, mode)
+                if page is None:
+                    print(f"[Adaptive] 第 {page_idx + 1} 页无法获取，跳过", file=sys.stderr)
+                    continue
 
-            # 策略2: 如果图片不够，提取 CSS 背景图
-            if len(results) < count:
-                css_results = self._extract_css_backgrounds(page, base_domain, page_title, count - len(results))
-                results.extend(css_results)
+                # 获取页面标题
+                page_title = self._get_page_title(page)
+                # 多页时追加页码标识
+                if len(page_urls) > 1:
+                    page_title = f"{page_title} - 第{page_idx + 1}页"
 
-            # 策略3: 如果图片还不够，提取 <a> 标签中指向图片的链接
-            if len(results) < count:
-                link_results = self._extract_image_links(page, base_domain, page_title, count - len(results))
-                results.extend(link_results)
+                remaining = count * pages - len(results)
+                per_page_count = min(count, remaining)
 
-            # 策略4: 提取 <video> 标签中的动态壁纸（始终执行，不只补充）
-            video_results = self._extract_video_tags(page, base_domain, page_title, count)
-            results.extend(video_results)
+                # 策略1: 提取 <img> 标签中的图片
+                img_results = self._extract_img_tags(page, base_domain, page_title, per_page_count)
+                results.extend(img_results)
 
-            # 策略5: 提取页面脚本/内嵌JSON中的视频URL
-            script_video_results = self._extract_script_videos(page, base_domain, page_title, count)
-            results.extend(script_video_results)
+                # 策略2: 如果图片不够，提取 CSS 背景图
+                if len(results) < count * pages:
+                    remaining = count * pages - len(results)
+                    css_results = self._extract_css_backgrounds(page, base_domain, page_title, remaining)
+                    results.extend(css_results)
 
-            # 去重（同时按 image_url 和 video_url 去重）
-            seen_urls = set()
-            unique_results = []
-            for item in results:
-                dedup_key = item.get("video_url") or item["image_url"]
-                if dedup_key not in seen_urls:
-                    seen_urls.add(dedup_key)
-                    # 也把 image_url 加入去重集合，防止封面图和视频重复
-                    if item["image_url"] and item["image_url"] != dedup_key:
-                        seen_urls.add(item["image_url"])
-                    unique_results.append(item)
+                # 策略3: 如果图片还不够，提取 <a> 标签中指向图片的链接
+                if len(results) < count * pages:
+                    remaining = count * pages - len(results)
+                    link_results = self._extract_image_links(page, base_domain, page_title, remaining)
+                    results.extend(link_results)
 
-            results = unique_results[:count]
+                # 策略4: 提取 <video> 标签中的动态壁纸（始终执行，不只补充）
+                video_results = self._extract_video_tags(page, base_domain, page_title, per_page_count)
+                results.extend(video_results)
 
-            print(f"[Adaptive] 共提取 {len(results)} 张图片", file=sys.stderr)
+                # 策略5: 提取页面脚本/内嵌JSON中的视频URL
+                script_video_results = self._extract_script_videos(page, base_domain, page_title, per_page_count)
+                results.extend(script_video_results)
 
-        except Exception as e:
-            print(f"[Adaptive] 爬取出错: {e}", file=sys.stderr)
+            except Exception as e:
+                print(f"[Adaptive] 第 {page_idx + 1} 页爬取出错: {e}", file=sys.stderr)
+                continue
+
+        # 去重（同时按 image_url 和 video_url 去重）
+        seen_urls = set()
+        unique_results = []
+        for item in results:
+            dedup_key = item.get("video_url") or item["image_url"]
+            if dedup_key not in seen_urls:
+                seen_urls.add(dedup_key)
+                # 也把 image_url 加入去重集合，防止封面图和视频重复
+                if item["image_url"] and item["image_url"] != dedup_key:
+                    seen_urls.add(item["image_url"])
+                unique_results.append(item)
+
+        results = unique_results[:count * pages]
+
+        print(f"[Adaptive] 共提取 {len(results)} 张图片", file=sys.stderr)
 
         return results
 
@@ -226,12 +282,64 @@ class AdaptiveCrawler:
         """使用静态 Fetcher 获取页面（快速，无浏览器）"""
         try:
             print(f"[Adaptive] 尝试静态获取: {url}", file=sys.stderr)
-            page = Fetcher.get(url, timeout=30)
-            print(f"[Adaptive] 静态获取成功，状态码: {page.status}", file=sys.stderr)
+            # 使用requests库直接获取，以便更好地控制编码
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+            }
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            # 自动检测编码
+            content_type = response.headers.get('content-type', '')
+            if 'charset=' in content_type.lower():
+                # 从响应头获取编码
+                charset = content_type.split('charset=')[1].split(';')[0].strip()
+                response.encoding = charset
+            else:
+                # 优先尝试GBK（适用于国内老网站），再试UTF-8
+                detected_encoding = None
+                for encoding in ['gbk', 'gb2312', 'utf-8', 'gb18030']:
+                    try:
+                        response.content.decode(encoding)
+                        detected_encoding = encoding
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                if detected_encoding:
+                    response.encoding = detected_encoding
+                else:
+                    # 最后使用UTF-8并忽略错误
+                    response.encoding = 'utf-8'
+                    response.text = response.content.decode('utf-8', errors='replace')
+            
+            # 创建兼容的页面对象
+            page = type('ResponsePage', (), {})()
+            page.status = response.status_code
+            page.text = response.text
+            page.content = response.content
+            
+            # 模拟css方法（使用scrapling的解析器）
+            from scrapling import Selector
+            selector = Selector(page.text)
+            page.css = selector.css
+            
+            print(f"[Adaptive] 静态获取成功，状态码: {page.status}, 编码: {response.encoding}", file=sys.stderr)
             return page
         except Exception as e:
             print(f"[Adaptive] 静态获取失败: {e}", file=sys.stderr)
-            return None
+            # 回退到原来的Fetcher
+            try:
+                page = Fetcher.get(url, timeout=30)
+                print(f"[Adaptive] 回退Fetcher获取成功，状态码: {page.status}", file=sys.stderr)
+                return page
+            except Exception as e2:
+                print(f"[Adaptive] 回退Fetcher也失败: {e2}", file=sys.stderr)
+                return None
 
     def _fetch_stealthy(self, url):
         """使用隐身浏览器获取页面（可绕过反爬）
@@ -585,6 +693,56 @@ class AdaptiveCrawler:
         img_elements = page.css("img")
 
         print(f"[Adaptive] 找到 {len(img_elements)} 个 <img> 标签", file=sys.stderr)
+        
+        # netbian.com 特殊处理：优先提取列表页的图片链接
+        if 'netbian.com' in base_domain:
+            print(f"[Adaptive] 检测到彼岸桌面网站，使用专用提取规则", file=sys.stderr)
+            # 提取列表页中的图片链接
+            list_items = page.css("div.list ul li a")
+            for item in list_items:
+                if len(results) >= count:
+                    break
+                try:
+                    href = item.css("::attr(href)").get() or ""
+                    if href and href.endswith(".htm"):
+                        # 访问详情页获取高清图片
+                        detail_url = self._normalize_url(href, base_domain)
+                        detail_page = self._fetch_page(detail_url, "static")
+                        if detail_page:
+                            # 详情页提取图片
+                            detail_imgs = detail_page.css("div.pic img")
+                            for img in detail_imgs:
+                                src = img.css("::attr(src)").get() or ""
+                                if src:
+                                    img_url = self._normalize_url(src, base_domain)
+                                    alt = img.css("::attr(alt)").get() or ""
+                                    title = alt.strip() if alt.strip() else f"{page_title} - 图片"
+                                    tags = self._guess_tags(alt, page_title)
+                                    category = self._guess_category(tags)
+                                    media_type = self._detect_media_type(img_url) or "image"
+                                    filename = self._url_to_filename(img_url, media_type)
+                                    
+                                    result = {
+                                        "title": title[:200],
+                                        "image_url": img_url,
+                                        "source_url": detail_url,
+                                        "source": urlparse(base_domain).netloc.replace("www.", ""),
+                                        "tags": tags,
+                                        "category": category,
+                                        "width": 0,
+                                        "height": 0,
+                                        "filename": filename,
+                                        "media_type": media_type,
+                                    }
+                                    results.append(result)
+                                    break  # 每个详情页只取一张
+                except Exception as e:
+                    print(f"[Adaptive] netbian详情页处理失败: {e}", file=sys.stderr)
+                    continue
+            
+            # 如果已经获取到足够的图片，直接返回
+            if len(results) >= count:
+                return results
 
         for img in img_elements:
             if len(results) >= count:
@@ -615,10 +773,16 @@ class AdaptiveCrawler:
                 height_attr = img.css("::attr(height)").get() or ""
 
                 # 过滤掉明显太小的图片（图标、logo等）
+                # 也过滤 0x0 尺寸的无效图片
                 try:
                     w = int(width_attr) if width_attr else 0
                     h = int(height_attr) if height_attr else 0
-                    if w > 0 and h > 0 and (w < self.min_width or h < self.min_height):
+                    # 如果宽高都有明确值，过滤掉过小或0尺寸的图片
+                    if w > 0 or h > 0:
+                        if w < self.min_width or h < self.min_height:
+                            continue
+                    # URL 中包含 0x0 尺寸标识的也过滤
+                    if '0x0' in image_url.lower():
                         continue
                 except ValueError:
                     pass
@@ -655,11 +819,14 @@ class AdaptiveCrawler:
                 }
                 if media_type == "video":
                     result["video_url"] = data_video_url or image_url
-                    result["poster_url"] = "" if not data_video_url else image_url
+                    result["poster_url"] = image_url if data_video_url else ""
                     # 如果有 data-video 属性，image_url 作为封面图
                     if data_video_url:
                         result["video_url"] = self._normalize_url(data_video_url, base_domain)
                         # image_url 保持为缩略图/封面图
+                    # 确保视频URL绝对正确
+                    if not result["video_url"].startswith(("http://", "https://")):
+                        result["video_url"] = self._normalize_url(result["video_url"], base_domain)
                 results.append(result)
 
             except Exception as e:
@@ -668,9 +835,18 @@ class AdaptiveCrawler:
         return results
 
     def _extract_css_backgrounds(self, page, base_domain, page_title, count):
-        """提取内联样式中的背景图片"""
+        """提取内联样式中的背景图片（仅作为 img 标签的补充，大部分 CSS 背景是 UI 装饰）"""
         results = []
         elements_with_style = page.css("[style*='background']")
+
+        # CSS 背景图常见 UI 装饰关键词（用于过滤非壁纸背景）
+        ui_bg_keywords = [
+            'btn', 'button', 'nav', 'header', 'footer', 'sidebar', 'menu',
+            'tab', 'card', 'panel', 'modal', 'tooltip', 'dropdown',
+            'search', 'input', 'form', 'tag', 'badge', 'arrow',
+            'gradient', 'pattern', 'texture', 'noise', 'grid', 'dot',
+            'shadow', 'border', 'line', 'divider', 'separator',
+        ]
 
         for elem in elements_with_style:
             if len(results) >= count:
@@ -688,6 +864,23 @@ class AdaptiveCrawler:
                     bg_url = self._normalize_url(bg_url, base_domain)
                     if not self._is_valid_image_url(bg_url):
                         continue
+
+                    # 过滤明显是 UI 装饰背景图（通过 URL 判断）
+                    url_lower = bg_url.lower()
+                    if any(kw in url_lower for kw in ui_bg_keywords):
+                        continue
+
+                    # 过滤 0x0 尺寸
+                    if '0x0' in url_lower:
+                        continue
+
+                    # 过滤尺寸过小的背景图（从 URL 中提取尺寸信息）
+                    # 例如 ..._120x40.jpg, ..._32x32.png
+                    size_match = re.search(r'(\d+)x(\d+)', url_lower)
+                    if size_match:
+                        bw, bh = int(size_match.group(1)), int(size_match.group(2))
+                        if bw < self.min_width or bh < self.min_height:
+                            continue
 
                     media_type = self._detect_media_type(bg_url) or "image"
                     filename = self._url_to_filename(bg_url, media_type)
@@ -754,6 +947,7 @@ class AdaptiveCrawler:
                     "media_type": media_type,
                 }
                 if media_type == "video":
+                    result["video_url"] = image_url
                     result["poster_url"] = ""
                 results.append(result)
             except Exception:
@@ -1015,11 +1209,28 @@ class AdaptiveCrawler:
         if any(path_lower.endswith(ext) for ext in skip_exts):
             return False
         # 跳过小图标/头像类URL
-        skip_patterns = ['avatar', 'favicon', 'logo', 'icon', 'badge', 'emoji', 'spinner', 'loading']
+        skip_patterns = [
+            'avatar', 'favicon', 'logo', 'icon', 'badge', 'emoji',
+            'spinner', 'loading', 'small', 'thumb', 'nouser',
+            # 网站UI装饰元素（导航、按钮、背景等）
+            'bg-', 'background', 'banner', 'btn', 'button', 'nav-bg',
+            'header-bg', 'footer-bg', 'sidebar', 'menu-bg',
+            # 透明图/占位图
+            'transparent', 'blank', 'placeholder', 'dummy', 'empty',
+            # 跟踪像素/广告
+            'pixel', 'tracking', 'analytics', 'beacon', '1x1',
+            # 表情包/装饰图
+            'sticker', 'decoration', 'ornament', 'separator',
+            # 其他非壁纸内容
+            'qrcode', 'qr-code', 'barcode', 'watermark',
+        ]
         if any(p in url.lower() for p in skip_patterns):
             return False
         # 跳过1x1像素跟踪图片
         if '1x1' in url or 'pixel' in url.lower():
+            return False
+        # 跳过0x0尺寸的无效图片URL
+        if '0x0' in url:
             return False
         return True
 
@@ -1118,12 +1329,13 @@ class WallhavenCrawler:
         try:
             # categories: 1=General, 1=Anime, 1=People; purity: 1=SFW, 0=Sketchy, 0=NSFW
             # 包含动态壁纸（category flag 10 = Animations）
+            # 搜索动态壁纸（包含 animated/live wallpaper）
             if mode == "random":
-                url = f"{self.SEARCH_URL}?categories=111&purity=100&sorting=random&per_page={min(count, 24)}"
+                url = f"{self.SEARCH_URL}?categories=111&purity=100&atleast=1920x1080&sorting=random&q=animated&per_page={min(count, 24)}"
             elif mode == "anime":
-                url = f"{self.SEARCH_URL}?categories=010&purity=100&sorting=random&per_page={min(count, 24)}"
+                url = f"{self.SEARCH_URL}?categories=010&purity=100&atleast=1920x1080&sorting=random&per_page={min(count, 24)}"
             else:
-                url = f"{self.SEARCH_URL}?categories=111&purity=100&sorting=date_added&per_page={min(count, 24)}"
+                url = f"{self.SEARCH_URL}?categories=111&purity=100&atleast=1920x1080&sorting=date_added&per_page={min(count, 24)}"
 
             print(f"[Wallhaven] 正在访问: {url}", file=sys.stderr)
             page = StealthyFetcher.fetch(url, headless=True, timeout=30000, network_idle=True, wait=2000)
@@ -1144,55 +1356,79 @@ class WallhavenCrawler:
                     print(f"[Wallhaven] 正在处理 {i+1}/{min(len(thumb_links), count)}: {detail_url}", file=sys.stderr)
                     detail_page = StealthyFetcher.fetch(detail_url, headless=True, timeout=30000, network_idle=True, wait=1500)
 
-                    # 先尝试提取静态图片
-                    image_url = detail_page.css("#wallpaper::attr(src)").get()
-                    if not image_url:
-                        image_url = detail_page.css("img.wallpaper::attr(src)").get()
-                    if not image_url:
-                        img_tags = detail_page.css("img[src*='wallhaven']")
-                        for img in img_tags:
-                            src = img.css("::attr(src)").get()
-                            if src and ("full" in src or "wallhaven" in src):
-                                image_url = src
-                                break
+                    # ====== Wallhaven 详情页结构 ======
+                    # 动态壁纸: <video id="wallpaper" src="xxx.mp4" poster="xxx.jpg"></video>
+                    # 静态壁纸: <img id="wallpaper" src="xxx.jpg">
+                    # ==================================
 
-                    # 动态壁纸：提取 <video> 标签中的视频URL
                     video_url = ""
                     poster_url = ""
-                    video_element = detail_page.css("#wallpaper")
-                    if video_element:
-                        # 检查 #wallpaper 是否为 <video> 标签
-                        vid_src = video_element[0].css("::attr(src)").get() or ""
-                        if vid_src and any(ext in vid_src.lower() for ext in ['.mp4', '.webm', '.mov']):
-                            video_url = vid_src
-                            poster_url = video_element[0].css("::attr(poster)").get() or ""
-                            image_url = vid_src  # 用视频URL作为主URL
+                    image_url = ""
 
-                    # 备选：查找 <video> 标签
-                    if not video_url:
-                        video_tags = detail_page.css("video")
-                        for vt in video_tags:
-                            # 检查 <source> 子标签
-                            source_tags = vt.css("source")
+                    # 1. 优先检测动态壁纸（video#wallpaper）
+                    video_wallpaper = detail_page.css("video#wallpaper")
+                    if video_wallpaper:
+                        print(f"[Wallhaven] 发现动态壁纸视频标签！", file=sys.stderr)
+                        # 提取 video src
+                        v_src = video_wallpaper.css("::attr(src)").get() or ""
+                        if v_src and v_src.startswith("http"):
+                            video_url = v_src
+                        # 提取 source 子标签
+                        if not video_url:
+                            source_tags = video_wallpaper.css("source")
                             for st in source_tags:
                                 s_src = st.css("::attr(src)").get() or ""
-                                s_type = st.css("::attr(type)").get() or ""
-                                if s_src and ("mp4" in s_type or "video" in s_type or not video_url):
+                                if s_src and s_src.startswith("http"):
                                     video_url = s_src
+                                    break
+                        # 提取 poster（封面图）
+                        poster_url = video_wallpaper.css("::attr(poster)").get() or ""
+
+                    # 2. 如果没有找到 video#wallpaper，尝试通用的 video 标签
+                    if not video_url:
+                        all_video_tags = detail_page.css("video")
+                        for vt in all_video_tags:
+                            v_src = vt.css("::attr(src)").get() or ""
+                            if v_src and v_src.startswith("http"):
+                                video_url = v_src
                             if not video_url:
-                                v_src = vt.css("::attr(src)").get() or ""
-                                if v_src:
-                                    video_url = v_src
+                                source_tags = vt.css("source")
+                                for st in source_tags:
+                                    s_src = st.css("::attr(src)").get() or ""
+                                    if s_src and s_src.startswith("http"):
+                                        video_url = s_src
+                                        break
                             if video_url:
                                 poster_url = vt.css("::attr(poster)").get() or ""
                                 break
 
-                    # 如果找到了视频但没找到图片，用视频URL
-                    if video_url and not image_url:
-                        image_url = video_url
-
+                    # 3. 提取静态图片（作为封面/备选）
                     if not image_url:
-                        continue
+                        image_url = detail_page.css("img#wallpaper::attr(src)").get() or ""
+                    if not image_url:
+                        image_url = detail_page.css("#wallpaper::attr(src)").get() or ""
+                    if not image_url:
+                        img_tags = detail_page.css("img[src*='wallhaven']")
+                        for img in img_tags:
+                            src = img.css("::attr(src)").get()
+                            if src and "full" in src:
+                                image_url = src
+                                break
+
+                    # 4. 整理URL关系
+                    if video_url:
+                        # 动态壁纸：image_url 用于展示封面，video_url 用于播放
+                        if poster_url:
+                            image_url = poster_url
+                        elif not image_url:
+                            image_url = video_url
+                        print(f"[Wallhaven] 动态壁纸: video={video_url[:50]}..., image={image_url[:50]}...", file=sys.stderr)
+                    else:
+                        # 静态壁纸
+                        if not image_url:
+                            print(f"[Wallhaven] 未找到图片，跳过: {detail_url}", file=sys.stderr)
+                            continue
+                        print(f"[Wallhaven] 静态壁纸: image={image_url[:50]}...", file=sys.stderr)
 
                     title = detail_page.css("h1::text").get() or detail_page.css("#wallpaper-title::text").get() or "Wallhaven Wallpaper"
                     tags = [t.strip() for t in detail_page.css("#tags .tagname::text").getall() if t.strip()]
@@ -1312,7 +1548,8 @@ def main():
     parser.add_argument("--fetch-mode", type=str, default="auto",
                         choices=["auto", "static", "stealthy"],
                         help="爬取方式: auto(自动选择)/static(静态HTTP)/stealthy(隐身浏览器)")
-    parser.add_argument("--count", type=int, default=10, help="爬取数量 (默认: 10)")
+    parser.add_argument("--count", type=int, default=10, help="每页爬取数量 (默认: 10)")
+    parser.add_argument("--pages", type=int, default=1, help="连续爬取页数 (默认: 1, 最大: 10)")
     parser.add_argument("--min-width", type=int, default=800, help="最小图片宽度过滤 (默认: 800)")
     parser.add_argument("--min-height", type=int, default=600, help="最小图片高度过滤 (默认: 600)")
     parser.add_argument("--output", type=str, default=None, help="输出JSON文件路径 (默认输出到stdout)")
@@ -1321,25 +1558,30 @@ def main():
 
     args = parser.parse_args()
 
+    # 限制 pages 范围
+    pages = min(max(args.pages, 1), 10)
+
     if args.url:
         # ===== 自定义URL模式 =====
         print(f"模式: 自适应爬取", file=sys.stderr)
         print(f"目标URL: {args.url}", file=sys.stderr)
         print(f"爬取方式: {args.fetch_mode}", file=sys.stderr)
-        print(f"数量: {args.count}", file=sys.stderr)
+        print(f"每页数量: {args.count}", file=sys.stderr)
+        print(f"连续页数: {pages}", file=sys.stderr)
 
         crawler = AdaptiveCrawler(
             min_width=args.min_width,
             min_height=args.min_height,
-            max_images=args.count,
+            max_images=args.count * pages,
         )
-        results = crawler.crawl(url=args.url, mode=args.fetch_mode, count=args.count)
+        results = crawler.crawl(url=args.url, mode=args.fetch_mode, count=args.count, pages=pages)
 
     else:
         # ===== 固定源模式 =====
         source_info = CRAWL_SOURCES[args.source]
         print(f"爬取源: {source_info['name']} - {source_info['description']}", file=sys.stderr)
-        print(f"数量: {args.count}", file=sys.stderr)
+        print(f"每页数量: {args.count}", file=sys.stderr)
+        print(f"连续页数: {pages}", file=sys.stderr)
 
         crawlers = {
             "wallhaven": WallhavenCrawler,
@@ -1348,12 +1590,13 @@ def main():
         crawler_class = crawlers.get(args.source)
         if crawler_class:
             crawler = crawler_class()
+            # 固定源模式暂不支持多页（Wallhaven 一次请求就能获取多张）
             results = crawler.crawl(mode="random", count=args.count)
         else:
             # 其他固定源使用自适应爬取器
             print(f"[{args.source}] 使用自适应爬取器...", file=sys.stderr)
             crawler = AdaptiveCrawler(min_width=args.min_width, min_height=args.min_height)
-            results = crawler.crawl(url=source_info["url"], mode="auto", count=args.count)
+            results = crawler.crawl(url=source_info["url"], mode="auto", count=args.count, pages=pages)
             # 补充 source 字段
             for r in results:
                 r["source"] = args.source
