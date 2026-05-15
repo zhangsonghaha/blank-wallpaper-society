@@ -17,6 +17,8 @@ import {
   Bell,
   FileText,
   Bug,
+  BarChart3,
+  Trophy,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -29,6 +31,8 @@ import NotificationsTab from "./NotificationsTab";
 import SettingsTab from "./SettingsTab";
 import CrawlTab from "./CrawlTab";
 import ReportTab from "./ReportTab";
+import ApiUsageTab from "./ApiUsageTab";
+import ChallengesTab from "./ChallengesTab";
 
 // 标签页接口
 interface TabItem {
@@ -102,6 +106,16 @@ export default function AdminClient() {
       title: "爬虫管理",
       icon: <Bug className="w-5 h-5" />,
     },
+    {
+      id: "api-usage",
+      title: "API用量",
+      icon: <BarChart3 className="w-5 h-5" />,
+    },
+    {
+      id: "challenges",
+      title: "挑战赛管理",
+      icon: <Trophy className="w-5 h-5" />,
+    },
   ];
 
   // 切换标签页
@@ -144,6 +158,12 @@ export default function AdminClient() {
         break;
       case "crawl":
         content = <CrawlTab />;
+        break;
+      case "api-usage":
+        content = <ApiUsageTab />;
+        break;
+      case "challenges":
+        content = <ChallengesTab />;
         break;
       default:
         content = <div className="p-6">功能开发中...</div>;

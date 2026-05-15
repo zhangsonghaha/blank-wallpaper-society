@@ -118,6 +118,12 @@ export default function Navbar() {
                 探索
               </Link>
               <Link
+                href="/feed"
+                className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors"
+              >
+                动态
+              </Link>
+              <Link
                 href="/#popular"
                 className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors"
               >
@@ -358,6 +364,22 @@ export default function Navbar() {
                   >
                     <Upload className="w-4 h-4 mr-2" />
                     上传壁纸
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => router.push("/challenges")}
+                    className="cursor-pointer"
+                  >
+                    <Trophy className="w-4 h-4 mr-2" />
+                    挑战赛
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => router.push("/ai-generate")}
+                    className="cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    AI生成壁纸
                   </DropdownMenuItem>
 
                   <DropdownMenuItem
