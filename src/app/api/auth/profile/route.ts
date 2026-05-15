@@ -64,10 +64,45 @@ export async function PATCH(request: NextRequest) {
       });
     }
 
-    // === JSON 更新（昵称）===
+    // === JSON 更新（昵称/密码）===
     const body = await request.json();
-    const { name } = body;
+    const { name, currentPassword, newPassword } = body;
 
+    // 修改密码
+    if (currentPassword && newPassword) {
+      if (newPassword.length < 6) {
+        return NextResponse.json({ error: "新密码至少 6 个字符" }, { status: 400 });
+      }
+
+      // 验证当前密码
+      const crypto = await import("crypto");
+      const users = (await query("SELECT password FROM users WHERE id = ?", [
+        userId,
+      ])) as any[];
+      if (users.length === 0) {
+        return NextResponse.json({ error: "用户不存在" }, { status: 404 });
+      }
+      const currentHash = crypto
+        .createHash("sha256")
+        .update(currentPassword)
+        .digest("hex");
+      if (currentHash !== users[0].password) {
+        return NextResponse.json({ error: "当前密码不正确" }, { status: 400 });
+      }
+
+      const newHash = crypto
+        .createHash("sha256")
+        .update(newPassword)
+        .digest("hex");
+      await query("UPDATE users SET password = ? WHERE id = ?", [
+        newHash,
+        userId,
+      ]);
+
+      return NextResponse.json({ message: "密码修改成功" });
+    }
+
+    // 修改昵称
     if (name !== undefined) {
       if (!name || name.trim().length === 0) {
         return NextResponse.json({ error: "昵称不能为空" }, { status: 400 });

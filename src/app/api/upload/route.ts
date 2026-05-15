@@ -3,6 +3,7 @@ import { uploadFile, BUCKET_NAME, PUBLIC_URL_BASE } from "@/lib/minio";
 import { query } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { extractColors } from "@/lib/color-extract";
+import { addWatermark, isWatermarkEnabled, getWatermarkText } from "@/lib/watermark";
 import sharp from "sharp";
 
 // 每日上传限制
@@ -252,8 +253,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 水印处理
+    let processedBuffer = buffer;
+    try {
+      const watermarkEnabled = await isWatermarkEnabled();
+      if (watermarkEnabled) {
+        const watermarkText = await getWatermarkText();
+        processedBuffer = await addWatermark(buffer, watermarkText);
+      }
+    } catch {
+      // 水印处理失败使用原图
+    }
+
     // 上传原图到 MinIO
-    const { storageKey, url } = await uploadFile(buffer, filename, file.type);
+    const { storageKey, url } = await uploadFile(processedBuffer, filename, file.type);
 
     // 生成缩略图并上传
     let thumbnailUrl = "";

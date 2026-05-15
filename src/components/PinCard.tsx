@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { FolderPlus, Play } from "lucide-react";
+import Link from "next/link";
 import type { GalleryImage } from "@/data/images";
 import AddToCollectionDialog from "./AddToCollectionDialog";
 
@@ -219,12 +220,16 @@ export default function PinCard({
 
                 {/* Bottom Info */}
                 <div className="absolute bottom-3 left-3 right-3 flex items-center">
-                  <div className="flex items-center gap-2">
+                  <Link
+                    href={image.uploaded_by ? `/creator/${image.uploaded_by}` : "#"}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+                  >
                     <div className="w-7 h-7 rounded-full bg-white/90 flex items-center justify-center overflow-hidden ring-2 ring-white/50">
                       <img src={image.avatar} alt={image.author} className="w-full h-full object-cover" />
                     </div>
                     <span className="text-xs font-semibold text-white drop-shadow-sm">{image.author}</span>
-                  </div>
+                  </Link>
                 </div>
               </motion.div>
             )}
@@ -248,7 +253,12 @@ export default function PinCard({
         {/* Pin Info (always visible below image) */}
         <div className="p-3">
           <h3 className="text-sm font-semibold text-[var(--color-ink)] truncate">{image.title}</h3>
-          <p className="text-xs text-[var(--color-mute)] mt-0.5 truncate">{image.author}</p>
+          <Link
+            href={image.uploaded_by ? `/creator/${image.uploaded_by}` : "#"}
+            className="text-xs text-[var(--color-mute)] mt-0.5 truncate hover:text-[var(--color-primary)] transition-colors"
+          >
+            {image.author}
+          </Link>
           {/* Tags */}
           <div className="flex flex-wrap gap-1.5 mt-2">
             {image.tags.slice(0, 2).map((tag) => (

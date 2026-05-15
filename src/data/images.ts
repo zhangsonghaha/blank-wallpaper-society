@@ -11,6 +11,7 @@ export interface GalleryImage {
   media_type?: "image" | "video";
   video_url?: string;
   poster_url?: string;
+  uploaded_by?: number;
 }
 
 export const categories = [

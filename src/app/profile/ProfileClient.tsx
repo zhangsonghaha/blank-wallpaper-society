@@ -29,6 +29,11 @@ import {
   PowerOff,
   BarChart3,
   AlertTriangle,
+  Download,
+  ChevronLeft,
+  ChevronRight,
+  UserPlus,
+  UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,6 +76,11 @@ interface StatsData {
   totalFavorites: number;
 }
 
+interface FollowStats {
+  followers: number;
+  following: number;
+}
+
 export default function ProfileClient({
   user,
   stats,
@@ -79,6 +89,8 @@ export default function ProfileClient({
   stats: StatsData;
 }) {
   const { data: session, update: updateSession } = useSession();
+  const [followStats, setFollowStats] = useState<FollowStats>({ followers: 0, following: 0 });
+  const [loadingFollowStats, setLoadingFollowStats] = useState(true);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user.name);
   const [saving, setSaving] = useState(false);
@@ -105,6 +117,12 @@ export default function ProfileClient({
   const [myCollections, setMyCollections] = useState<any[]>([]);
   const [loadingCollections, setLoadingCollections] = useState(true);
   const [createCollectionOpen, setCreateCollectionOpen] = useState(false);
+
+  // 下载历史
+  const [downloadHistory, setDownloadHistory] = useState<any[]>([]);
+  const [loadingDownloads, setLoadingDownloads] = useState(true);
+  const [downloadPage, setDownloadPage] = useState(1);
+  const [downloadTotal, setDownloadTotal] = useState(0);
 
   // API Key管理
   const [apiKeys, setApiKeys] = useState<any[]>([]);
@@ -167,6 +185,42 @@ export default function ProfileClient({
       })
       .catch(() => setLoadingCollections(false));
   }, [user.id]);
+
+  // 加载下载历史
+  const fetchDownloads = useCallback((page: number) => {
+    setLoadingDownloads(true);
+    fetch(`/api/user/downloads?page=${page}&limit=12`)
+      .then((res) => {
+        if (!res.ok) return { data: [], pagination: { total: 0 } };
+        return res.json();
+      })
+      .then((data) => {
+        setDownloadHistory(data.data || []);
+        setDownloadTotal(data.pagination?.total || 0);
+        setLoadingDownloads(false);
+      })
+      .catch(() => setLoadingDownloads(false));
+  }, []);
+
+  useEffect(() => {
+    fetchDownloads(downloadPage);
+  }, [downloadPage, fetchDownloads]);
+
+  // 加载关注统计
+  const fetchFollowStats = useCallback(() => {
+    setLoadingFollowStats(true);
+    fetch("/api/user/follow-stats")
+      .then((res) => res.json())
+      .then((data) => {
+        setFollowStats(data);
+        setLoadingFollowStats(false);
+      })
+      .catch(() => setLoadingFollowStats(false));
+  }, []);
+
+  useEffect(() => {
+    fetchFollowStats();
+  }, [fetchFollowStats]);
 
   // 加载API Keys
   const fetchApiKeys = useCallback(() => {
@@ -428,7 +482,7 @@ export default function ProfileClient({
                 <h2 className="text-lg font-semibold text-[var(--color-ink)] mb-4">
                   统计概览
                 </h2>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-5 gap-4">
                   <Card className="rounded-xl border-none bg-[var(--color-surface-card)]">
                     <CardContent className="p-4 text-center">
                       <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-2">
@@ -460,6 +514,28 @@ export default function ProfileClient({
                         {stats.totalFavorites}
                       </p>
                       <p className="text-xs text-[var(--color-mute)]">收藏</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="rounded-xl border-none bg-[var(--color-surface-card)]">
+                    <CardContent className="p-4 text-center">
+                      <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-2">
+                        <UserPlus className="w-5 h-5 text-purple-600" />
+                      </div>
+                      <p className="text-2xl font-bold text-[var(--color-ink)]">
+                        {loadingFollowStats ? "..." : followStats.followers}
+                      </p>
+                      <p className="text-xs text-[var(--color-mute)]">粉丝</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="rounded-xl border-none bg-[var(--color-surface-card)]">
+                    <CardContent className="p-4 text-center">
+                      <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center mx-auto mb-2">
+                        <UserCheck className="w-5 h-5 text-orange-600" />
+                      </div>
+                      <p className="text-2xl font-bold text-[var(--color-ink)]">
+                        {loadingFollowStats ? "..." : followStats.following}
+                      </p>
+                      <p className="text-xs text-[var(--color-mute)]">关注</p>
                     </CardContent>
                   </Card>
                 </div>
@@ -499,6 +575,98 @@ export default function ProfileClient({
                 </div>
               </div>
 
+              {/* Change Password */}
+              <Separator />
+              <div className="px-6 md:px-8 py-6">
+                <h2 className="text-lg font-semibold text-[var(--color-ink)] mb-4 flex items-center gap-2">
+                  <Lock className="w-5 h-5" />
+                  修改密码
+                </h2>
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const form = e.target as HTMLFormElement;
+                    const currentPwd = (form.elements.namedItem("currentPassword") as HTMLInputElement).value;
+                    const newPwd = (form.elements.namedItem("newPassword") as HTMLInputElement).value;
+                    const confirmPwd = (form.elements.namedItem("confirmPassword") as HTMLInputElement).value;
+
+                    if (!currentPwd || !newPwd || !confirmPwd) {
+                      toast.error("请填写所有字段");
+                      return;
+                    }
+                    if (newPwd.length < 6) {
+                      toast.error("新密码至少 6 个字符");
+                      return;
+                    }
+                    if (newPwd !== confirmPwd) {
+                      toast.error("两次输入的新密码不一致");
+                      return;
+                    }
+
+                    try {
+                      const res = await fetch("/api/auth/profile", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          currentPassword: currentPwd,
+                          newPassword: newPwd,
+                        }),
+                      });
+                      const data = await res.json();
+                      if (res.ok) {
+                        toast.success("密码修改成功");
+                        form.reset();
+                      } else {
+                        toast.error(data.error || "修改失败");
+                      }
+                    } catch {
+                      toast.error("修改失败，请重试");
+                    }
+                  }}
+                  className="space-y-4 max-w-md"
+                >
+                  <div>
+                    <Label className="mb-1.5 block">当前密码</Label>
+                    <Input
+                      type="password"
+                      name="currentPassword"
+                      placeholder="请输入当前密码"
+                      className="rounded-xl"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-1.5 block">新密码</Label>
+                    <Input
+                      type="password"
+                      name="newPassword"
+                      placeholder="至少 6 个字符"
+                      className="rounded-xl"
+                      required
+                      minLength={6}
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-1.5 block">确认新密码</Label>
+                    <Input
+                      type="password"
+                      name="confirmPassword"
+                      placeholder="再次输入新密码"
+                      className="rounded-xl"
+                      required
+                      minLength={6}
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    className="rounded-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)] gap-1"
+                  >
+                    <Lock className="w-4 h-4" />
+                    修改密码
+                  </Button>
+                </form>
+              </div>
+
               {/* Tabs: Favorites + Uploads */}
               <Separator />
               <div className="px-6 md:px-8 py-6">
@@ -515,6 +683,10 @@ export default function ProfileClient({
                     <TabsTrigger value="api-keys">
                       <Key className="w-4 h-4" />
                       API Key
+                    </TabsTrigger>
+                    <TabsTrigger value="downloads">
+                      <Download className="w-4 h-4" />
+                      下载历史
                     </TabsTrigger>
                     <TabsTrigger value="uploads">
                       <Upload className="w-4 h-4" />
@@ -788,6 +960,91 @@ export default function ProfileClient({
                             <Key className="w-4 h-4" />
                             创建 API Key
                           </Button>
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  {/* Downloads Tab */}
+                  <TabsContent value="downloads">
+                    <div className="mt-4">
+                      <p className="text-sm text-[var(--color-mute)] mb-4">
+                        共 {downloadTotal} 条下载记录
+                      </p>
+                      {loadingDownloads ? (
+                        <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                          {Array.from({ length: 4 }).map((_, i) => (
+                            <div key={i} className="aspect-[3/4] rounded-xl skeleton-pulse bg-[var(--color-surface-card)]" />
+                          ))}
+                        </div>
+                      ) : downloadHistory.length > 0 ? (
+                        <>
+                          <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                            {downloadHistory.map((item) => (
+                              <Link
+                                key={item.id}
+                                href={`/?pin=${item.image_id}`}
+                                className="group relative aspect-[3/4] rounded-xl overflow-hidden bg-[var(--color-surface-card)] hover:shadow-md transition-shadow"
+                              >
+                                <img
+                                  src={item.thumbnail_url || item.url}
+                                  alt={item.title}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                <div className="absolute bottom-2 left-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <p className="text-xs text-white font-medium truncate">{item.title}</p>
+                                  <p className="text-[10px] text-white/70 truncate">{item.author}</p>
+                                </div>
+                                {/* 下载信息角标 */}
+                                <div className="absolute top-2 right-2">
+                                  <span className="flex items-center gap-1 px-1.5 py-0.5 bg-black/50 text-white text-[10px] rounded-full">
+                                    <Download className="w-2.5 h-2.5" />
+                                    {item.resolution || "原图"}
+                                  </span>
+                                </div>
+                              </Link>
+                            ))}
+                          </div>
+                          {/* 分页 */}
+                          {downloadTotal > 12 && (
+                            <div className="flex items-center justify-center gap-4 mt-6">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={downloadPage <= 1}
+                                onClick={() => setDownloadPage((p) => Math.max(1, p - 1))}
+                                className="rounded-full gap-1"
+                              >
+                                <ChevronLeft className="w-4 h-4" />
+                                上一页
+                              </Button>
+                              <span className="text-sm text-[var(--color-mute)]">
+                                {downloadPage} / {Math.ceil(downloadTotal / 12)}
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={downloadPage >= Math.ceil(downloadTotal / 12)}
+                                onClick={() => setDownloadPage((p) => p + 1)}
+                                className="rounded-full gap-1"
+                              >
+                                下一页
+                                <ChevronRight className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-center py-8">
+                          <Download className="w-10 h-10 text-[var(--color-ash)] mx-auto mb-3" />
+                          <p className="text-sm text-[var(--color-mute)] mb-3">还没有下载过任何壁纸</p>
+                          <Link
+                            href="/"
+                            className="inline-block px-4 py-2 text-sm font-bold text-white bg-[var(--color-primary)] rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors"
+                          >
+                            去探索
+                          </Link>
                         </div>
                       )}
                     </div>

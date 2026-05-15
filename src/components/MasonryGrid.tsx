@@ -36,6 +36,7 @@ interface ImageRecord {
   media_type?: "image" | "video";
   video_url?: string | null;
   poster_url?: string | null;
+  uploaded_by?: number | null;
 }
 
 interface CategoryRecord {
@@ -330,6 +331,7 @@ export default function MasonryGrid() {
         media_type: img.media_type || "image",
         video_url: img.video_url || undefined,
         poster_url: img.poster_url || undefined,
+        uploaded_by: img.uploaded_by || undefined,
       })),
     [filteredImages]
   );

@@ -11,6 +11,7 @@ import {
   Server,
   Paintbrush,
   UserCheck,
+  Key,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -106,6 +107,20 @@ const settingGroups: SettingGroup[] = [
     description: "系统级配置，谨慎修改",
     fields: [
       { key: "maintenance_mode", label: "维护模式", type: "toggle", description: "开启后普通用户无法访问网站" },
+    ],
+  },
+  {
+    id: "oauth",
+    title: "OAuth 登录配置",
+    icon: Key,
+    description: "第三方登录凭据配置，配置后需重启服务生效",
+    fields: [
+      { key: "google_login_enabled", label: "启用 Google 登录", type: "toggle", description: "开启前需配置 Google Client ID 和 Secret" },
+      { key: "google_client_id", label: "Google Client ID", type: "text", placeholder: "xxx.apps.googleusercontent.com" },
+      { key: "google_client_secret", label: "Google Client Secret", type: "text", placeholder: "GOCSPX-xxxx", description: "从 Google Cloud Console 获取" },
+      { key: "github_login_enabled", label: "启用 GitHub 登录", type: "toggle", description: "开启前需配置 GitHub Client ID 和 Secret" },
+      { key: "github_client_id", label: "GitHub Client ID", type: "text", placeholder: "如 Ov23lixxxxx" },
+      { key: "github_client_secret", label: "GitHub Client Secret", type: "text", placeholder: "如 abc123xxxxx", description: "从 GitHub Developer Settings 获取" },
     ],
   },
 ];

@@ -1,15 +1,21 @@
 "use client";
 
+import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 import {
   Image as ImageIcon,
   Eye,
   Download,
   Calendar,
   Shield,
+  UserPlus,
+  UserCheck,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -39,6 +45,49 @@ export default function CreatorClient({
   images: any[];
   stats: CreatorStats;
 }) {
+  const { data: session } = useSession();
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [followLoading, setFollowLoading] = useState(false);
+
+  const isLoggedIn = !!session?.user;
+  const isSelf = Number((session?.user as any)?.id) === user.id;
+
+  // 获取关注状态
+  useEffect(() => {
+    fetch(`/api/users/${user.id}/follow`)
+      .then((res) => res.json())
+      .then((data) => {
+        setIsFollowing(data.isFollowing);
+        setFollowersCount(data.followersCount);
+        setFollowingCount(data.followingCount);
+      })
+      .catch(() => {});
+  }, [user.id]);
+
+  const handleFollow = async () => {
+    if (!isLoggedIn) {
+      toast.error("请先登录");
+      return;
+    }
+    setFollowLoading(true);
+    try {
+      const res = await fetch(`/api/users/${user.id}/follow`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setIsFollowing(data.following);
+        setFollowersCount((prev) => data.following ? prev + 1 : prev - 1);
+        toast.success(data.message);
+      } else {
+        toast.error(data.error);
+      }
+    } catch {
+      toast.error("操作失败");
+    }
+    setFollowLoading(false);
+  };
+
   const userInitial = user.name?.[0] || "?";
   const isAdmin = user.role === "admin";
 
@@ -84,6 +133,32 @@ export default function CreatorClient({
                     <h1 className="text-2xl md:text-3xl font-bold text-[var(--color-ink)]">
                       {user.name}
                     </h1>
+                    {!isSelf && isLoggedIn && (
+                      <Button
+                        size="sm"
+                        onClick={handleFollow}
+                        disabled={followLoading}
+                        className={`rounded-full gap-1 text-xs ${
+                          isFollowing
+                            ? "bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                            : "bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-pressed)]"
+                        }`}
+                      >
+                        {followLoading ? (
+                          "..."
+                        ) : isFollowing ? (
+                          <>
+                            <UserCheck className="w-3.5 h-3.5" />
+                            已关注
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="w-3.5 h-3.5" />
+                            关注
+                          </>
+                        )}
+                      </Button>
+                    )}
                     <div className="flex items-center gap-3 mt-2 justify-center md:justify-start">
                       {isAdmin && (
                         <Badge className="rounded-full text-xs gap-1 bg-amber-500">
@@ -114,6 +189,15 @@ export default function CreatorClient({
                       {stats.totalImages}
                     </p>
                     <p className="text-xs text-[var(--color-mute)]">壁纸</p>
+                  </div>
+                  <div className="text-center">
+                    <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center mx-auto mb-2">
+                      <UserCheck className="w-5 h-5 text-pink-600" />
+                    </div>
+                    <p className="text-2xl font-bold text-[var(--color-ink)]">
+                      {followersCount}
+                    </p>
+                    <p className="text-xs text-[var(--color-mute)]">粉丝</p>
                   </div>
                   <div className="text-center">
                     <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">

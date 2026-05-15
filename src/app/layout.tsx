@@ -14,10 +14,32 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "ImageGallery | 发现视觉灵感",
+  title: {
+    default: "ImageGallery | 发现视觉灵感",
+    template: "%s | ImageGallery",
+  },
   description:
     "探索精选摄影作品，从自然风光到城市建筑，从美食到艺术，找到属于你的视觉灵感。",
-  keywords: ["图片", "摄影", "画廊", "灵感", "设计"],
+  keywords: ["图片", "摄影", "画廊", "灵感", "设计", "壁纸", "高清壁纸", "桌面壁纸", "手机壁纸"],
+  authors: [{ name: "ImageGallery" }],
+  openGraph: {
+    type: "website",
+    locale: "zh_CN",
+    siteName: "ImageGallery",
+    title: "ImageGallery | 发现视觉灵感",
+    description:
+      "探索精选摄影作品，从自然风光到城市建筑，从美食到艺术，找到属于你的视觉灵感。",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ImageGallery | 发现视觉灵感",
+    description:
+      "探索精选摄影作品，从自然风光到城市建筑，从美食到艺术，找到属于你的视觉灵感。",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({

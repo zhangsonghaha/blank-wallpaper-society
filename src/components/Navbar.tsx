@@ -34,6 +34,9 @@ export default function Navbar() {
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const { searchQuery, setSearchQuery, favoriteCount, setShowFavoritesOnly } = useSearch();
   const [localQuery, setLocalQuery] = useState(searchQuery);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestTimeout, setSuggestTimeout] = useState<NodeJS.Timeout | null>(null);
 
   const isAdmin = (session?.user as any)?.role === "admin";
   const isLoggedIn = status === "authenticated";
@@ -57,6 +60,25 @@ export default function Navbar() {
   const handleSearch = (value: string) => {
     setLocalQuery(value);
     setSearchQuery(value);
+    setShowSuggestions(false);
+
+    // 搜索建议（防抖 300ms）
+    if (suggestTimeout) clearTimeout(suggestTimeout);
+    if (value.length >= 1) {
+      const timeout = setTimeout(() => {
+        fetch(`/api/search/suggest?q=${encodeURIComponent(value)}`)
+          .then((res) => res.json())
+          .then((data) => {
+            setSuggestions(data.suggestions || []);
+            setShowSuggestions(true);
+          })
+          .catch(() => {});
+      }, 300);
+      setSuggestTimeout(timeout);
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
   };
 
   const userInitial =
@@ -117,6 +139,12 @@ export default function Navbar() {
                 <Grid3X3 className="w-4 h-4" />
                 合集
               </Link>
+              <Link
+                href="/tags"
+                className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors"
+              >
+                标签
+              </Link>
               {isLoggedIn && (
                 <Link
                   href="/upload"
@@ -149,6 +177,13 @@ export default function Navbar() {
                 type="text"
                 value={localQuery}
                 onChange={(e) => handleSearch(e.target.value)}
+                onFocus={() => {
+                  if (suggestions.length > 0) setShowSuggestions(true);
+                }}
+                onBlur={() => {
+                  // 延迟关闭，允许点击建议项
+                  setTimeout(() => setShowSuggestions(false), 200);
+                }}
                 placeholder="搜索图片、灵感..."
                 className="w-full h-12 pl-11 pr-10 bg-[var(--color-surface-card)] text-[var(--color-ink)] text-base rounded-full placeholder:text-[var(--color-ash)] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[var(--color-focus-outer)] focus:ring-offset-2 transition-all"
               />
@@ -171,6 +206,42 @@ export default function Navbar() {
                     />
                   </svg>
                 </button>
+              )}
+
+              {/* Search Suggestions Dropdown */}
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-[var(--color-hairline)] overflow-hidden z-50">
+                  {suggestions.map((s, i) => (
+                    <button
+                      key={`${s.type}-${s.text}-${i}`}
+                      className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-[var(--color-surface-card)] transition-colors text-left"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleSearch(s.text);
+                      }}
+                    >
+                      {s.type === "title" && (
+                        <svg className="w-4 h-4 text-[var(--color-mute)] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                      {s.type === "category" && (
+                        <svg className="w-4 h-4 text-[var(--color-mute)] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                        </svg>
+                      )}
+                      {s.type === "tag" && (
+                        <svg className="w-4 h-4 text-[var(--color-mute)] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                        </svg>
+                      )}
+                      <span className="text-sm text-[var(--color-ink)] truncate">{s.text}</span>
+                      <span className="ml-auto text-[10px] text-[var(--color-mute)] uppercase">
+                        {s.type === "title" ? "标题" : s.type === "category" ? "分类" : "标签"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
           </div>

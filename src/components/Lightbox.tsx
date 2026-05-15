@@ -4,9 +4,11 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import type { GalleryImage } from "@/data/images";
-import { Flag, Download, ChevronDown, Monitor, Smartphone, Tablet, X, FolderPlus, Pencil, Calendar, MessageCircle } from "lucide-react";
+import { Flag, Download, ChevronDown, Monitor, Smartphone, Tablet, X, FolderPlus, Pencil, Calendar, MessageCircle, Sparkles, UserPlus, UserCheck } from "lucide-react";
+import Link from "next/link";
 import AddToCollectionDialog from "./AddToCollectionDialog";
 import CommentSection from "./CommentSection";
+import SimilarImages from "./SimilarImages";
 import {
   RESOLUTIONS,
   CATEGORY_LABELS,
@@ -45,6 +47,11 @@ export default function Lightbox({
   const [reportCategory, setReportCategory] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // 关注状态
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [loadingFollowStatus, setLoadingFollowStatus] = useState(false);
+
   // 下载面板状态
   const [downloadPanelOpen, setDownloadPanelOpen] = useState(false);
   const [resolutions, setResolutions] = useState<ResolutionWithCache[]>([]);
@@ -53,6 +60,7 @@ export default function Lightbox({
   const [loadingResolutions, setLoadingResolutions] = useState(false);
   const [addToCollectionOpen, setAddToCollectionOpen] = useState(false);
   const [commentOpen, setCommentOpen] = useState(false);
+  const [similarOpen, setSimilarOpen] = useState(false);
 
   const isFavorited = favoritedIds?.has(currentImage?.id) ?? false;
 
@@ -175,6 +183,22 @@ export default function Lightbox({
     setDownloadingRes(null);
     setDownloadProgress(0);
   }, [currentIndex]);
+
+  // 获取作者关注状态
+  useEffect(() => {
+    if (!currentImage?.uploaded_by) return;
+
+    setLoadingFollowStatus(true);
+    // 获取关注状态和粉丝数
+    fetch(`/api/users/${currentImage.uploaded_by}/follow`)
+      .then((res) => res.json())
+      .then((data) => {
+        setIsFollowing(data.isFollowing || false);
+        setFollowersCount(data.followers || 0);
+        setLoadingFollowStatus(false);
+      })
+      .catch(() => setLoadingFollowStatus(false));
+  }, [currentImage?.uploaded_by]);
 
   // 下载指定分辨率
   const handleDownloadResolution = async (resolution?: string) => {
@@ -319,6 +343,39 @@ export default function Lightbox({
     setSubmitting(false);
   };
 
+  const handleToggleFollow = async () => {
+    if (!currentImage?.uploaded_by) return;
+
+    const newFollowing = !isFollowing;
+    // 乐观更新UI
+    setIsFollowing(newFollowing);
+    setFollowersCount(prev => newFollowing ? prev + 1 : prev - 1);
+
+    try {
+      const method = newFollowing ? "POST" : "DELETE";
+      const res = await fetch(`/api/users/${currentImage.uploaded_by}/follow`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!res.ok) {
+        // 回滚
+        setIsFollowing(!newFollowing);
+        setFollowersCount(prev => newFollowing ? prev - 1 : prev + 1);
+        toast.error("操作失败，请重试");
+      } else {
+        const data = await res.json();
+        setFollowersCount(data.followers || (newFollowing ? followersCount + 1 : followersCount - 1));
+        toast.success(newFollowing ? "已关注" : "已取消关注");
+      }
+    } catch {
+      // 回滚
+      setIsFollowing(!newFollowing);
+      setFollowersCount(prev => newFollowing ? prev - 1 : prev + 1);
+      toast.error("网络错误，请重试");
+    }
+  };
+
   const categoryIcons = {
     phone: Smartphone,
     desktop: Monitor,
@@ -441,12 +498,16 @@ export default function Lightbox({
               <h3 className="text-xl font-semibold">{currentImage.title}</h3>
               <p className="text-sm text-white/70 mt-1">{currentImage.description}</p>
               <div className="flex items-center justify-center gap-3 mt-3">
-                <div className="flex items-center gap-2">
+                <Link
+                  href={currentImage.uploaded_by ? `/creator/${currentImage.uploaded_by}` : "#"}
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+                >
                   <div className="w-6 h-6 rounded-full bg-white/20 overflow-hidden">
                     <img src={currentImage.avatar} alt={currentImage.author} className="w-full h-full object-cover" />
                   </div>
                   <span className="text-sm text-white/80">{currentImage.author}</span>
-                </div>
+                </Link>
                 <span className="text-white/30">·</span>
                 <div className="flex gap-1.5">
                   {currentImage.tags.map((tag) => (
@@ -558,6 +619,18 @@ export default function Lightbox({
             >
               <MessageCircle className="w-4 h-4" />
               评论
+            </button>
+
+            {/* Similar Images Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSimilarOpen(true);
+              }}
+              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
+            >
+              <Sparkles className="w-4 h-4" />
+              相似
             </button>
 
             {/* Download Button with Panel */}
@@ -699,6 +772,31 @@ export default function Lightbox({
               </AnimatePresence>
             </div>
 
+            {/* Follow Button */}  
+            {currentImage?.uploaded_by && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleFollow();
+                }}
+                disabled={loadingFollowStatus}
+                className={`px-4 py-2 flex items-center gap-2 rounded-full text-sm font-medium transition-colors backdrop-blur-sm ${
+                  isFollowing
+                    ? "bg-[var(--color-primary)] text-white"
+                    : "bg-white/10 text-white hover:bg-white/20"
+                }`}
+              >
+                {loadingFollowStatus ? (
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                ) : isFollowing ? (
+                  <UserCheck className="w-4 h-4" />
+                ) : (
+                  <UserPlus className="w-4 h-4" />
+                )}
+                {isFollowing ? "已关注" : "关注"}
+              </button>
+            )}
+
             {/* Report Button */}
             <button
               onClick={(e) => {
@@ -829,6 +927,27 @@ export default function Lightbox({
           imageId={currentImage.id}
           isOpen={commentOpen}
           onClose={() => setCommentOpen(false)}
+        />
+      )}
+
+      {/* Similar Images Panel */}
+      {currentImage && (
+        <SimilarImages
+          key={`similar-${currentImage.id}`}
+          imageId={currentImage.id}
+          isOpen={similarOpen}
+          onClose={() => setSimilarOpen(false)}
+          onImageClick={(img) => {
+            // 点击相似图片时跳转到该图片
+            const idx = images.findIndex((i) => i.id === img.id);
+            if (idx >= 0) {
+              setSimilarOpen(false);
+              // 使用父组件的导航
+            } else {
+              // 如果图片不在当前列表中，打开新页面
+              window.open(`/?pin=${img.id}`, "_blank");
+            }
+          }}
         />
       )}
     </AnimatePresence>
