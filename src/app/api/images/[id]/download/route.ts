@@ -45,8 +45,10 @@ export async function GET(
     let mimeType: string;
     let fileName: string;
 
-    if (resolution) {
-      // 下载指定分辨率
+    const isVideo = image.media_type === "video" || (image.mime_type && image.mime_type.startsWith("video/"));
+
+    if (resolution && !isVideo) {
+      // 下载指定分辨率（仅图片支持缩放）
       const resInfo = RESOLUTION_MAP.get(resolution);
       if (!resInfo) {
         return NextResponse.json(
@@ -85,7 +87,7 @@ export async function GET(
       mimeType = "image/webp";
       fileName = `${image.title || "image"}_${resolution}.webp`;
     } else {
-      // 下载原图
+      // 下载原文件（视频或无分辨率参数的图片）
       buffer = await getObject(image.storage_key);
       mimeType = image.mime_type || "image/jpeg";
       const ext = mimeType.split("/")[1] || "jpg";

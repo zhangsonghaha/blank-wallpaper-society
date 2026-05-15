@@ -76,7 +76,9 @@ export async function POST(request: NextRequest) {
         let buffer: Buffer;
         let ext: string;
 
-        if (resolution) {
+        const isVideo = image.media_type === "video" || (image.mime_type && image.mime_type.startsWith("video/"));
+
+        if (resolution && !isVideo) {
           const resInfo = RESOLUTION_MAP.get(resolution)!;
           const resizedKey = getResizedKey(
             image.storage_key,

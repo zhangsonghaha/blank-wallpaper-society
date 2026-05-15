@@ -215,8 +215,9 @@ export default function Lightbox({
           }
         }
 
+        const defaultType = currentImage?.media_type === "video" ? "video/mp4" : "image/webp";
         const blob = new Blob(chunks.map(c => new Uint8Array(c)), {
-          type: response.headers.get("Content-Type") || "image/webp",
+          type: response.headers.get("Content-Type") || defaultType,
         });
         triggerDownload(blob, resolution);
       } else {
@@ -250,7 +251,9 @@ export default function Lightbox({
     const a = document.createElement("a");
     a.href = url;
     const suffix = resolution ? `_${resolution}` : "";
-    a.download = `${currentImage?.title || "image"}${suffix}.webp`;
+    const isVideo = currentImage?.media_type === "video";
+    const ext = isVideo ? "mp4" : "webp";
+    a.download = `${currentImage?.title || "image"}${suffix}.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -593,7 +596,8 @@ export default function Lightbox({
                       </button>
                     </div>
 
-                    {/* Resolution List */}
+                    {/* Resolution List - 视频不显示分辨率选择 */}
+                    {currentImage.media_type !== "video" && (
                     <div className="max-h-[50vh] overflow-y-auto p-2">
                       {loadingResolutions ? (
                         <div className="flex items-center justify-center py-6">
@@ -658,16 +662,19 @@ export default function Lightbox({
                         })
                       )}
                     </div>
+                    )}
 
                     {/* Original Download */}
-                    <div className="border-t border-[var(--color-hairline,#e5e5e5)] p-2">
+                    <div className={currentImage.media_type !== "video" ? "border-t border-[var(--color-hairline,#e5e5e5)] p-2" : "p-2"}>
                       <button
                         onClick={() => handleDownloadResolution()}
                         disabled={downloadingRes !== null}
                         className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm transition-colors hover:bg-[var(--color-surface-soft,#f5f5f5)] disabled:opacity-50 group"
                       >
                         <div className="flex items-center gap-2">
-                          <span className="text-[var(--color-ink,#1a1a1a)] font-medium">原图</span>
+                          <span className="text-[var(--color-ink,#1a1a1a)] font-medium">
+                            {currentImage.media_type === "video" ? "原视频" : "原图"}
+                          </span>
                           <span className="text-[10px] text-[var(--color-ash,#999)]">
                             {currentImage.width}×{currentImage.height}
                           </span>

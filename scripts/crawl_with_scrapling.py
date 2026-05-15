@@ -48,6 +48,11 @@ try:
     import requests
 except ImportError:
     print("错误: 请先安装 requests 库: pip install requests", file=sys.stderr)
+
+try:
+    from altcha import solve_challenge_v1, ChallengeV1
+except ImportError:
+    solve_challenge_v1 = None  # altcha 库可选，未安装时使用预览版本
     sys.exit(1)
 
 
@@ -126,10 +131,11 @@ class AdaptiveCrawler:
         'minimal', 'dark', 'space', 'technology', 'anime', '3d',
     ]
 
-    def __init__(self, min_width=800, min_height=600, max_images=50):
+    def __init__(self, min_width=800, min_height=600, max_images=50, cookies=None):
         self.min_width = min_width
         self.min_height = min_height
         self.max_images = max_images
+        self.cookies = cookies or {}  # 认证 cookie（用于下载需要登录的资源）
 
     def _generate_page_urls(self, url, pages):
         """基于传入的URL生成多页URL列表（支持常见的翻页参数模式）"""
@@ -225,6 +231,13 @@ class AdaptiveCrawler:
                     link_results = self._extract_image_links(page, base_domain, page_title, remaining)
                     results.extend(link_results)
 
+                # 策略3.5: haowallpaper 详情页专用提取
+                if "haowallpaper" in base_domain and "/homeViewLook/" in page_url:
+                    hao_results = self._extract_haowallpaper_detail(page, base_domain, page_title, per_page_count)
+                    if hao_results:
+                        results.extend(hao_results)
+                        print(f"[Adaptive] haowallpaper 详情页提取到 {len(hao_results)} 个结果", file=sys.stderr)
+
                 # 策略4: 提取 <video> 标签中的动态壁纸（始终执行，不只补充）
                 video_results = self._extract_video_tags(page, base_domain, page_title, per_page_count)
                 results.extend(video_results)
@@ -237,8 +250,9 @@ class AdaptiveCrawler:
                 print(f"[Adaptive] 第 {page_idx + 1} 页爬取出错: {e}", file=sys.stderr)
                 continue
 
-        # 去重（同时按 image_url 和 video_url 去重）
+        # 去重（同时按 image_url、video_url 和 preview_file_id 去重）
         seen_urls = set()
+        seen_file_ids = set()  # 用于 haowallpaper 的 preview_file_id 去重
         unique_results = []
         for item in results:
             dedup_key = item.get("video_url") or item["image_url"]
@@ -247,6 +261,12 @@ class AdaptiveCrawler:
                 # 也把 image_url 加入去重集合，防止封面图和视频重复
                 if item["image_url"] and item["image_url"] != dedup_key:
                     seen_urls.add(item["image_url"])
+                # haowallpaper 的 preview_file_id 去重
+                file_id = item.get("preview_file_id")
+                if file_id:
+                    if file_id in seen_file_ids:
+                        continue  # 跳过重复的 haowallpaper 视频
+                    seen_file_ids.add(file_id)
                 unique_results.append(item)
 
         results = unique_results[:count * pages]
@@ -955,10 +975,141 @@ class AdaptiveCrawler:
 
         return results
 
+    def _extract_haowallpaper_detail(self, page, base_domain, page_title, count):
+        """提取 haowallpaper 详情页的高清壁纸信息
+
+        haowallpaper 的详情页（/homeViewLook/{id}）包含壁纸元数据和预览视频。
+        高清版本需要通过 /link/common/file/download/{fileId} 下载，但需要登录认证。
+
+        此方法从页面提取：
+        - 封面图 URL（getCroppingImg/{id}）
+        - 预览视频 URL（previewFileImg/{id}）
+        - 高清下载 URL（download/{id}，需要认证）
+        - 页面元数据（标题、分辨率、大小、标签等）
+        """
+        results = []
+        seen_ids = set()
+
+        try:
+            # 1. 从页面中提取壁纸元数据
+            # 页面标题格式: "4k二次元美女动态壁纸｜黑丝背景视频 - 氛围感插画「哲风壁纸」"
+            title = page_title.replace("「哲风壁纸」", "").replace("- 哲风壁纸", "").strip()
+
+            # 2. 提取分辨率信息
+            resolution = ""
+            width, height = 0, 0
+            page_text = page.css("body::text").get() or ""
+            # 也搜索所有文本节点
+            all_text = " ".join(page.css("::text").getall()) if hasattr(page.css("::text"), "getall") else page_text
+            res_match = re.search(r'(\d+)\s*[x×X]\s*(\d+)', all_text)
+            if res_match:
+                width = int(res_match.group(1))
+                height = int(res_match.group(2))
+                resolution = f"{width}x{height}"
+
+            # 3. 从页面中提取所有文件 ID
+            # 封面图 URL 模式: /link/common/file/getCroppingImg/{id}
+            # 预览视频 URL 模式: /link/common/file/previewFileImg/{id}
+            # 高清下载 URL 模式: /link/common/file/download/{id}
+
+            # 从 img 标签提取文件 ID（封面图）
+            cover_ids = set()
+            img_elements = page.css("img[src*=getCroppingImg]")
+            for img in img_elements:
+                src = img.css("::attr(src)").get() or ""
+                match = re.search(r'/getCroppingImg/(\d+)', src)
+                if match:
+                    cover_ids.add(match.group(1))
+
+            # 从 video 标签提取文件 ID（预览视频）
+            video_ids = set()
+            video_elements = page.css("video")
+            for video in video_elements:
+                # 检查 source 标签
+                source_tags = video.css("source")
+                for source in source_tags:
+                    src = source.css("::attr(src)").get() or ""
+                    match = re.search(r'/previewFileImg/(\d+)', src)
+                    if not match:
+                        match = re.search(r'/getVideoReduce/(\d+)', src)
+                    if match:
+                        video_ids.add(match.group(1))
+                # 检查 video 标签的 src
+                src = video.css("::attr(src)").get() or ""
+                match = re.search(r'/previewFileImg/(\d+)', src)
+                if not match:
+                    match = re.search(r'/getVideoReduce/(\d+)', src)
+                if match:
+                    video_ids.add(match.group(1))
+
+            # 4. 为每个视频 ID 构建高清下载链接
+            for file_id in video_ids:
+                if file_id in seen_ids:
+                    continue
+                seen_ids.add(file_id)
+
+                preview_url = f"{base_domain}/link/common/file/previewFileImg/{file_id}"
+                hd_download_url = f"{base_domain}/link/common/file/getCompleteUrl/{file_id}"
+                cover_url = f"{base_domain}/link/common/file/getCroppingImg/{file_id}"
+
+                # 尝试从封面图 ID 中匹配对应 ID
+                poster_url = cover_url if file_id in cover_ids else ""
+
+                filename = f"haowallpaper_{file_id}.mp4"
+
+                # 提取标签（从页面标题和分类信息）
+                tags = self._guess_tags(title, page_title, "动态", "dynamic", "live", "animated", "4k")
+                category = self._guess_category(tags)
+
+                result = {
+                    "title": title[:200],
+                    "image_url": poster_url or preview_url,
+                    "source_url": base_domain,
+                    "source": "haowallpaper.com",
+                    "tags": tags,
+                    "category": category,
+                    "width": width,
+                    "height": height,
+                    "filename": filename,
+                    "media_type": "video",
+                    "video_url": preview_url,  # 预览视频（低分辨率）
+                    "poster_url": poster_url,
+                    "hd_download_url": hd_download_url,  # 高清下载链接（通过Altcha验证自动获取）
+                    "preview_file_id": file_id,
+                    "video_quality": "preview",  # 标记为预览版本
+                }
+
+                print(f"[Adaptive] haowallpaper 视频 ID={file_id}, 预览URL={preview_url}", file=sys.stderr)
+                print(f"[Adaptive] 高清下载URL: {hd_download_url}（通过Altcha验证自动下载）", file=sys.stderr)
+
+                results.append(result)
+
+            # 5. 对于静态图片壁纸（没有视频 ID），从封面图 ID 构建
+            for file_id in cover_ids:
+                if file_id in seen_ids:
+                    continue
+                # 只处理未被视频使用的封面图 ID
+                # 因为 haowallpaper 的封面图 ID 可能和视频 ID 不同
+                # 这里先跳过，让其他策略处理静态图片
+
+        except Exception as e:
+            print(f"[Adaptive] haowallpaper 详情页提取失败: {e}", file=sys.stderr)
+
+        return results
+
     def _extract_video_tags(self, page, base_domain, page_title, count):
-        """提取页面中的动态壁纸视频（<video>/<source>/<a> 视频链接）"""
+        """提取页面中的动态壁纸视频（<video>/<source>/<a> 视频链接）
+
+        对于 haowallpaper 等提供低分辨率预览视频的网站：
+        - 检测预览视频 URL 模式（如 /previewFileImg/{id}）
+        - 自动构建高清下载 URL（如 /download/{id}）
+        - 如果提供了认证 cookie，优先下载高清版本
+        """
         results = []
         seen_video_urls = set()
+
+        # 检测是否为 haowallpaper 域名
+        is_haowallpaper = "haowallpaper" in base_domain
 
         # 1. 提取 <video> 标签
         video_elements = page.css("video")
@@ -1006,6 +1157,25 @@ class AdaptiveCrawler:
 
                 seen_video_urls.add(video_url)
 
+                # ===== haowallpaper 高清视频处理 =====
+                # haowallpaper 的 <video> 标签 src 是低分辨率预览视频
+                # 预览 URL 模式:
+                #   - /link/common/file/previewFileImg/{id} (详情页主视频预览)
+                #   - /link/common/file/getVideoReduce/{id} (推荐列表视频预览)
+                # 高清下载 URL: /link/common/file/download/{id} （需要登录认证）
+                hd_download_url = ""
+                preview_file_id = ""
+                if is_haowallpaper:
+                    # 从预览 URL 提取文件 ID
+                    match = re.search(r'/previewFileImg/(\d+)', video_url)
+                    if not match:
+                        match = re.search(r'/getVideoReduce/(\d+)', video_url)
+                    if match:
+                        preview_file_id = match.group(1)
+                        hd_download_url = f"{base_domain}/link/common/file/getCompleteUrl/{preview_file_id}"
+                        print(f"[Adaptive] 检测到 haowallpaper 预览视频 ID={preview_file_id}", file=sys.stderr)
+                        print(f"[Adaptive] 高清下载 URL: {hd_download_url}", file=sys.stderr)
+
                 title_attr = video.css("::attr(title)").get() or ""
                 title = title_attr.strip() if title_attr.strip() else f"{page_title} - 动态壁纸"
                 filename = self._url_to_filename(video_url, "video")
@@ -1026,6 +1196,14 @@ class AdaptiveCrawler:
                     "video_url": video_url,
                     "poster_url": poster_url,
                 }
+
+                # haowallpaper: 附加高清下载信息
+                if hd_download_url:
+                    result["hd_download_url"] = hd_download_url
+                    result["preview_file_id"] = preview_file_id
+                    result["video_quality"] = "preview"  # 标记当前为预览版本
+                    print(f"[Adaptive] 已附加高清下载链接（需要登录认证）", file=sys.stderr)
+
                 results.append(result)
 
             except Exception:
@@ -1495,11 +1673,154 @@ class WallhavenCrawler:
 
 
 # ============================================================
+# Altcha 人机验证自动求解器（haowallpaper 高清下载）
+# ============================================================
+
+def _solve_altcha_download(get_complete_url, headers=None, cookies=None, timeout=30):
+    """通过 Altcha PoW 验证获取 haowallpaper 高清下载 CDN 链接
+    
+    流程：
+    1. 访问详情页获取 askId cookie（匿名 token）
+    2. GET /link/pc/certify/challenge 获取 PoW 挑战
+    3. 用 altcha-lib-py 求解 SHA-256 PoW
+    4. POST /link/pc/certify/verify 提交验证
+    5. GET /link/common/file/getCompleteUrl/{wtId} + token 获取 CDN 下载链接
+    
+    Args:
+        get_complete_url: getCompleteUrl API 地址
+        headers: 请求头
+        cookies: cookie 字典（可选，会自动获取 askId）
+        timeout: 超时时间
+    
+    Returns:
+        CDN 下载 URL（成功）或 None（失败）
+    """
+    if solve_challenge_v1 is None:
+        print("[Altcha] altcha 库未安装，无法自动验证。安装: pip install altcha", file=sys.stderr)
+        return None
+
+    try:
+        import base64 as b64mod
+        from urllib.parse import unquote
+
+        session = requests.Session()
+        if headers:
+            session.headers.update(headers)
+        if cookies:
+            session.cookies.update(cookies)
+
+        base_domain = "https://haowallpaper.com"
+        challenge_url = f"{base_domain}/link/pc/certify/challenge"
+        verify_url = f"{base_domain}/link/pc/certify/verify"
+
+        # Step 1: 如果没有 askId cookie，访问首页获取
+        ask_id = None
+        if cookies:
+            ask_id = unquote(cookies.get("askId", ""))
+        if not ask_id:
+            # 访问详情页获取 askId cookie
+            wt_id = get_complete_url.rstrip("/").split("/")[-1]
+            detail_url = f"{base_domain}/homeViewLook/{wt_id}"
+            r = session.get(detail_url, timeout=timeout)
+            ask_id = unquote(session.cookies.get("askId", ""))
+
+        if not ask_id:
+            print("[Altcha] 未能获取 askId cookie", file=sys.stderr)
+            return None
+
+        token = ask_id  # askId 就是匿名 token
+
+        # Step 2: 获取 PoW 挑战
+        r = session.get(challenge_url, headers={"Accept": "application/json"}, timeout=timeout)
+        if r.status_code != 200:
+            print(f"[Altcha] 获取挑战失败: HTTP {r.status_code}", file=sys.stderr)
+            return None
+
+        challenge_data = r.json()
+
+        # Step 3: 求解 PoW
+        challenge = ChallengeV1(
+            algorithm=challenge_data["algorithm"],
+            challenge=challenge_data["challenge"],
+            max_number=challenge_data.get("maxnumber", 1000000),
+            salt=challenge_data["salt"],
+            signature=challenge_data["signature"],
+        )
+        solution = solve_challenge_v1(challenge)
+        print(f"[Altcha] PoW 求解完成: number={solution.number}", file=sys.stderr)
+
+        # Step 4: 提交验证
+        payload = {
+            "algorithm": challenge_data["algorithm"],
+            "challenge": challenge_data["challenge"],
+            "number": solution.number,
+            "salt": challenge_data["salt"],
+            "signature": challenge_data["signature"],
+        }
+        payload_b64 = b64mod.b64encode(json.dumps(payload).encode()).decode()
+
+        r = session.post(
+            verify_url,
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            data=json.dumps({"payload": payload_b64}),
+            timeout=timeout,
+        )
+        if r.status_code != 200 or r.json().get("status") != 200:
+            print(f"[Altcha] 验证失败: {r.text[:200]}", file=sys.stderr)
+            return None
+
+        print("[Altcha] 验证通过！", file=sys.stderr)
+
+        # Step 5: 获取 CDN 下载链接
+        r = session.get(
+            get_complete_url,
+            headers={
+                "Accept": "application/json",
+                "Cache-Control": "no-cache",
+                "token": token,
+            },
+            timeout=timeout,
+        )
+        if r.status_code == 305:
+            msg = ""
+            try:
+                msg = r.json().get("msg", "")
+            except Exception:
+                pass
+            print(f"[Altcha] 访客下载次数已达上限: {msg[:80]}", file=sys.stderr)
+            return None
+        if r.status_code != 200:
+            print(f"[Altcha] 获取下载链接失败: HTTP {r.status_code}", file=sys.stderr)
+            return None
+
+        resp_data = r.json()
+        cdn_url = resp_data.get("data", "")
+        if not cdn_url:
+            print(f"[Altcha] 响应中无下载链接: {r.text[:200]}", file=sys.stderr)
+            return None
+
+        print(f"[Altcha] 获取到 CDN 下载链接: {cdn_url[:100]}...", file=sys.stderr)
+        return cdn_url
+
+    except Exception as e:
+        print(f"[Altcha] 验证流程出错: {e}", file=sys.stderr)
+        return None
+
+
+# ============================================================
 # 图片下载器
 # ============================================================
 
-def download_image(url, download_dir=None, timeout=30):
-    """下载图片到本地，返回文件路径"""
+def download_image(url, download_dir=None, timeout=30, cookies=None, item=None):
+    """下载图片/视频到本地，返回文件路径
+
+    Args:
+        url: 资源 URL
+        download_dir: 下载目录
+        timeout: 超时时间
+        cookies: 认证 cookie 字典
+        item: 爬取结果条目（用于判断是否需要高清下载）
+    """
     if not download_dir:
         download_dir = tempfile.mkdtemp(prefix="crawl_")
 
@@ -1508,7 +1829,42 @@ def download_image(url, download_dir=None, timeout=30):
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Referer": "/",
         }
-        response = requests.get(url, headers=headers, timeout=timeout, stream=True)
+
+        # haowallpaper 高清视频下载逻辑（通过 Altcha 人机验证自动下载）
+        actual_url = url
+        is_hd_video = False
+        if item and item.get("hd_download_url") and item.get("video_quality") == "preview":
+            hd_url = item["hd_download_url"]
+            # haowallpaper 使用 Altcha PoW 验证 + getCompleteUrl API
+            if "haowallpaper" in hd_url and "getCompleteUrl" in hd_url:
+                cdn_url = _solve_altcha_download(hd_url, headers=headers, cookies=cookies, timeout=timeout)
+                if cdn_url:
+                    actual_url = cdn_url
+                    is_hd_video = True
+                    print(f"[下载] Altcha 验证通过，获取高清下载链接", file=sys.stderr)
+                else:
+                    print(f"[下载] Altcha 验证失败，使用预览版本", file=sys.stderr)
+            elif cookies:
+                # 其他站点：尝试用认证 cookie 下载高清版本
+                print(f"[下载] 尝试下载高清版本: {hd_url}", file=sys.stderr)
+                try:
+                    hd_response = requests.get(hd_url, headers=headers, cookies=cookies, timeout=timeout, stream=True, allow_redirects=True)
+                    if hd_response.status_code == 200:
+                        content_type = hd_response.headers.get("content-type", "")
+                        if "video" in content_type or "octet-stream" in content_type:
+                            actual_url = hd_url
+                            is_hd_video = True
+                            print(f"[下载] 高清版本下载成功！Content-Type: {content_type}", file=sys.stderr)
+                        else:
+                            print(f"[下载] 高清版本返回非视频内容: {content_type}, 使用预览版本", file=sys.stderr)
+                    else:
+                        print(f"[下载] 高清版本下载失败 (HTTP {hd_response.status_code}), 使用预览版本", file=sys.stderr)
+                except Exception as e:
+                    print(f"[下载] 高清版本下载出错: {e}, 使用预览版本", file=sys.stderr)
+            else:
+                print(f"[下载] 高清下载需要认证（未提供 cookie），使用预览版本", file=sys.stderr)
+
+        response = requests.get(actual_url, headers=headers, cookies=cookies, timeout=timeout, stream=True)
         response.raise_for_status()
 
         content_type = response.headers.get("content-type", "image/jpeg")
@@ -1517,19 +1873,35 @@ def download_image(url, download_dir=None, timeout=30):
             ext = "png"
         elif "webp" in content_type:
             ext = "webp"
+        elif "video/mp4" in content_type or "mp4" in content_type:
+            ext = "mp4"
+        elif "video/webm" in content_type or "webm" in content_type:
+            ext = "webm"
+        elif "octet-stream" in content_type:
+            # 根据 URL 推断扩展名
+            if ".mp4" in actual_url:
+                ext = "mp4"
+            elif ".webm" in actual_url:
+                ext = "webm"
 
-        filename_hash = hashlib.md5(url.encode()).hexdigest()[:12]
-        filename = f"crawled_{filename_hash}.{ext}"
+        filename_hash = hashlib.md5(actual_url.encode()).hexdigest()[:12]
+        quality_tag = "_hd" if is_hd_video else ""
+        filename = f"crawled_{filename_hash}{quality_tag}.{ext}"
         filepath = os.path.join(download_dir, filename)
 
         with open(filepath, "wb") as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
 
+        # 更新 item 的 video_quality 标记
+        if item and is_hd_video:
+            item["video_quality"] = "hd"
+            item["video_url"] = actual_url  # 更新为高清 URL
+
         return filepath
 
     except Exception as e:
-        print(f"[下载] 下载图片失败 {url}: {e}", file=sys.stderr)
+        print(f"[下载] 下载失败 {url}: {e}", file=sys.stderr)
         return None
 
 
@@ -1555,11 +1927,23 @@ def main():
     parser.add_argument("--output", type=str, default=None, help="输出JSON文件路径 (默认输出到stdout)")
     parser.add_argument("--download", action="store_true", help="是否下载图片到本地临时目录")
     parser.add_argument("--download-dir", type=str, default=None, help="下载图片的目录")
+    parser.add_argument("--cookies", type=str, default=None,
+                        help="认证 cookie 字符串（格式: 'key1=value1; key2=value2'），用于下载需要登录的资源")
 
     args = parser.parse_args()
 
     # 限制 pages 范围
     pages = min(max(args.pages, 1), 10)
+
+    # 解析 cookies
+    cookies = {}
+    if args.cookies:
+        for pair in args.cookies.split(";"):
+            pair = pair.strip()
+            if "=" in pair:
+                key, value = pair.split("=", 1)
+                cookies[key.strip()] = value.strip()
+        print(f"[Cookie] 已加载 {len(cookies)} 个认证 cookie", file=sys.stderr)
 
     if args.url:
         # ===== 自定义URL模式 =====
@@ -1573,6 +1957,7 @@ def main():
             min_width=args.min_width,
             min_height=args.min_height,
             max_images=args.count * pages,
+            cookies=cookies,
         )
         results = crawler.crawl(url=args.url, mode=args.fetch_mode, count=args.count, pages=pages)
 
@@ -1608,7 +1993,8 @@ def main():
 
         for i, item in enumerate(results):
             print(f"下载 {i+1}/{len(results)}: {item.get('filename', 'unknown')}", file=sys.stderr)
-            filepath = download_image(item["image_url"], download_dir)
+            download_url = item.get("image_url", "")
+            filepath = download_image(download_url, download_dir, cookies=cookies, item=item)
             if filepath:
                 item["local_path"] = filepath
                 item["file_size"] = os.path.getsize(filepath)
