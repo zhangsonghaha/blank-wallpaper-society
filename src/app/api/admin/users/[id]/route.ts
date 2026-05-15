@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { query, safeQuery } from "@/lib/db";
+import { getCache, setCache, delCache, clearPattern } from "@/lib/redis";
 
 // GET /api/admin/users/[id] - 获取用户详情
 export async function GET(
@@ -20,6 +21,13 @@ export async function GET(
       return NextResponse.json({ error: "无效的用户ID" }, { status: 400 });
     }
 
+    // 尝试从缓存获取
+    const cacheKey = `admin:user:${userId}`;
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
+
     // 获取用户详情 + 统计（独立容错）
     const users = await safeQuery(
       `SELECT 
@@ -34,7 +42,7 @@ export async function GET(
       ) upload_stats ON u.id = upload_stats.uploaded_by
       LEFT JOIN (
         SELECT user_id, COUNT(*) as favorite_count 
-        FROM user_favorites GROUP BY user_id
+        FROM favorites GROUP BY user_id
       ) fav_stats ON u.id = fav_stats.user_id
       WHERE u.id = ?`,
       [userId],
@@ -70,11 +78,16 @@ export async function GET(
       []
     );
 
-    return NextResponse.json({
+    const result = {
       ...user,
       recentImages: Array.isArray(recentImages) ? recentImages : [],
       operationLogs: Array.isArray(operationLogs) ? operationLogs : [],
-    });
+    };
+
+    // 写入缓存，TTL 60秒
+    await setCache(cacheKey, result, 60);
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("获取用户详情失败:", error);
     return NextResponse.json({ error: "获取用户详情失败" }, { status: 500 });
@@ -174,6 +187,10 @@ export async function PATCH(
       updateParams
     );
 
+    // 清除该用户的缓存和用户列表缓存
+    await delCache(`admin:user:${userId}`);
+    await clearPattern("admin:users:*");
+
     // 记录操作日志
     const operation =
       status === "banned"
@@ -248,6 +265,10 @@ export async function DELETE(
       "UPDATE users SET email = ?, name = ?, avatar = NULL, status = 'banned', banned_reason = '账户已删除', banned_at = NOW() WHERE id = ?",
       [deletedEmail, deletedName, userId]
     );
+
+    // 清除该用户的缓存和用户列表缓存
+    await delCache(`admin:user:${userId}`);
+    await clearPattern("admin:users:*");
 
     // 记录操作日志
     await query(

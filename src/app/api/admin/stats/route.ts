@@ -72,7 +72,7 @@ export async function GET() {
       safeQuery(
         `SELECT c.name, c.slug, COUNT(i.id) as count 
          FROM categories c 
-         LEFT JOIN images i ON i.category_id = c.id 
+         LEFT JOIN images i ON i.category = c.slug 
          GROUP BY c.id, c.name, c.slug 
          ORDER BY count DESC`,
         undefined,

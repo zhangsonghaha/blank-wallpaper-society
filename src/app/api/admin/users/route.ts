@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { query, safeQuery } from "@/lib/db";
+import { getCache, setCache, delCache, clearPattern } from "@/lib/redis";
 
 // GET /api/admin/users - 获取用户列表（分页、搜索、筛选）
 export async function GET(request: NextRequest) {
@@ -18,6 +19,15 @@ export async function GET(request: NextRequest) {
     const roleFilter = searchParams.get("role") || "";
     const statusFilter = searchParams.get("status") || "";
     const offset = (page - 1) * limit;
+
+    // 缓存键
+    const cacheKey = `admin:users:${page}:${limit}:${search}:${roleFilter}:${statusFilter}`;
+
+    // 尝试从缓存获取
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
 
     // 构建查询条件
     const conditions: string[] = [];
@@ -72,13 +82,13 @@ export async function GET(request: NextRequest) {
       ) upload_stats ON u.id = upload_stats.uploaded_by
       LEFT JOIN (
         SELECT user_id, COUNT(*) as favorite_count 
-        FROM user_favorites 
+        FROM favorites 
         GROUP BY user_id
       ) fav_stats ON u.id = fav_stats.user_id
       ${whereClause}
       ORDER BY u.created_at DESC
-      LIMIT ? OFFSET ?`,
-      [...params, limit, offset],
+      LIMIT ${limit} OFFSET ${offset}`,
+      params,
       []
     );
 
@@ -88,13 +98,18 @@ export async function GET(request: NextRequest) {
       email: maskEmail(user?.email),
     }));
 
-    return NextResponse.json({
+    const result = {
       data: maskedUsers,
       total,
       page,
       limit,
       totalPages,
-    });
+    };
+
+    // 写入缓存，TTL 60秒
+    await setCache(cacheKey, result, 60);
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("获取用户列表失败:", error);
     return NextResponse.json({
@@ -206,6 +221,9 @@ export async function PATCH(request: NextRequest) {
       `UPDATE users SET ${updates.join(", ")} WHERE id = ?`,
       updateParams
     );
+
+    // 清除用户列表缓存
+    await clearPattern("admin:users:*");
 
     // 记录操作日志
     const operation = status === "banned" ? "ban_user" 
