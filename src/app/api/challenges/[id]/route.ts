@@ -97,14 +97,17 @@ export async function GET(
       userVotesToday = myVotes[0]?.count || 0;
     }
 
+    const maxSubmissions = parseInt(challenge.max_submissions) || 3;
+    const votesPerDay = parseInt(challenge.votes_per_day) || 5;
+
     return NextResponse.json({
       data: {
         challenge,
         submissions,
         userSubmissionCount,
         userVotesToday,
-        canSubmit: userSubmissionCount < (challenge.max_submissions || 3),
-        canVote: userVotesToday < (challenge.votes_per_day || 5),
+        canSubmit: userSubmissionCount < maxSubmissions,
+        canVote: userVotesToday < votesPerDay,
         pagination: {
           page,
           limit,
@@ -115,6 +118,80 @@ export async function GET(
     });
   } catch (error: any) {
     console.error("GET /api/challenges/[id] error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// PUT /api/challenges/[id] - 编辑活动（管理员）
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user || (session.user as any).role !== "admin") {
+      return NextResponse.json({ error: "无权访问" }, { status: 403 });
+    }
+
+    const { id } = await params;
+    const challengeId = parseInt(id);
+    if (isNaN(challengeId)) {
+      return NextResponse.json({ error: "无效的活动ID" }, { status: 400 });
+    }
+
+    // 检查活动是否存在
+    const existing = await query("SELECT id FROM challenges WHERE id = ?", [challengeId]) as any[];
+    if (existing.length === 0) {
+      return NextResponse.json({ error: "活动不存在" }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const {
+      title, description, category,
+      startTime, endTime, maxSubmissions, votesPerDay,
+      prizeExp, prizeDescription, status,
+    } = body;
+
+    if (!title?.trim()) {
+      return NextResponse.json({ error: "活动标题不能为空" }, { status: 400 });
+    }
+
+    if (startTime && endTime && new Date(startTime) >= new Date(endTime)) {
+      return NextResponse.json({ error: "结束时间必须晚于开始时间" }, { status: 400 });
+    }
+
+    // 构建动态更新字段
+    const updates: string[] = [];
+    const values: any[] = [];
+
+    if (title !== undefined) { updates.push("title = ?"); values.push(title.trim()); }
+    if (description !== undefined) { updates.push("description = ?"); values.push(description || null); }
+    if (category !== undefined) { updates.push("category = ?"); values.push(category || null); }
+    if (startTime !== undefined) { updates.push("start_time = ?"); values.push(startTime); }
+    if (endTime !== undefined) { updates.push("end_time = ?"); values.push(endTime); }
+    if (maxSubmissions !== undefined) { updates.push("max_submissions = ?"); values.push(maxSubmissions); }
+    if (votesPerDay !== undefined) { updates.push("votes_per_day = ?"); values.push(votesPerDay); }
+    if (prizeExp !== undefined) { updates.push("prize_exp = ?"); values.push(prizeExp); }
+    if (prizeDescription !== undefined) { updates.push("prize_description = ?"); values.push(prizeDescription || null); }
+    if (status !== undefined) {
+      const validStatuses = ["draft", "active", "ended", "settled"];
+      if (!validStatuses.includes(status)) {
+        return NextResponse.json({ error: "无效的状态值" }, { status: 400 });
+      }
+      updates.push("status = ?");
+      values.push(status);
+    }
+
+    if (updates.length === 0) {
+      return NextResponse.json({ error: "没有需要更新的字段" }, { status: 400 });
+    }
+
+    values.push(challengeId);
+    await query(`UPDATE challenges SET ${updates.join(", ")} WHERE id = ?`, values);
+
+    return NextResponse.json({ message: "活动更新成功" });
+  } catch (error: any) {
+    console.error("PUT /api/challenges/[id] error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

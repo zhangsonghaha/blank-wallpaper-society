@@ -26,6 +26,17 @@ export async function GET(request: NextRequest) {
     sql += ` ORDER BY c.created_at DESC LIMIT ? OFFSET ?`;
     params.push(String(limit), String(offset));
 
+    // 自动流转状态：draft → active → ended
+    const now = new Date();
+    await query(
+      `UPDATE challenges SET status = 'active' WHERE status = 'draft' AND start_time <= ? AND end_time > ?`,
+      [now, now]
+    );
+    await query(
+      `UPDATE challenges SET status = 'ended' WHERE status = 'active' AND end_time <= ?`,
+      [now]
+    );
+
     const rows = await query(sql, params);
 
     // 获取总数

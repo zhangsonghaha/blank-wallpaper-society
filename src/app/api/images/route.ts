@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { auth } from "@/lib/auth";
 import { hexToRgb, colorDistance } from "@/lib/color-extract";
 import {
   isMeilisearchAvailable,
@@ -29,13 +30,31 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get("dateTo"); // e.g. "2026-12-31"
     const tags = searchParams.get("tags"); // 逗号分隔的标签
 
-    let sql = "SELECT * FROM images WHERE 1=1";
-    const params: any[] = [];
+    // "我的图片"模式：只返回当前用户上传的图片
+    const myImages = searchParams.get("my") === "true";
+    let myUserId: number | null = null;
+    if (myImages) {
+      const session = await auth();
+      if (!session?.user) {
+        return NextResponse.json({ error: "请先登录" }, { status: 401 });
+      }
+      myUserId = (session.user as any).id;
+    }
 
     // 默认只显示已通过审核的图片（前台用户可见）
     const showAll = searchParams.get("showAll") === "true";
-    if (!showAll) {
-      sql += " AND status = 'approved'";
+
+    let sql = "SELECT * FROM images WHERE 1=1";
+    const params: any[] = [];
+
+    // "我的图片"模式：按用户过滤，显示所有状态
+    if (myImages && myUserId) {
+      sql += " AND uploaded_by = ?";
+      params.push(myUserId);
+    } else {
+      if (!showAll) {
+        sql += " AND status = 'approved'";
+      }
     }
 
     if (category && category !== "all") {

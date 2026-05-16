@@ -43,15 +43,18 @@ export async function POST(
       return NextResponse.json({ error: "活动未在进行期间" }, { status: 400 });
     }
 
-    // 验证图片属于当前用户
+    // 验证图片属于当前用户（允许 approved 和 pending 状态）
     const image = (await query(
-      "SELECT id FROM images WHERE id = ? AND uploaded_by = ? AND status = 'approved'",
+      "SELECT id, status FROM images WHERE id = ? AND uploaded_by = ?",
       [imageId, userId]
     )) as any[];
 
     if (image.length === 0) {
       return NextResponse.json({ error: "图片不存在或不属于你" }, { status: 400 });
     }
+
+    // 投稿状态跟随图片状态：图片 pending 则投稿也 pending
+    const submissionStatus = image[0].status === "approved" ? "approved" : "pending";
 
     // 检查投稿数量限制
     const existingSubs = (await query(
@@ -74,11 +77,15 @@ export async function POST(
     }
 
     await query(
-      "INSERT INTO challenge_submissions (challenge_id, user_id, image_id) VALUES (?, ?, ?)",
-      [challengeId, userId, imageId]
+      "INSERT INTO challenge_submissions (challenge_id, user_id, image_id, status) VALUES (?, ?, ?, ?)",
+      [challengeId, userId, imageId, submissionStatus]
     );
 
-    return NextResponse.json({ message: "投稿成功" }, { status: 201 });
+    const responseMessage = submissionStatus === "pending"
+      ? "投稿成功，图片审核通过后作品将自动展示"
+      : "投稿成功";
+
+    return NextResponse.json({ message: responseMessage, status: submissionStatus }, { status: 201 });
   } catch (error: any) {
     console.error("POST /api/challenges/[id]/submit error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

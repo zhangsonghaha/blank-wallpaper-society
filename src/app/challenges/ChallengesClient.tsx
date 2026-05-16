@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Trophy, Calendar, Users, Vote, ArrowLeft, Plus, Heart,
-  Loader2, ImagePlus, Crown, Clock, CheckCircle
+  Loader2, ImagePlus, Crown, Clock, CheckCircle, Upload, X
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,7 @@ interface Submission {
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
-  draft: { label: "即将开始", color: "bg-gray-100 text-gray-600", icon: Clock },
+  draft: { label: "草稿", color: "bg-gray-100 text-gray-600", icon: Clock },
   active: { label: "进行中", color: "bg-green-100 text-green-700", icon: CheckCircle },
   ended: { label: "已结束", color: "bg-yellow-100 text-yellow-700", icon: Clock },
   settled: { label: "已结算", color: "bg-blue-100 text-blue-700", icon: Crown },
@@ -76,6 +76,15 @@ export default function ChallengesClient() {
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitImageId, setSubmitImageId] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [submitMode, setSubmitMode] = useState<"select" | "upload">("select");
+
+  // 上传相关状态
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPreview, setUploadPreview] = useState<string>("");
+  const [uploadTitle, setUploadTitle] = useState("");
+  const [uploadCategory, setUploadCategory] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 我的图片列表（用于投稿选择）
   const [myImages, setMyImages] = useState<any[]>([]);
@@ -106,9 +115,13 @@ export default function ChallengesClient() {
       if (res.ok) {
         const data = await res.json();
         setSubmissions(data.data?.submissions || []);
-        setCanSubmit(data.data?.canSubmit || false);
+        const userSubCount = data.data?.userSubmissionCount || 0;
+        const maxSubs = parseInt(data.data?.challenge?.max_submissions) || 3;
+        // 前端重新计算canSubmit，双重保险
+        const newCanSubmit = userSubCount < maxSubs;
+        setCanSubmit(newCanSubmit);
         setCanVote(data.data?.canVote || false);
-        setUserSubmissionCount(data.data?.userSubmissionCount || 0);
+        setUserSubmissionCount(userSubCount);
         setUserVotesToday(data.data?.userVotesToday || 0);
       }
     } catch (err) {
@@ -130,16 +143,22 @@ export default function ChallengesClient() {
     }
   }, []);
 
-  const fetchMyImages = useCallback(async () => {
-    if (authStatus !== "authenticated") return;
+  const fetchMyImages = useCallback(async (): Promise<boolean> => {
+    if (authStatus !== "authenticated") return false;
     try {
-      const res = await fetch("/api/images?my=true&limit=50");
-      if (res.ok) {
-        const data = await res.json();
-        setMyImages(data.data || []);
-      }
+      // 获取已审核通过和待审核的图片，用于投稿选择
+      const [approvedRes, pendingRes] = await Promise.all([
+        fetch("/api/user/uploads?status=approved&limit=50"),
+        fetch("/api/user/uploads?status=pending&limit=10"),
+      ]);
+      const approvedData = approvedRes.ok ? await approvedRes.json() : { data: [] };
+      const pendingData = pendingRes.ok ? await pendingRes.json() : { data: [] };
+      const allImages = [...(approvedData.data || []), ...(pendingData.data || [])];
+      setMyImages(allImages);
+      return allImages.length > 0;
     } catch (err) {
       console.error("获取我的图片失败:", err);
+      return false;
     }
   }, [authStatus]);
 
@@ -188,7 +207,11 @@ export default function ChallengesClient() {
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success("投稿成功");
+        if (data.status === "pending") {
+          toast.success("投稿成功，图片审核通过后作品将自动展示");
+        } else {
+          toast.success("投稿成功");
+        }
         setSubmitOpen(false);
         setSubmitImageId("");
         setUserSubmissionCount((v) => v + 1);
@@ -204,8 +227,82 @@ export default function ChallengesClient() {
   };
 
   const openSubmitDialog = () => {
-    fetchMyImages();
+    fetchMyImages().then((hasImages) => {
+      // 如果没有已审核图片，默认打开上传模式
+      setSubmitMode(hasImages ? "select" : "upload");
+    });
+    setSubmitImageId("");
+    setUploadFile(null);
+    setUploadPreview("");
+    setUploadTitle("");
+    setUploadCategory("");
     setSubmitOpen(true);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      toast.error("仅支持 JPG/PNG/WebP 格式");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("文件大小不能超过 10MB");
+      return;
+    }
+    setUploadFile(file);
+    setUploadTitle(file.name.replace(/\.[^.]+$/, ""));
+    const reader = new FileReader();
+    reader.onload = () => setUploadPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleUploadAndSubmit = async () => {
+    if (!uploadFile || !selectedChallenge) return;
+    setUploading(true);
+    try {
+      // 第一步：上传图片
+      const formData = new FormData();
+      formData.append("file", uploadFile);
+      formData.append("title", uploadTitle || uploadFile.name);
+      if (uploadCategory) formData.append("category", uploadCategory);
+
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const uploadData = await uploadRes.json();
+      if (!uploadRes.ok) {
+        toast.error(uploadData.error || "上传失败");
+        return;
+      }
+
+      // 第二步：投稿参赛
+      const newImageId = uploadData.id;
+      const submitRes = await fetch(`/api/challenges/${selectedChallenge.id}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageId: newImageId }),
+      });
+      const submitData = await submitRes.json();
+      if (!submitRes.ok) {
+        toast.error(submitData.error || "投稿失败");
+        return;
+      }
+
+      if (submitData.status === "pending") {
+        toast.success("投稿成功，图片审核通过后作品将自动展示");
+      } else {
+        toast.success("投稿成功");
+      }
+      setSubmitOpen(false);
+      setUserSubmissionCount((v) => v + 1);
+      fetchDetail(selectedChallenge.id);
+    } catch {
+      toast.error("操作失败");
+    } finally {
+      setUploading(false);
+    }
   };
 
   // === 列表视图 ===
@@ -309,8 +406,15 @@ export default function ChallengesClient() {
                             <Vote className="w-3.5 h-3.5" /> {c.vote_count} 票
                           </span>
                         </div>
-                        <div className="flex items-center gap-1 text-sm font-semibold text-yellow-600">
-                          <Crown className="w-4 h-4" /> +{c.prize_exp} EXP
+                        <div className="flex items-center gap-2">
+                          {isActive && (
+                            <span className="text-xs text-green-600 font-medium flex items-center gap-0.5">
+                              <ImagePlus className="w-3 h-3" /> 点击投稿
+                            </span>
+                          )}
+                          <div className="flex items-center gap-1 text-sm font-semibold text-yellow-600">
+                            <Crown className="w-4 h-4" /> +{c.prize_exp} EXP
+                          </div>
                         </div>
                       </div>
                     </CardContent>
@@ -365,25 +469,47 @@ export default function ChallengesClient() {
               </span>
             </div>
           </div>
-          {authStatus === "authenticated" && c.status === "active" && (
-            <Button
-              onClick={openSubmitDialog}
-              disabled={!canSubmit}
-              className="shrink-0"
-            >
+        </div>
+
+        {/* 投稿操作栏 */}
+        <div className="mt-4 p-4 rounded-xl bg-[var(--color-surface-card)] border border-[var(--color-border)] flex items-center justify-between">
+          <div className="text-sm text-[var(--color-mute)]">
+            {c.status === "active" ? (
+              authStatus === "authenticated" ? (
+                <span>投稿: {userSubmissionCount}/{c.max_submissions || 3} | 今日投票: {userVotesToday}/{c.votes_per_day || 5}</span>
+              ) : (
+                <span>登录后即可投稿参赛，赢取 +{c.prize_exp} EXP</span>
+              )
+            ) : (
+              <span>
+                {c.status === "draft" ? "活动尚未开始，敬请期待" : c.status === "ended" ? "活动已结束，感谢参与" : c.status === "settled" ? "活动已结算" : "暂不可投稿"}
+              </span>
+            )}
+          </div>
+          {c.status === "active" ? (
+            authStatus === "authenticated" ? (
+              <Button onClick={openSubmitDialog} disabled={userSubmissionCount >= (c.max_submissions || 3)}>
+                <ImagePlus className="w-4 h-4 mr-1" />
+                {userSubmissionCount < (c.max_submissions || 3) ? "投稿参赛" : `已投${userSubmissionCount}稿`}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => {
+                  const signInUrl = `/api/auth/signin?callbackUrl=${encodeURIComponent(window.location.href)}`;
+                  window.location.href = signInUrl;
+                }}
+                variant="outline"
+              >
+                <ImagePlus className="w-4 h-4 mr-1" /> 登录后投稿
+              </Button>
+            )
+          ) : (
+            <Button disabled variant="outline">
               <ImagePlus className="w-4 h-4 mr-1" />
-              {canSubmit ? "投稿参赛" : `已投${userSubmissionCount}稿`}
+              {c.status === "draft" ? "未开始" : c.status === "ended" ? "已结束" : c.status === "settled" ? "已结算" : "不可投稿"}
             </Button>
           )}
         </div>
-
-        {/* 用户状态提示 */}
-        {authStatus === "authenticated" && c.status === "active" && (
-          <div className="flex gap-3 mt-3 text-xs text-[var(--color-mute)]">
-            <span>投稿: {userSubmissionCount}/{c.max_submissions || 3}</span>
-            <span>今日投票: {userVotesToday}/{c.votes_per_day || 5}</span>
-          </div>
-        )}
       </div>
 
       {/* 详情 Tab 切换 */}
@@ -402,9 +528,9 @@ export default function ChallengesClient() {
             }`}
           >
             {tab === "submissions" ? (
-              <><ImagePlus className="w-4 h-4" /> 参赛作品</>
+              <React.Fragment><ImagePlus className="w-4 h-4" /> 参赛作品</React.Fragment>
             ) : (
-              <><Crown className="w-4 h-4" /> 排行榜</>
+              <React.Fragment><Crown className="w-4 h-4" /> 排行榜</React.Fragment>
             )}
           </button>
         ))}
@@ -528,59 +654,166 @@ export default function ChallengesClient() {
             <DialogTitle>投稿参赛 — {c.title}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <Label>选择你的作品</Label>
-              <p className="text-xs text-[var(--color-mute)] mb-2">
-                只能选择你自己上传的图片 (已投 {userSubmissionCount}/{c.max_submissions || 3} 稿)
-              </p>
-              {myImages.length === 0 ? (
-                <Card>
-                  <CardContent className="py-8 text-center text-[var(--color-mute)] text-sm">
-                    你还没有上传图片，请先上传作品
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
-                  {myImages.map((img: any) => (
-                    <button
-                      key={img.id}
-                      onClick={() => setSubmitImageId(String(img.id))}
-                      className={`relative rounded-lg overflow-hidden border-2 transition-colors ${
-                        submitImageId === String(img.id)
-                          ? "border-[var(--color-ink)]"
-                          : "border-transparent hover:border-gray-300"
-                      }`}
-                    >
-                      <img
-                        src={img.thumbnail_url || img.url}
-                        alt={img.title}
-                        className="w-full h-20 object-cover"
-                      />
-                      {submitImageId === String(img.id) && (
-                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                          <CheckCircle className="w-6 h-6 text-white" />
-                        </div>
-                      )}
-                    </button>
-                  ))}
+            {/* 模式切换 */}
+            <div className="flex gap-2 p-1 bg-[var(--color-surface-card)] rounded-lg">
+              <button
+                onClick={() => setSubmitMode("select")}
+                className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-md transition-all ${
+                  submitMode === "select"
+                    ? "bg-[var(--color-ink)] text-white shadow-sm"
+                    : "text-[var(--color-ink)] hover:bg-[var(--color-secondary-bg)]"
+                }`}
+              >
+                <ImagePlus className="w-4 h-4" /> 选择已有作品
+              </button>
+              <button
+                onClick={() => setSubmitMode("upload")}
+                className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-md transition-all ${
+                  submitMode === "upload"
+                    ? "bg-green-600 text-white shadow-sm"
+                    : "text-green-600 hover:bg-green-50"
+                }`}
+              >
+                <Upload className="w-4 h-4" /> 上传新作品
+              </button>
+            </div>
+
+            <p className="text-xs text-[var(--color-mute)]">
+              已投 {userSubmissionCount}/{c.max_submissions || 3} 稿
+            </p>
+
+            {submitMode === "select" ? (
+              <React.Fragment>
+                {myImages.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-8 text-center text-[var(--color-mute)] text-sm">
+                      <ImagePlus className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                      <p>你还没有已审核通过的图片</p>
+                      <p className="mt-1">请切换到"上传新作品"上传图片</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+                    {myImages.map((img: any) => (
+                      <button
+                        key={img.id}
+                        onClick={() => setSubmitImageId(String(img.id))}
+                        className={`relative rounded-lg overflow-hidden border-2 transition-colors ${
+                          submitImageId === String(img.id)
+                            ? "border-[var(--color-ink)]"
+                            : "border-transparent hover:border-gray-300"
+                        }`}
+                      >
+                        <img
+                          src={img.thumbnail_url || img.url}
+                          alt={img.title}
+                          className="w-full h-20 object-cover"
+                        />
+                        {img.status === "pending" && (
+                          <div className="absolute top-0 left-0 right-0 bg-yellow-500/80 text-white text-[10px] text-center py-0.5">待审核</div>
+                        )}
+                        {submitImageId === String(img.id) && (
+                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                            <CheckCircle className="w-6 h-6 text-white" />
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div>
+                  <Label>或输入图片ID</Label>
+                  <Input
+                    value={submitImageId}
+                    onChange={(e) => setSubmitImageId(e.target.value)}
+                    placeholder="输入图片ID"
+                  />
                 </div>
-              )}
-            </div>
-            <div>
-              <Label>或输入图片ID</Label>
-              <Input
-                value={submitImageId}
-                onChange={(e) => setSubmitImageId(e.target.value)}
-                placeholder="输入图片ID"
-              />
-            </div>
+              </React.Fragment>
+            ) : (
+              /* 上传新作品 */
+              <div className="space-y-3">
+                {!uploadFile ? (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed rounded-lg py-8 flex flex-col items-center justify-center cursor-pointer hover:border-[var(--color-ink)] hover:bg-[var(--color-secondary-bg)] transition-colors"
+                  >
+                    <Upload className="w-8 h-8 text-[var(--color-mute)] mb-2" />
+                    <p className="text-sm text-[var(--color-mute)]">点击选择图片文件</p>
+                    <p className="text-xs text-[var(--color-mute)] mt-1">JPG/PNG/WebP，最低 1920x1080，最大 10MB</p>
+                  </div>
+                ) : (
+                  <div className="relative rounded-lg overflow-hidden">
+                    <img
+                      src={uploadPreview}
+                      alt="预览"
+                      className="w-full h-48 object-cover"
+                    />
+                    <button
+                      onClick={() => {
+                        setUploadFile(null);
+                        setUploadPreview("");
+                        setUploadTitle("");
+                      }}
+                      className="absolute top-2 right-2 w-6 h-6 bg-black/50 rounded-full flex items-center justify-center text-white hover:bg-black/70"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                {uploadFile && (
+                  <div className="space-y-2">
+                    <div>
+                      <Label>作品标题</Label>
+                      <Input
+                        value={uploadTitle}
+                        onChange={(e) => setUploadTitle(e.target.value)}
+                        placeholder="输入作品标题"
+                      />
+                    </div>
+                    <div>
+                      <Label>分类</Label>
+                      <select
+                        value={uploadCategory}
+                        onChange={(e) => setUploadCategory(e.target.value)}
+                        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="">不选择</option>
+                        <option value="nature">自然风光</option>
+                        <option value="city">城市建筑</option>
+                        <option value="portrait">人像摄影</option>
+                        <option value="food">美食</option>
+                        <option value="travel">旅行</option>
+                        <option value="art">艺术</option>
+                        <option value="animals">动物</option>
+                        <option value="minimal">极简</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSubmitOpen(false)}>取消</Button>
-            <Button onClick={handleSubmit} disabled={!submitImageId || submitting}>
-              {submitting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-              确认投稿
-            </Button>
+            {submitMode === "select" ? (
+              <Button onClick={handleSubmit} disabled={!submitImageId || submitting}>
+                {submitting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+                确认投稿
+              </Button>
+            ) : (
+              <Button onClick={handleUploadAndSubmit} disabled={!uploadFile || uploading}>
+                {uploading && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+                上传并投稿
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
