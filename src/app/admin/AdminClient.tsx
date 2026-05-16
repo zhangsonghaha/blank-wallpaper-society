@@ -20,6 +20,7 @@ import {
   BarChart3,
   Trophy,
   XCircle,
+  Mail,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ import CrawlTab from "./CrawlTab";
 import ReportTab from "./ReportTab";
 import ApiUsageTab from "./ApiUsageTab";
 import ChallengesTab from "./ChallengesTab";
+import EmailTemplatesTab from "./EmailTemplatesTab";
 
 // 标签页接口
 interface TabItem {
@@ -117,6 +119,11 @@ export default function AdminClient() {
       title: "挑战赛管理",
       icon: <Trophy className="w-5 h-5" />,
     },
+    {
+      id: "email-templates",
+      title: "邮件模板",
+      icon: <Mail className="w-5 h-5" />,
+    },
   ];
 
   // 切换标签页
@@ -165,6 +172,9 @@ export default function AdminClient() {
         break;
       case "challenges":
         content = <ChallengesTab />;
+        break;
+      case "email-templates":
+        content = <EmailTemplatesTab />;
         break;
       default:
         content = <div className="p-6">功能开发中...</div>;

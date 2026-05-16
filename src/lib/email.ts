@@ -2,9 +2,11 @@
  * 邮件服务库
  * 支持 Resend（优先）和通用 SMTP 两种模式
  * 配置来源优先级：数据库 system_settings > 环境变量
+ * 模板优先级：数据库 email_templates > 硬编码默认模板
  */
 
 import { query } from "@/lib/db";
+import { renderEmailTemplate } from "@/lib/email-template";
 
 // === 邮件发送参数 ===
 interface SendEmailParams {
@@ -164,6 +166,19 @@ export async function sendPasswordResetEmail(
 ): Promise<void> {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
+  // 优先使用数据库模板
+  const rendered = await renderEmailTemplate("password_reset", {
+    reset_url: resetUrl,
+    site_url: baseUrl,
+    current_year: new Date().getFullYear().toString(),
+  });
+
+  if (rendered) {
+    await sendEmail({ to, throwOnError: true, subject: rendered.subject, html: rendered.html, text: rendered.text || undefined });
+    return;
+  }
+
+  // 回退：硬编码模板
   await sendEmail({
     to,
     throwOnError: true,
@@ -208,6 +223,20 @@ export async function sendWelcomeEmail(
 ): Promise<void> {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
+  // 优先使用数据库模板
+  const rendered = await renderEmailTemplate("welcome", {
+    user_name: name,
+    user_email: to,
+    site_url: baseUrl,
+    current_year: new Date().getFullYear().toString(),
+  });
+
+  if (rendered) {
+    await sendEmail({ to, subject: rendered.subject, html: rendered.html, text: rendered.text || undefined });
+    return;
+  }
+
+  // 回退：硬编码模板
   await sendEmail({
     to,
     subject: `欢迎加入壁纸社区，${name}！`,
@@ -253,6 +282,22 @@ export async function sendReviewResultEmail(
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
   const isApproved = status === "approved";
 
+  // 优先使用数据库模板
+  const templateKey = isApproved ? "review_approved" : "review_rejected";
+  const rendered = await renderEmailTemplate(templateKey, {
+    image_title: imageName,
+    review_status: status,
+    review_reason: reason || "",
+    site_url: baseUrl,
+    current_year: new Date().getFullYear().toString(),
+  });
+
+  if (rendered) {
+    await sendEmail({ to, subject: rendered.subject, html: rendered.html, text: rendered.text || undefined });
+    return;
+  }
+
+  // 回退：硬编码模板
   await sendEmail({
     to,
     subject: isApproved
@@ -306,6 +351,20 @@ export async function sendNotificationEmail(
 ): Promise<void> {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
+  // 优先使用数据库模板
+  const rendered = await renderEmailTemplate("notification_generic", {
+    notification_title: title,
+    notification_content: content,
+    site_url: baseUrl,
+    current_year: new Date().getFullYear().toString(),
+  });
+
+  if (rendered) {
+    await sendEmail({ to, subject: rendered.subject, html: rendered.html, text: rendered.text || undefined });
+    return;
+  }
+
+  // 回退：硬编码模板
   await sendEmail({
     to,
     subject: `${title} - 壁纸社区`,
