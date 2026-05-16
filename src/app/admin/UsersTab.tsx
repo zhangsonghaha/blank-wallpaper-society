@@ -20,6 +20,7 @@ import {
   MoreHorizontal,
   Clock,
   Palette,
+  KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -186,6 +187,12 @@ export default function UsersTab() {
   const [deleteTarget, setDeleteTarget] = useState<UserRecord | null>(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
 
+  // 重置密码弹窗
+  const [resetPwdDialogOpen, setResetPwdDialogOpen] = useState(false);
+  const [resetPwdTarget, setResetPwdTarget] = useState<UserRecord | null>(null);
+  const [resetPwdValue, setResetPwdValue] = useState("");
+  const [resetPwdSaving, setResetPwdSaving] = useState(false);
+
   // 统计
   const [userStats, setUserStats] = useState({
     total: 0,
@@ -331,6 +338,37 @@ export default function UsersTab() {
       toast.error("删除失败");
     }
     setDeleteSaving(false);
+  };
+
+  // 重置密码
+  const handleResetPassword = async () => {
+    if (!resetPwdTarget || !resetPwdValue) return;
+    if (resetPwdValue.length < 6) {
+      toast.error("密码至少6位");
+      return;
+    }
+    setResetPwdSaving(true);
+    try {
+      const res = await fetch(`/api/admin/users/${resetPwdTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resetPassword: resetPwdValue }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("密码重置成功", {
+          description: `${resetPwdTarget.name} 的密码已重置`,
+        });
+        setResetPwdDialogOpen(false);
+        setResetPwdValue("");
+        loadUsers();
+      } else {
+        toast.error("重置失败", { description: data.error });
+      }
+    } catch (err) {
+      toast.error("重置失败");
+    }
+    setResetPwdSaving(false);
   };
 
   return (
@@ -569,6 +607,17 @@ export default function UsersTab() {
                                 <Eye className="w-4 h-4 mr-2" />
                                 查看详情
                               </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="cursor-pointer"
+                                onClick={() => {
+                                  setResetPwdTarget(user);
+                                  setResetPwdValue("");
+                                  setResetPwdDialogOpen(true);
+                                }}
+                              >
+                                <KeyRound className="w-4 h-4 mr-2" />
+                                重置密码
+                              </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 className="text-red-500 cursor-pointer"
@@ -757,7 +806,8 @@ export default function UsersTab() {
                           {log.operation === "change_role" ? "角色变更" :
                            log.operation === "ban_user" ? "封禁" :
                            log.operation === "unban_user" ? "解封" :
-                           log.operation === "delete_user" ? "删除" : log.operation}
+                           log.operation === "delete_user" ? "删除" :
+                           log.operation === "reset_password" ? "重置密码" : log.operation}
                         </Badge>
                         <span className="text-[var(--color-mute)]">
                           由 {log.operator_name || "系统"} 操作
@@ -785,6 +835,18 @@ export default function UsersTab() {
                   >
                     <Shield className="w-4 h-4" />
                     修改角色
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="rounded-full gap-1"
+                    onClick={() => {
+                      setResetPwdTarget(detailUser as any);
+                      setResetPwdValue("");
+                      setResetPwdDialogOpen(true);
+                    }}
+                  >
+                    <KeyRound className="w-4 h-4" />
+                    重置密码
                   </Button>
                   <Button
                     variant="outline"
@@ -974,6 +1036,61 @@ export default function UsersTab() {
               className="rounded-full gap-2"
             >
               {deleteSaving ? "删除中..." : "确认删除"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ==================== 重置密码弹窗 ==================== */}
+      <Dialog open={resetPwdDialogOpen} onOpenChange={setResetPwdDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="w-5 h-5 text-[var(--color-primary)]" />
+              重置用户密码
+            </DialogTitle>
+            <DialogDescription>
+              为用户 <span className="font-semibold">{resetPwdTarget?.name}</span> 设置新密码
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-3">
+            <div>
+              <Label>新密码</Label>
+              <Input
+                type="password"
+                value={resetPwdValue}
+                onChange={(e) => setResetPwdValue(e.target.value)}
+                placeholder="请输入新密码（至少6位）"
+                className="mt-2 h-10 rounded-xl"
+                minLength={6}
+              />
+            </div>
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-800">
+              <p className="font-medium">注意：</p>
+              <ul className="list-disc list-inside mt-1 space-y-0.5 text-xs">
+                <li>重置后用户需要使用新密码登录</li>
+                <li>密码长度至少6位</li>
+                <li>此操作将记录到管理日志</li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setResetPwdDialogOpen(false);
+                setResetPwdValue("");
+              }}
+              className="rounded-full"
+            >
+              取消
+            </Button>
+            <Button
+              disabled={resetPwdSaving || resetPwdValue.length < 6}
+              onClick={handleResetPassword}
+              className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)] rounded-full gap-2"
+            >
+              {resetPwdSaving ? "重置中..." : "确认重置"}
             </Button>
           </DialogFooter>
         </DialogContent>

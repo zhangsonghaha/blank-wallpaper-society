@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { query, safeQuery } from "@/lib/db";
 import { getCache, setCache, delCache, clearPattern } from "@/lib/redis";
+import crypto from "crypto";
 
 // GET /api/admin/users/[id] - 获取用户详情
 export async function GET(
@@ -139,11 +140,21 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { role, status, bannedReason } = body;
+    const { role, status, bannedReason, resetPassword } = body;
 
     const logDetail: any = {};
     const updates: string[] = [];
     const updateParams: any[] = [];
+
+    if (resetPassword) {
+      if (resetPassword.length < 6) {
+        return NextResponse.json({ error: "密码至少6位" }, { status: 400 });
+      }
+      const hash = crypto.createHash("sha256").update(resetPassword).digest("hex");
+      updates.push("password = ?");
+      updateParams.push(hash);
+      logDetail.operation = "reset_password";
+    }
 
     if (role !== undefined) {
       const validRoles = ["admin", "moderator", "creator", "user"];
@@ -193,13 +204,15 @@ export async function PATCH(
 
     // 记录操作日志
     const operation =
-      status === "banned"
-        ? "ban_user"
-        : status === "active" && targetUser[0].status === "banned"
-          ? "unban_user"
-          : role
-            ? "change_role"
-            : "update_user";
+      resetPassword
+        ? "reset_password"
+        : status === "banned"
+          ? "ban_user"
+          : status === "active" && targetUser[0].status === "banned"
+            ? "unban_user"
+            : role
+              ? "change_role"
+              : "update_user";
 
     await query(
       "INSERT INTO admin_operation_logs (operator_id, target_user_id, operation, detail) VALUES (?, ?, ?, ?)",

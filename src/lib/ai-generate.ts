@@ -1,6 +1,56 @@
 import { query } from "@/lib/db";
 import { uploadFile } from "@/lib/minio";
 
+// === AI 配置（数据库优先回退） ===
+
+interface AiConfig {
+  provider: string;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  enabled: boolean;
+}
+
+export async function getAiConfig(): Promise<AiConfig> {
+  // 默认值：环境变量
+  let provider = process.env.AI_PROVIDER || "openai";
+  let apiKey = process.env.OPENAI_API_KEY || process.env.STABILITY_API_KEY || "";
+  let baseUrl = process.env.AI_API_BASE_URL || "https://api.openai.com/v1";
+  let model = process.env.AI_MODEL || "dall-e-3";
+  let enabled = !!apiKey;
+
+  try {
+    const settings = (await query(
+      "SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN (?, ?, ?, ?, ?)",
+      ["ai_provider", "ai_api_key", "ai_api_base_url", "ai_model", "ai_enabled"]
+    )) as any[];
+
+    const settingMap = new Map<string, string>();
+    settings.forEach((s: any) => settingMap.set(s.setting_key, s.setting_value || ""));
+
+    // 数据库值作为回退（环境变量优先）
+    if (!provider || provider === "openai") {
+      if (settingMap.get("ai_provider")) provider = settingMap.get("ai_provider")!;
+    }
+    if (!apiKey && settingMap.get("ai_api_key")) {
+      apiKey = settingMap.get("ai_api_key")!;
+    }
+    if (settingMap.get("ai_api_base_url")) {
+      baseUrl = settingMap.get("ai_api_base_url")!;
+    }
+    if (settingMap.get("ai_model")) {
+      model = settingMap.get("ai_model")!;
+    }
+    if (settingMap.get("ai_enabled") !== undefined) {
+      enabled = settingMap.get("ai_enabled") === "true" && !!apiKey;
+    }
+  } catch {
+    // 数据库不可用时回退到环境变量
+  }
+
+  return { provider, apiKey, baseUrl, model, enabled };
+}
+
 // === AI 生成风格配置 ===
 export const AI_STYLES = {
   realistic: { name: "写实", prompt: "photorealistic, high resolution, detailed" },
@@ -15,41 +65,67 @@ export const AI_STYLES = {
 
 export type AiStyle = keyof typeof AI_STYLES;
 
-// === DALL-E API 调用 ===
+// === DALL-E / 兼容 API 调用 ===
 async function generateWithDallE(
   prompt: string,
   width: number,
-  height: number
+  height: number,
+  config: AiConfig
 ): Promise<{ imageUrl: string; tokensUsed: number }> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = config.apiKey;
   if (!apiKey) {
-    throw new Error("未配置 OPENAI_API_KEY");
+    throw new Error("未配置 AI API 密钥，请在后台系统设置中配置");
   }
 
-  // DALL-E 3 支持的尺寸: 1024x1024, 1024x1792, 1792x1024
-  let size = "1024x1024";
-  if (height > width) size = "1024x1792";
-  if (width > height) size = "1792x1024";
+  const baseUrl = config.baseUrl.replace(/\/+$/, "");
+  const model = config.model || "dall-e-3";
 
-  const response = await fetch("https://api.openai.com/v1/images/generations", {
+  // API 支持的尺寸列表（sensenova-u1-fast / SiliconFlow 等）
+  // 11 种宽高比对应的 2K 分辨率
+  const ALLOWED_SIZES: { size: string; ratio: number }[] = [
+    { size: "1664x2496", ratio: 2 / 3 },   // 竖屏 2:3
+    { size: "2496x1664", ratio: 3 / 2 },   // 横屏 3:2
+    { size: "1760x2368", ratio: 3 / 4 },   // 竖屏 3:4
+    { size: "2368x1760", ratio: 4 / 3 },   // 横屏 4:3
+    { size: "1824x2272", ratio: 4 / 5 },   // 竖屏 4:5
+    { size: "2272x1824", ratio: 5 / 4 },   // 横屏 5:4
+    { size: "2048x2048", ratio: 1 / 1 },   // 方形 1:1
+    { size: "2752x1536", ratio: 16 / 9 },  // 横屏 16:9
+    { size: "1536x2752", ratio: 9 / 16 },  // 竖屏 9:16
+    { size: "3072x1376", ratio: 21 / 9 },  // 超宽 21:9
+    { size: "1344x3136", ratio: 9 / 21 },  // 超高 9:21
+  ];
+
+  // 根据请求的宽高比，选择最接近的允许尺寸
+  const targetRatio = width / height;
+  let size = "2752x1536"; // 默认 16:9 横屏壁纸
+  let bestDiff = Infinity;
+
+  for (const s of ALLOWED_SIZES) {
+    const diff = Math.abs(targetRatio - s.ratio);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      size = s.size;
+    }
+  }
+
+  const response = await fetch(`${baseUrl}/images/generations`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "dall-e-3",
+      model,
       prompt,
       n: 1,
       size,
-      quality: "hd",
-      response_format: "url",
     }),
   });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(`DALL-E API错误: ${error.error?.message || response.statusText}`);
+    throw new Error(`AI API错误: ${error.error?.message || response.statusText}`);
   }
 
   const data = await response.json();
@@ -64,17 +140,19 @@ async function generateWithStability(
   prompt: string,
   width: number,
   height: number,
-  style: AiStyle
+  style: AiStyle,
+  config: AiConfig
 ): Promise<{ imageBuffer: Buffer; tokensUsed: number }> {
-  const apiKey = process.env.STABILITY_API_KEY;
+  const apiKey = config.apiKey;
   if (!apiKey) {
-    throw new Error("未配置 STABILITY_API_KEY");
+    throw new Error("未配置 AI API 密钥，请在后台系统设置中配置");
   }
 
+  const baseUrl = config.baseUrl.replace(/\/+$/, "");
   const stylePrompt = AI_STYLES[style]?.prompt || "";
 
   const response = await fetch(
-    "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image",
+    `${baseUrl}/generation/stable-diffusion-xl-1024-v1-0/text-to-image`,
     {
       method: "POST",
       headers: {
@@ -126,20 +204,26 @@ export async function generateWallpaper(params: {
 }> {
   const { userId, prompt, style, width, height, model = "dall-e" } = params;
 
+  // 获取AI配置
+  const config = await getAiConfig();
+  if (!config.enabled) {
+    throw new Error("AI生成功能未启用，请在后台系统设置中配置");
+  }
+
   // 创建生成记录
   const result = await query(
     `INSERT INTO ai_generations (user_id, prompt, style, width, height, status, model)
      VALUES (?, ?, ?, ?, ?, 'processing', ?)`,
-    [userId, prompt, style, width, height, model]
+    [userId, prompt, style, width, height, config.provider === "stability" ? "stability" : model]
   );
   const generationId = (result as any).insertId;
 
   try {
     let imageUrl: string;
 
-    if (model === "stability") {
+    if (config.provider === "stability") {
       // Stability AI: 返回base64，需要上传到MinIO
-      const { imageBuffer } = await generateWithStability(prompt, width, height, style);
+      const { imageBuffer } = await generateWithStability(prompt, width, height, style, config);
       const timestamp = Date.now();
       const uploadResult = await uploadFile(
         imageBuffer,
@@ -153,11 +237,11 @@ export async function generateWallpaper(params: {
         [generationId]
       );
     } else {
-      // DALL-E: 返回URL
-      const genResult = await generateWithDallE(prompt, width, height);
+      // OpenAI / 兼容 API: 返回URL
+      const genResult = await generateWithDallE(prompt, width, height, config);
       imageUrl = genResult.imageUrl;
 
-      // DALL-E的URL临时有效，下载并上传到MinIO
+      // URL临时有效，下载并上传到MinIO
       const imageRes = await fetch(imageUrl);
       const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
       const timestamp = Date.now();

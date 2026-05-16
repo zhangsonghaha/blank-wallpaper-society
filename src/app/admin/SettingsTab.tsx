@@ -16,6 +16,10 @@ import {
   RefreshCw,
   Trash2,
   Database,
+  Sparkles,
+  CheckCircle,
+  XCircle,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -49,7 +53,7 @@ interface SettingItem {
 interface SettingField {
   key: string;
   label: string;
-  type: "text" | "number" | "textarea" | "toggle";
+  type: "text" | "number" | "textarea" | "toggle" | "password";
   description?: string;
   placeholder?: string;
 }
@@ -127,6 +131,19 @@ const settingGroups: SettingGroup[] = [
       { key: "github_client_secret", label: "GitHub Client Secret", type: "text", placeholder: "如 abc123xxxxx", description: "从 GitHub Developer Settings 获取" },
     ],
   },
+  {
+    id: "ai",
+    title: "AI 生成配置",
+    icon: Sparkles,
+    description: "AI 图片生成服务配置，支持 OpenAI 及兼容接口",
+    fields: [
+      { key: "ai_enabled", label: "启用 AI 生成", type: "toggle", description: "开启前需配置 API 密钥和接口地址" },
+      { key: "ai_provider", label: "服务商", type: "text", placeholder: "openai / stability / custom", description: "选择 AI 服务提供商类型" },
+      { key: "ai_api_base_url", label: "API 地址", type: "text", placeholder: "https://api.openai.com/v1", description: "API 基础地址，支持自定义兼容端点" },
+      { key: "ai_api_key", label: "API 密钥", type: "password", placeholder: "sk-xxxx...", description: "API 密钥，将安全存储在数据库中" },
+      { key: "ai_model", label: "模型名称", type: "text", placeholder: "dall-e-3", description: "使用的模型名称，如 dall-e-3、stable-diffusion-xl 等" },
+    ],
+  },
 ];
 
 /* ==================== 系统设置组件 ==================== */
@@ -148,6 +165,17 @@ export default function SettingsTab() {
   const [dbTotal, setDbTotal] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+
+  /* ==================== AI 连通性测试状态 ==================== */
+  const [aiTesting, setAiTesting] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState<{
+    success: boolean;
+    message?: string;
+    error?: string;
+    modelsAvailable?: number;
+    hasTargetModel?: boolean;
+    modelList?: string[];
+  } | null>(null);
 
   /* ==================== 数据加载 ==================== */
 
@@ -229,6 +257,41 @@ export default function SettingsTab() {
       toast.error("重建失败");
     }
     setRebuilding(false);
+  };
+
+  /* ==================== AI 连通性测试 ==================== */
+
+  const handleAiTest = async () => {
+    setAiTesting(true);
+    setAiTestResult(null);
+    try {
+      // 如果有未保存的设置，使用临时配置测试
+      const testPayload: Record<string, string> = {};
+      if (settings.ai_api_key && settings.ai_api_key !== originalSettings.ai_api_key) {
+        testPayload.provider = settings.ai_provider || "openai";
+        testPayload.apiKey = settings.ai_api_key;
+        testPayload.baseUrl = settings.ai_api_base_url || "https://api.openai.com/v1";
+        testPayload.model = settings.ai_model || "dall-e-3";
+      }
+
+      const res = await fetch("/api/admin/ai-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(testPayload),
+      });
+      const data = await res.json();
+      setAiTestResult(data);
+
+      if (data.success) {
+        toast.success("AI 服务连接成功");
+      } else {
+        toast.error("AI 服务连接失败", { description: data.error });
+      }
+    } catch {
+      setAiTestResult({ success: false, error: "请求失败" });
+      toast.error("测试请求失败");
+    }
+    setAiTesting(false);
   };
 
   /* ==================== 设置修改 ==================== */
@@ -403,6 +466,14 @@ export default function SettingsTab() {
                               placeholder={field.placeholder}
                               className="rounded-lg min-h-[80px]"
                             />
+                          ) : field.type === "password" ? (
+                            <Input
+                              type="password"
+                              value={settings[field.key] || ""}
+                              onChange={(e) => updateSetting(field.key, e.target.value)}
+                              placeholder={field.placeholder}
+                              className="rounded-lg"
+                            />
                           ) : (
                             <Input
                               type={field.type}
@@ -523,6 +594,132 @@ export default function SettingsTab() {
               <p className="text-amber-600">
                 请确保已设置环境变量 MEILISEARCH_HOST 和 MEILISEARCH_API_KEY，
                 并且 Meilisearch 服务已启动。未配置时搜索将使用数据库 LIKE 查询。
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* AI 服务连通性测试 */}
+      <Card>
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-[var(--color-surface-card)] flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-[var(--color-mute)]" />
+            </div>
+            <div>
+              <CardTitle className="text-base">AI 服务连通性测试</CardTitle>
+              <CardDescription className="text-xs">
+                验证 AI API 配置是否正确，测试接口连通性
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* 当前配置概览 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3 rounded-lg bg-[var(--color-surface-card)]">
+              <div className="text-xs text-[var(--color-mute)] mb-1">服务商</div>
+              <div className="text-sm font-medium">{settings.ai_provider || "未配置"}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-[var(--color-surface-card)]">
+              <div className="text-xs text-[var(--color-mute)] mb-1">模型</div>
+              <div className="text-sm font-medium">{settings.ai_model || "未配置"}</div>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-[var(--color-surface-card)]">
+            <div className="text-xs text-[var(--color-mute)] mb-1">API 地址</div>
+            <div className="text-sm font-medium break-all">{settings.ai_api_base_url || "未配置"}</div>
+          </div>
+
+          {/* API 密钥状态 */}
+          <div className="flex items-center gap-2">
+            <div className={`w-2.5 h-2.5 rounded-full ${settings.ai_api_key ? "bg-emerald-500" : "bg-red-400"}`} />
+            <span className="text-sm">
+              {settings.ai_api_key ? "API 密钥已配置" : "API 密钥未配置"}
+            </span>
+          </div>
+
+          {/* 测试按钮 */}
+          <div className="flex items-center gap-2 pt-1">
+            <Button
+              onClick={handleAiTest}
+              disabled={aiTesting || !settings.ai_api_key}
+              variant="outline"
+              className="rounded-full"
+              size="sm"
+            >
+              {aiTesting ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+              )}
+              {aiTesting ? "测试中..." : "测试连接"}
+            </Button>
+          </div>
+
+          {/* 测试结果 */}
+          {aiTestResult && (
+            <div className={`p-3 rounded-lg border ${
+              aiTestResult.success
+                ? "bg-emerald-50 border-emerald-200"
+                : "bg-red-50 border-red-200"
+            }`}>
+              <div className="flex items-center gap-2 mb-1">
+                {aiTestResult.success ? (
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-red-600" />
+                )}
+                <span className={`text-sm font-medium ${
+                  aiTestResult.success ? "text-emerald-800" : "text-red-800"
+                }`}>
+                  {aiTestResult.success ? aiTestResult.message : "连接失败"}
+                </span>
+              </div>
+              {aiTestResult.error && (
+                <p className="text-xs text-red-600 mt-1">{aiTestResult.error}</p>
+              )}
+              {aiTestResult.success && (
+                <div className="mt-2 space-y-1 text-xs text-emerald-700">
+                  {aiTestResult.modelsAvailable !== undefined && (
+                    <p>可用模型数: {aiTestResult.modelsAvailable}</p>
+                  )}
+                  {aiTestResult.hasTargetModel !== undefined && (
+                    <p className={aiTestResult.hasTargetModel ? "text-emerald-700" : "text-amber-600"}>
+                      目标模型 ({settings.ai_model}): {aiTestResult.hasTargetModel ? "已找到" : "未找到"}
+                    </p>
+                  )}
+                  {aiTestResult.modelList && aiTestResult.modelList.length > 0 && (
+                    <div className="mt-1">
+                      <p className="text-[var(--color-mute)]">模型列表 (前20个):</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {aiTestResult.modelList.map((m) => (
+                          <Badge
+                            key={m}
+                            variant="secondary"
+                            className={`rounded-full text-[10px] px-1.5 py-0 ${
+                              m === settings.ai_model ? "bg-emerald-100 text-emerald-700" : ""
+                            }`}
+                          >
+                            {m}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 提示信息 */}
+          {!settings.ai_api_key && (
+            <div className="p-3 rounded-lg bg-amber-50 text-amber-700 text-xs">
+              <p className="font-medium mb-1">AI 生成功能未配置</p>
+              <p className="text-amber-600">
+                请在上方"AI 生成配置"分组中填写 API 地址、密钥和模型名称，然后点击测试连接验证配置是否正确。
               </p>
             </div>
           )}
