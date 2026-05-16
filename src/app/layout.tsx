@@ -8,6 +8,7 @@ import AuthProvider from "@/components/AuthProvider";
 import { ThemeProvider } from "next-themes";
 import OnboardingGuide from "@/components/OnboardingGuide";
 import CookieConsent from "@/components/CookieConsent";
+import AnnouncementBar from "@/components/AnnouncementBar";
 import { Toaster } from "sonner";
 
 const inter = Inter({
@@ -64,6 +65,7 @@ export default function RootLayout({
           <SearchProvider>
             <AuthProvider>
               <Navbar />
+              <AnnouncementBar />
               <div className="flex-1 pt-16 min-h-0">{children}</div>
               <Footer />
               <OnboardingGuide />

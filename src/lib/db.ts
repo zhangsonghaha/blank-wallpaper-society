@@ -7,9 +7,13 @@ const pool = mysql.createPool({
   password: "zs15210265092!",
   database: "img",
   waitForConnections: true,
-  connectionLimit: 10,
+  connectionLimit: 3,
   queueLimit: 0,
   ssl: undefined,
+  idleTimeout: 30000,       // 空闲连接30秒后自动关闭
+  maxIdle: 1,               // 最多保留1个空闲连接
+  enableKeepAlive: true,     // 启用TCP keepAlive防止连接被断
+  keepAliveInitialDelay: 10000,
 });
 
 export async function query(sql: string, params?: any[]) {
