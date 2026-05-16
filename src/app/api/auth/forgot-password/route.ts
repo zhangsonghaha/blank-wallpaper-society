@@ -1,15 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import crypto from "crypto";
+import { verifySolution, AltchaPayload } from "@/lib/altcha";
+import { getClientIp, checkForgotPasswordRate, recordForgotPasswordAttempt } from "@/lib/login-security";
+import { sendPasswordResetEmail } from "@/lib/email";
 
 // POST /api/auth/forgot-password - 请求密码重置
 export async function POST(request: NextRequest) {
   try {
-    const { email } = await request.json();
+    // IP 限流检查
+    const ip = getClientIp(request);
+    const rateCheck = checkForgotPasswordRate(ip);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: `请求过于频繁，请${rateCheck.remainingSeconds}秒后重试` },
+        { status: 429 }
+      );
+    }
+
+    const { email, altchaPayload } = await request.json();
+
+    // 验证 Altcha 验证码
+    if (!altchaPayload) {
+      return NextResponse.json(
+        { error: "请完成验证码" },
+        { status: 400 }
+      );
+    }
+
+    const altchaResult = verifySolution(altchaPayload as AltchaPayload);
+    if (!altchaResult.valid) {
+      return NextResponse.json(
+        { error: altchaResult.error || "验证码验证失败" },
+        { status: 400 }
+      );
+    }
 
     if (!email) {
       return NextResponse.json({ error: "请输入邮箱" }, { status: 400 });
     }
+
+    // 记录请求（无论是否成功都记录，防止枚举探测）
+    recordForgotPasswordAttempt(ip);
 
     // 查找用户
     const users = (await query("SELECT id, name, email FROM users WHERE email = ?", [
@@ -45,15 +77,11 @@ export async function POST(request: NextRequest) {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
     const resetUrl = `${baseUrl}/reset-password?token=${token}`;
 
-    // TODO: 在这里发送邮件
-    // 目前由于没有邮件服务，直接返回 token 用于开发测试
-    // 生产环境应该发送邮件并移除 token 返回
-    console.log(`[DEV] 密码重置链接: ${resetUrl}`);
+    // 发送密码重置邮件
+    await sendPasswordResetEmail(user.email, resetUrl);
 
     return NextResponse.json({
       message: "如果该邮箱已注册，重置链接已发送",
-      // 开发环境返回 token，生产环境应移除
-      ...(process.env.NODE_ENV === "development" && { dev_token: token }),
     });
   } catch (error: any) {
     console.error("POST /api/auth/forgot-password error:", error);

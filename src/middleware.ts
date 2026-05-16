@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { validateCsrfToken } from "@/lib/csrf";
 
 // 从 Auth.js session cookie 中提取用户信息
 // Auth.js v5 使用加密的 JWT，但我们可以通过 /api/auth/session 端点验证
@@ -46,11 +47,35 @@ export async function middleware(request: NextRequest) {
 
   // API 路由保护
   if (pathname.startsWith("/api/")) {
+    // CSRF 验证：对状态变更请求（POST/PUT/PATCH/DELETE）添加 CSRF 验证
+    const mutatingMethods = ["POST", "PUT", "PATCH", "DELETE"];
+    if (mutatingMethods.includes(request.method)) {
+      // 以下路径不需要 CSRF 验证
+      // /api/auth/ — NextAuth 已自行处理
+      // /api/v1/ — 使用 API Key 认证，无 Cookie
+      // /api/upload — 使用 FormData，需要特殊处理
+      const csrfExcludedPaths = [
+        "/api/auth/",
+        "/api/upload",
+      ];
+      // /api/v1/ 已在上面直接 return NextResponse.next()
+      const needsCsrf = !csrfExcludedPaths.some((p) => pathname.startsWith(p));
+
+      if (needsCsrf) {
+        const csrfResult = validateCsrfToken(request);
+        if (!csrfResult.valid) {
+          return NextResponse.json({ error: "CSRF验证失败" }, { status: 403 });
+        }
+      }
+    }
+
     // 公开的 API
     const publicApis = [
       "/api/auth/",
       "/api/categories",
       "/api/images",
+      "/api/posts",
+      "/api/feed",
       "/api/proxy-image",
     ];
 
@@ -78,6 +103,19 @@ export async function middleware(request: NextRequest) {
       if (segments.length === 4 && segments[0] === "api" && segments[1] === "images" && segments[3] === "comments") {
         return NextResponse.next();
       }
+    }
+
+    // GET /api/posts 公开（POST 需要登录，在 route handler 中验证）
+    if (pathname === "/api/posts" && request.method === "GET") {
+      return NextResponse.next();
+    }
+    // GET /api/posts/[id] 和 GET /api/posts/[id]/comments 公开
+    if (pathname.startsWith("/api/posts/") && request.method === "GET") {
+      return NextResponse.next();
+    }
+    // GET /api/feed 公开
+    if (pathname === "/api/feed" && request.method === "GET") {
+      return NextResponse.next();
     }
 
     const isPublic = publicApis.some((p) => pathname.startsWith(p));

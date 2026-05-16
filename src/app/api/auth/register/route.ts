@@ -1,10 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import crypto from "crypto";
+import { verifySolution, AltchaPayload } from "@/lib/altcha";
+import { sendWelcomeEmail } from "@/lib/email";
 
 export async function POST(request: NextRequest) {
   try {
-    const { name, email, password } = await request.json();
+    const { name, email, password, altchaPayload } = await request.json();
+
+    // 验证 Altcha 验证码
+    if (!altchaPayload) {
+      return NextResponse.json(
+        { error: "请完成验证码" },
+        { status: 400 }
+      );
+    }
+
+    const altchaResult = verifySolution(altchaPayload as AltchaPayload);
+    if (!altchaResult.valid) {
+      return NextResponse.json(
+        { error: altchaResult.error || "验证码验证失败" },
+        { status: 400 }
+      );
+    }
 
     if (!email || !password) {
       return NextResponse.json(
@@ -38,6 +56,12 @@ export async function POST(request: NextRequest) {
       "INSERT INTO users (email, name, password, role) VALUES (?, ?, ?, 'user')",
       [email, name || email.split("@")[0], hash]
     );
+
+    // 发送欢迎邮件（非阻塞，失败不影响注册）
+    const displayName = name || email.split("@")[0];
+    sendWelcomeEmail(email, displayName).catch((err) => {
+      console.error("[Register] 发送欢迎邮件失败:", err);
+    });
 
     return NextResponse.json(
       {

@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { isEmailConfigured, sendNotificationEmail } from "@/lib/email";
 
 // === 通知类型定义 ===
 export type NotificationType =
@@ -105,9 +106,25 @@ export async function pushNotification(params: {
 
     const insertId = (result as any).insertId;
 
-    // TODO: 如果用户开启了邮件通知，可以在这里触发邮件发送
-    // const settings = await getNotificationSettings(params.userId);
-    // if (settings[`email_${params.type}`]) { sendEmailNotification(...) }
+    // 如果邮件服务已配置且用户开启了该类型的邮件通知，发送邮件
+    if (await isEmailConfigured()) {
+      const settings = await getNotificationSettings(params.userId);
+      if (settings[`email_${params.type}`]) {
+        // 获取用户邮箱
+        const userRows = await query("SELECT email FROM users WHERE id = ?", [
+          params.userId,
+        ]) as any[];
+        if (userRows.length > 0) {
+          sendNotificationEmail(
+            userRows[0].email,
+            params.title,
+            params.content || ""
+          ).catch((err) => {
+            console.error("[Notification] 发送通知邮件失败:", err);
+          });
+        }
+      }
+    }
 
     return insertId;
   } catch (error) {

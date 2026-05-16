@@ -75,6 +75,8 @@ interface UserRecord {
   updated_at: string;
   upload_count: number;
   favorite_count: number;
+  deletion_requested_at: string | null;
+  deletion_scheduled_at: string | null;
 }
 
 interface UserDetail extends UserRecord {
@@ -136,11 +138,27 @@ function RoleBadge({ role }: { role: string }) {
 /* ==================== 状态徽章组件 ==================== */
 
 function StatusBadge({ status }: { status: string }) {
-  if (status === "banned") {
+  if (status === "banned" || status === "suspended") {
     return (
       <Badge className="rounded-full gap-1 bg-red-100 text-red-700 border-0 font-medium">
         <Ban className="w-3 h-3" />
-        已封禁
+        {status === "suspended" ? "已停用" : "已封禁"}
+      </Badge>
+    );
+  }
+  if (status === "pending_deletion") {
+    return (
+      <Badge className="rounded-full gap-1 bg-amber-100 text-amber-700 border-0 font-medium">
+        <Clock className="w-3 h-3" />
+        待注销
+      </Badge>
+    );
+  }
+  if (status === "deleted") {
+    return (
+      <Badge className="rounded-full gap-1 bg-gray-100 text-gray-500 border-0 font-medium">
+        <Trash2 className="w-3 h-3" />
+        已注销
       </Badge>
     );
   }
@@ -223,7 +241,7 @@ export default function UsersTab() {
       setUserStats({
         total: data.total || 0,
         active: (data.data || []).filter((u: UserRecord) => u.status === "active").length,
-        banned: (data.data || []).filter((u: UserRecord) => u.status === "banned").length,
+        banned: (data.data || []).filter((u: UserRecord) => u.status === "banned" || u.status === "suspended").length,
         admins: (data.data || []).filter((u: UserRecord) => u.role === "admin").length,
       });
     } catch (err) {
@@ -285,20 +303,21 @@ export default function UsersTab() {
     if (!banTarget) return;
     setBanSaving(true);
     try {
+      const isBanned = banTarget.status === "banned" || banTarget.status === "suspended";
       const res = await fetch(`/api/admin/users/${banTarget.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          status: banTarget.status === "banned" ? "active" : "banned",
+          status: isBanned ? "active" : "suspended",
           bannedReason: banReason || undefined,
         }),
       });
       const data = await res.json();
       if (res.ok) {
         toast.success(
-          banTarget.status === "banned" ? "已解封用户" : "已封禁用户",
+          isBanned ? "已解封用户" : "已封禁用户",
           {
-            description: banTarget.status === "banned"
+            description: isBanned
               ? `${banTarget.name} 已解封`
               : `${banTarget.name} 已被封禁`,
           }
@@ -320,8 +339,12 @@ export default function UsersTab() {
     if (!deleteTarget) return;
     setDeleteSaving(true);
     try {
-      const res = await fetch(`/api/admin/users/${deleteTarget.id}`, {
-        method: "DELETE",
+      const res = await fetch(`/api/admin/users/${deleteTarget.id}/account-deletion`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reason: `管理员删除用户 ${deleteTarget.name}`,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -481,7 +504,10 @@ export default function UsersTab() {
                 <SelectContent>
                   <SelectItem value="all">全部状态</SelectItem>
                   <SelectItem value="active">正常</SelectItem>
+                  <SelectItem value="suspended">已停用</SelectItem>
                   <SelectItem value="banned">已封禁</SelectItem>
+                  <SelectItem value="pending_deletion">待注销</SelectItem>
+                  <SelectItem value="deleted">已注销</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -582,14 +608,14 @@ export default function UsersTab() {
                             variant="ghost"
                             size="icon"
                             className="w-8 h-8"
-                            title={user.status === "banned" ? "解封" : "封禁"}
+                            title={user.status === "suspended" || user.status === "banned" ? "解封" : "封禁"}
                             onClick={() => {
                               setBanTarget(user);
                               setBanReason("");
                               setBanDialogOpen(true);
                             }}
                           >
-                            {user.status === "banned" ? (
+                            {user.status === "suspended" || user.status === "banned" ? (
                               <Unlock className="w-4 h-4 text-green-600" />
                             ) : (
                               <Ban className="w-4 h-4 text-[var(--color-mute)]" />
@@ -751,7 +777,7 @@ export default function UsersTab() {
               </div>
 
               {/* 封禁信息 */}
-              {detailUser.status === "banned" && detailUser.banned_reason && (
+              {(detailUser.status === "banned" || detailUser.status === "suspended") && detailUser.banned_reason && (
                 <div className="p-3 rounded-xl bg-red-50 border border-red-200">
                   <p className="text-xs text-red-600 font-medium flex items-center gap-1">
                     <Ban className="w-3 h-3" /> 封禁原因
@@ -857,7 +883,7 @@ export default function UsersTab() {
                       setBanDialogOpen(true);
                     }}
                   >
-                    {detailUser.status === "banned" ? (
+                    {detailUser.status === "banned" || detailUser.status === "suspended" ? (
                       <>
                         <Unlock className="w-4 h-4" />
                         解封
@@ -945,20 +971,20 @@ export default function UsersTab() {
         <DialogContent className="sm:max-w-md rounded-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {banTarget?.status === "banned" ? (
+              {banTarget?.status === "suspended" || banTarget?.status === "banned" ? (
                 <Unlock className="w-5 h-5 text-green-600" />
               ) : (
                 <Ban className="w-5 h-5 text-[var(--color-primary)]" />
               )}
-              {banTarget?.status === "banned" ? "解封用户" : "封禁用户"}
+              {banTarget?.status === "suspended" || banTarget?.status === "banned" ? "解封用户" : "封禁用户"}
             </DialogTitle>
             <DialogDescription>
-              {banTarget?.status === "banned"
+              {banTarget?.status === "suspended" || banTarget?.status === "banned"
                 ? `确定要解封用户 ${banTarget?.name} 吗？`
                 : `确定要封禁用户 ${banTarget?.name} 吗？`}
             </DialogDescription>
           </DialogHeader>
-          {banTarget?.status !== "banned" && (
+          {banTarget?.status !== "banned" && banTarget?.status !== "suspended" && (
             <div className="py-4">
               <Label>封禁原因</Label>
               <Textarea
@@ -981,17 +1007,17 @@ export default function UsersTab() {
               取消
             </Button>
             <Button
-              disabled={banSaving || (banTarget?.status !== "banned" && !banReason.trim())}
+              disabled={banSaving || (banTarget?.status !== "banned" && banTarget?.status !== "suspended" && !banReason.trim())}
               onClick={handleBan}
               className={
-                banTarget?.status === "banned"
+                banTarget?.status === "banned" || banTarget?.status === "suspended"
                   ? "bg-green-600 hover:bg-green-700 rounded-full gap-2"
                   : "bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)] rounded-full gap-2"
               }
             >
               {banSaving
                 ? "处理中..."
-                : banTarget?.status === "banned"
+                : banTarget?.status === "banned" || banTarget?.status === "suspended"
                   ? "确认解封"
                   : "确认封禁"}
             </Button>
@@ -1009,15 +1035,16 @@ export default function UsersTab() {
             </DialogTitle>
             <DialogDescription>
               确定要删除用户 <span className="font-semibold">{deleteTarget?.name}</span> 吗？
-              此操作将软删除该用户账户，不可恢复。
+              此操作将匿名化该用户信息，不可恢复。
             </DialogDescription>
           </DialogHeader>
           <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800">
             <p className="font-medium">注意：</p>
             <ul className="list-disc list-inside mt-1 space-y-0.5 text-xs">
-              <li>用户邮箱将被替换，无法再登录</li>
-              <li>用户状态将标记为已封禁</li>
+              <li>用户昵称、邮箱、头像将被清除</li>
+              <li>用户收藏、评论、关注等数据将被删除</li>
               <li>用户已上传的图片不会被删除</li>
+              <li>账号状态将标记为已注销</li>
               <li>此操作将记录到管理日志</li>
             </ul>
           </div>

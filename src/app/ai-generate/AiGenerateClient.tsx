@@ -9,6 +9,7 @@ import {
   RectangleVertical, CheckCircle, XCircle, Trash2
 } from "lucide-react";
 import { toast } from "sonner";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -104,9 +105,10 @@ export default function AiGenerateClient() {
     setGenerating(true);
 
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/ai-generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({
           prompt: prompt.trim(),
           style: selectedStyle,

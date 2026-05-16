@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Toaster, toast } from "sonner";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import {
   Upload,
   Search,
@@ -336,9 +337,10 @@ export default function ImagesTab() {
     if (selectedIds.size === 0) return;
     setBatchDeleting(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/images/batch-delete", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ ids: Array.from(selectedIds) }),
       });
       const data = await res.json();
@@ -358,7 +360,8 @@ export default function ImagesTab() {
 
   const handleDelete = async (image: ImageRecord) => {
     try {
-      const res = await fetch(`/api/images/${image.id}`, { method: "DELETE" });
+      const csrfHeaders = await withCsrfHeader();
+      const res = await fetch(`/api/images/${image.id}`, { method: "DELETE", headers: { ...csrfHeaders } });
       if (res.ok) {
         toast.success("已删除", { description: `"${image.title}" 已删除` });
         loadData();
@@ -371,10 +374,11 @@ export default function ImagesTab() {
 
   const toggleFavorite = async (image: ImageRecord) => {
     try {
+      const csrfHeaders = await withCsrfHeader();
       if (image.is_favorite) {
-        await fetch(`/api/favorites/${image.id}`, { method: "DELETE" });
+        await fetch(`/api/favorites/${image.id}`, { method: "DELETE", headers: { ...csrfHeaders } });
       } else {
-        await fetch(`/api/favorites/${image.id}`, { method: "POST" });
+        await fetch(`/api/favorites/${image.id}`, { method: "POST", headers: { ...csrfHeaders } });
       }
       loadData();
     } catch (err) {
@@ -401,9 +405,10 @@ export default function ImagesTab() {
     }
     setEditSaving(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/images/${editForm.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({
           title: editForm.title,
           description: editForm.description,
@@ -460,9 +465,10 @@ export default function ImagesTab() {
     if (duplicateDeleteIds.size === 0) return;
     setDuplicateDeleting(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/admin/duplicates", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ ids: Array.from(duplicateDeleteIds) }),
       });
       const data = await res.json();
@@ -497,8 +503,10 @@ export default function ImagesTab() {
   const handleGenerateVariants = async () => {
     setVariantGenerating(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/admin/generate-variants?limit=50", {
         method: "POST",
+        headers: { ...csrfHeaders },
       });
       const data = await res.json();
       if (res.ok) {

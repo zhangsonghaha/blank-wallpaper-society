@@ -54,9 +54,17 @@ function LoginForm() {
       });
 
       if (result?.error) {
-        toast.error("登录失败", {
-          description: "邮箱或密码错误",
-        });
+        // 检查是否是账号锁定错误
+        if (result.error.includes("临时锁定")) {
+          toast.error("账号已锁定", {
+            description: result.error,
+            duration: 10000,
+          });
+        } else {
+          toast.error("登录失败", {
+            description: "邮箱或密码错误",
+          });
+        }
       } else {
         toast.success("登录成功");
         if (callbackUrl.startsWith("/admin")) {

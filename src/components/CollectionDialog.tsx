@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { withCsrfHeader } from "@/lib/csrf-client";
 
 interface CollectionDialogProps {
   open: boolean;
@@ -43,9 +44,10 @@ export default function CollectionDialog({
 
     setCreating(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/collections", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({
           title: title.trim(),
           description: description.trim() || null,

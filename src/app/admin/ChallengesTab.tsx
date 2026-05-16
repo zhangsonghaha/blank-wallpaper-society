@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import { Trophy, Plus, Calendar, Users, Vote, Loader2, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -99,9 +100,10 @@ export default function ChallengesTab() {
     }
     setCreating(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/challenges", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({
           title: form.title,
           description: form.description,
@@ -155,9 +157,10 @@ export default function ChallengesTab() {
     }
     setSaving(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/challenges/${editingId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({
           title: editForm.title,
           description: editForm.description,

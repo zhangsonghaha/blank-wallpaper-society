@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import GitHub from "next-auth/providers/github";
 import { query } from "@/lib/db";
+import { checkLoginLock, recordLoginFailure, clearLoginFailures } from "@/lib/login-security";
 
 // OAuth 凭据：优先环境变量，其次数据库设置
 async function getOAuthConfig() {
@@ -59,11 +60,19 @@ async function buildProviders() {
         const email = credentials.email as string;
         const password = credentials.password as string;
 
+        // 检查登录锁定
+        const lockStatus = checkLoginLock(email);
+        if (lockStatus.locked) {
+          const minutes = Math.ceil(lockStatus.remainingSeconds / 60);
+          throw new Error(`账号已被临时锁定，请${minutes}分钟后重试`);
+        }
+
         const rows = (await query("SELECT * FROM users WHERE email = ?", [
           email,
         ])) as any[];
 
         if (rows.length === 0) {
+          recordLoginFailure(email);
           throw new Error("邮箱或密码错误");
         }
 
@@ -74,8 +83,29 @@ async function buildProviders() {
           .digest("hex");
 
         if (hash !== user.password) {
+          const failResult = recordLoginFailure(email);
+          if (failResult.locked) {
+            throw new Error("账号已被临时锁定，请15分钟后重试");
+          }
           throw new Error("邮箱或密码错误");
         }
+
+        // 检查账号状态
+        if (user.status === "suspended") {
+          throw new Error("账号已被封禁");
+        }
+        if (user.status === "pending_deletion") {
+          throw new Error("账号正在注销中");
+        }
+        if (user.status === "deleted") {
+          throw new Error("账号已注销");
+        }
+        if (user.status === "banned") {
+          throw new Error("账号已被封禁");
+        }
+
+        // 登录成功，清除失败记录
+        clearLoginFailures(email);
 
         return {
           id: String(user.id),
@@ -146,6 +176,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         if (existingUsers.length > 0) {
           // 已有用户，关联 OAuth 账号
+          // 检查账号状态
+          const existingUser = existingUsers[0];
+          if (existingUser.status === "suspended" || existingUser.status === "banned") {
+            throw new Error("账号已被封禁");
+          }
+          if (existingUser.status === "pending_deletion") {
+            throw new Error("账号正在注销中");
+          }
+          if (existingUser.status === "deleted") {
+            throw new Error("账号已注销");
+          }
           userId = existingUsers[0].id;
         } else {
           // 新用户，自动注册

@@ -63,6 +63,7 @@ import {
 } from "@/components/ui/dialog";
 import Link from "next/link";
 import CollectionDialog from "@/components/CollectionDialog";
+import { withCsrfHeader } from "@/lib/csrf-client";
 
 interface UserData {
   id: number;
@@ -108,6 +109,248 @@ interface AchievementData {
   unlockedAt?: string;
   progress?: number;
   currentValue?: number;
+}
+
+/* ==================== 账号注销区域组件 ==================== */
+
+function AccountDeletionZone({ userId }: { userId: number }) {
+  const [deletionStatus, setDeletionStatus] = useState<{
+    status: string;
+    deletionRequestedAt: string | null;
+    deletionScheduledAt: string | null;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+
+  // 加载注销状态
+  useEffect(() => {
+    fetch("/api/auth/account-deletion")
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then((data) => {
+        if (data && !data.error) {
+          setDeletionStatus(data);
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  // 请求注销
+  const handleRequestDeletion = async () => {
+    if (!password) {
+      toast.error("请输入密码");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/auth/account-deletion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("注销申请已提交", {
+          description: data.message,
+        });
+        setDialogOpen(false);
+        setPassword("");
+        // 更新状态
+        setDeletionStatus({
+          status: "pending_deletion",
+          deletionRequestedAt: new Date().toISOString(),
+          deletionScheduledAt: data.scheduledAt,
+        });
+      } else {
+        toast.error("操作失败", { description: data.error });
+      }
+    } catch {
+      toast.error("操作失败，请重试");
+    }
+    setSubmitting(false);
+  };
+
+  // 取消注销
+  const handleCancelDeletion = async () => {
+    setCancelling(true);
+    try {
+      const res = await fetch("/api/auth/account-deletion", {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("注销已取消", { description: data.message });
+        setCancelDialogOpen(false);
+        setDeletionStatus({
+          status: "active",
+          deletionRequestedAt: null,
+          deletionScheduledAt: null,
+        });
+      } else {
+        toast.error("取消失败", { description: data.error });
+      }
+    } catch {
+      toast.error("取消失败，请重试");
+    }
+    setCancelling(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-3 max-w-md">
+        <div className="h-4 w-32 bg-[var(--color-surface-card)] rounded animate-pulse" />
+        <div className="h-10 w-full bg-[var(--color-surface-card)] rounded animate-pulse" />
+      </div>
+    );
+  }
+
+  // 已注销
+  if (deletionStatus?.status === "deleted") {
+    return (
+      <div className="p-4 rounded-xl bg-gray-100 border border-gray-200 text-sm text-gray-600">
+        此账号已注销。
+      </div>
+    );
+  }
+
+  // 正在注销中
+  if (deletionStatus?.status === "pending_deletion") {
+    const scheduledAt = deletionStatus.deletionScheduledAt
+      ? new Date(deletionStatus.deletionScheduledAt).toLocaleDateString("zh-CN", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        })
+      : "7天后";
+
+    return (
+      <div className="space-y-4 max-w-md">
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200">
+          <p className="text-sm font-medium text-amber-800">
+            您的账号注销申请已提交
+          </p>
+          <p className="text-sm text-amber-700 mt-1">
+            账号将于 <span className="font-semibold">{scheduledAt}</span> 正式注销。在注销生效前，您可以随时取消注销申请。
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          className="rounded-full gap-1 border-green-300 text-green-700 hover:bg-green-50"
+          onClick={() => setCancelDialogOpen(true)}
+        >
+          <XCircle className="w-4 h-4" />
+          取消注销
+        </Button>
+
+        {/* 取消注销确认 Dialog */}
+        <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+          <DialogContent className="sm:max-w-md rounded-2xl">
+            <DialogHeader>
+              <DialogTitle>取消注销申请</DialogTitle>
+              <DialogDescription>
+                确定要取消账号注销申请吗？取消后您的账号将恢复正常使用。
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setCancelDialogOpen(false)}
+                className="rounded-full"
+              >
+                返回
+              </Button>
+              <Button
+                disabled={cancelling}
+                onClick={handleCancelDeletion}
+                className="bg-green-600 hover:bg-green-700 rounded-full gap-2"
+              >
+                {cancelling ? "处理中..." : "确认取消注销"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  // 正常状态 - 可以申请注销
+  return (
+    <div className="space-y-4 max-w-md">
+      <p className="text-sm text-[var(--color-mute)]">
+        注销账号后，您的个人信息将被清除，7天冷静期内可随时取消。请谨慎操作。
+      </p>
+      <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800">
+        <p className="font-medium">注销后将发生以下变更：</p>
+        <ul className="list-disc list-inside mt-1 space-y-0.5 text-xs">
+          <li>您的昵称、邮箱、头像将被清除</li>
+          <li>收藏、评论、关注等数据将被删除</li>
+          <li>API Key 将被停用</li>
+          <li>您上传的图片和创建的合集将保留（其他用户可能已收藏）</li>
+          <li>7天冷静期内可随时取消注销</li>
+        </ul>
+      </div>
+      <Button
+        variant="destructive"
+        className="rounded-full gap-1"
+        onClick={() => setDialogOpen(true)}
+      >
+        <Trash2 className="w-4 h-4" />
+        申请注销账号
+      </Button>
+
+      {/* 注销确认 Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" />
+              确认注销账号
+            </DialogTitle>
+            <DialogDescription>
+              此操作将启动账号注销流程，7天后账号将被永久注销。请输入密码确认。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label>请输入密码以确认</Label>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="请输入当前密码"
+              className="mt-2 h-10 rounded-xl"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDialogOpen(false);
+                setPassword("");
+              }}
+              className="rounded-full"
+            >
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={submitting || !password}
+              onClick={handleRequestDeletion}
+              className="rounded-full gap-2"
+            >
+              {submitting ? "提交中..." : "确认注销"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }
 
 export default function ProfileClient({
@@ -361,8 +604,10 @@ export default function ProfileClient({
     if (!deleteTarget) return;
     setDeleting(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/user/uploads?id=${deleteTarget.id}`, {
         method: "DELETE",
+        headers: { ...csrfHeaders },
       });
       if (res.ok) {
         toast.success("删除成功");
@@ -741,6 +986,16 @@ export default function ProfileClient({
                 </form>
               </div>
 
+              {/* Account Deletion - 危险区域 */}
+              <Separator />
+              <div className="px-6 md:px-8 py-6">
+                <h2 className="text-lg font-semibold text-red-600 mb-4 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5" />
+                  注销账号
+                </h2>
+                <AccountDeletionZone userId={user.id} />
+              </div>
+
               {/* Tabs: Favorites + Uploads */}
               <Separator />
               <div className="px-6 md:px-8 py-6">
@@ -808,14 +1063,16 @@ export default function ProfileClient({
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  fetch(`/api/favorites/${img.id}`, { method: "DELETE" })
-                                    .then((res) => {
-                                      if (res.ok) {
-                                        setFavoriteImages((prev) => prev.filter((f: any) => f.id !== img.id));
-                                        toast.success("已取消收藏");
-                                      }
-                                    })
-                                    .catch(() => toast.error("操作失败"));
+                                  withCsrfHeader().then((csrfHeaders) => {
+                                    fetch(`/api/favorites/${img.id}`, { method: "DELETE", headers: { ...csrfHeaders } })
+                                      .then((res) => {
+                                        if (res.ok) {
+                                          setFavoriteImages((prev) => prev.filter((f: any) => f.id !== img.id));
+                                          toast.success("已取消收藏");
+                                        }
+                                      })
+                                      .catch(() => toast.error("操作失败"));
+                                  });
                                 }}
                                 className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10"
                               >
@@ -976,9 +1233,10 @@ export default function ProfileClient({
                                       size="sm"
                                       onClick={async () => {
                                         try {
+                                          const csrfHeaders = await withCsrfHeader();
                                           const res = await fetch(`/api/api-keys/${key.id}`, {
                                             method: "PATCH",
-                                            headers: { "Content-Type": "application/json" },
+                                            headers: { "Content-Type": "application/json", ...csrfHeaders },
                                             body: JSON.stringify({ is_active: !key.is_active }),
                                           });
                                           if (res.ok) {
@@ -1394,9 +1652,10 @@ export default function ProfileClient({
                             }
                             setCreatingKey(true);
                             try {
+                              const csrfHeaders = await withCsrfHeader();
                               const res = await fetch("/api/api-keys", {
                                 method: "POST",
-                                headers: { "Content-Type": "application/json" },
+                                headers: { "Content-Type": "application/json", ...csrfHeaders },
                                 body: JSON.stringify({ name: newKeyName, rate_limit: newKeyLimit }),
                               });
                               const data = await res.json();
@@ -1455,8 +1714,10 @@ export default function ProfileClient({
                         if (!deleteKeyTarget) return;
                         setDeletingKey(true);
                         try {
+                          const csrfHeaders = await withCsrfHeader();
                           const res = await fetch(`/api/api-keys/${deleteKeyTarget.id}`, {
                             method: "DELETE",
+                            headers: { ...csrfHeaders },
                           });
                           if (res.ok) {
                             toast.success("已删除");

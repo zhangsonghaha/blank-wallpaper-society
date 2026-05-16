@@ -12,6 +12,7 @@ import {
   ArrowDown,
 } from "lucide-react";
 import { toast } from "sonner";
+import { withCsrfHeader } from "@/lib/csrf-client";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -173,9 +174,10 @@ export default function CategoriesTab() {
         ? { id: editingCategory.id, ...form }
         : form;
 
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify(body),
       });
 
@@ -197,8 +199,10 @@ export default function CategoriesTab() {
     if (!deletingCategory) return;
     setSaving(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/categories?id=${deletingCategory.id}`, {
         method: "DELETE",
+        headers: { ...csrfHeaders },
       });
       const data = await res.json();
       if (res.ok) {
@@ -226,15 +230,16 @@ export default function CategoriesTab() {
 
     try {
       // 并行更新两个分类的排序
+      const csrfHeaders = await withCsrfHeader();
       await Promise.all([
         fetch("/api/categories", {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...csrfHeaders },
           body: JSON.stringify({ id: cat.id, sort_order: swapCat.sort_order }),
         }),
         fetch("/api/categories", {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...csrfHeaders },
           body: JSON.stringify({ id: swapCat.id, sort_order: cat.sort_order }),
         }),
       ]);

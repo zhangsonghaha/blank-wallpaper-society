@@ -13,6 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import { Label } from "@/components/ui/label";
 
 interface Challenge {
@@ -200,9 +201,10 @@ export default function ChallengesClient() {
     }
     setSubmitting(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/challenges/${selectedChallenge.id}/submit`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ imageId: parseInt(submitImageId) }),
       });
       const data = await res.json();
@@ -279,9 +281,10 @@ export default function ChallengesClient() {
 
       // 第二步：投稿参赛
       const newImageId = uploadData.id;
+      const csrfHeaders = await withCsrfHeader();
       const submitRes = await fetch(`/api/challenges/${selectedChallenge.id}/submit`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ imageId: newImageId }),
       });
       const submitData = await submitRes.json();

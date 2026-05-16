@@ -34,6 +34,7 @@ export async function GET(
       `SELECT 
         u.id, u.email, u.name, u.avatar, u.role, u.status,
         u.banned_reason, u.banned_at, u.created_at, u.updated_at,
+        u.deletion_requested_at, u.deletion_scheduled_at,
         COALESCE(upload_stats.upload_count, 0) as upload_count,
         COALESCE(fav_stats.favorite_count, 0) as favorite_count
       FROM users u
@@ -168,14 +169,14 @@ export async function PATCH(
     }
 
     if (status !== undefined) {
-      const validStatuses = ["active", "banned"];
+      const validStatuses = ["active", "banned", "suspended", "pending_deletion", "deleted"];
       if (!validStatuses.includes(status)) {
         return NextResponse.json({ error: "无效的状态" }, { status: 400 });
       }
       logDetail.from_status = targetUser[0].status;
       logDetail.to_status = status;
 
-      if (status === "banned") {
+      if (status === "banned" || status === "suspended") {
         updates.push("status = ?, banned_reason = ?, banned_at = NOW()");
         updateParams.push(status, bannedReason || "管理员封禁");
       } else {
@@ -206,13 +207,15 @@ export async function PATCH(
     const operation =
       resetPassword
         ? "reset_password"
-        : status === "banned"
+        : status === "suspended"
           ? "ban_user"
-          : status === "active" && targetUser[0].status === "banned"
-            ? "unban_user"
-            : role
-              ? "change_role"
-              : "update_user";
+          : status === "banned"
+            ? "ban_user"
+            : status === "active" && (targetUser[0].status === "banned" || targetUser[0].status === "suspended")
+              ? "unban_user"
+              : role
+                ? "change_role"
+                : "update_user";
 
     await query(
       "INSERT INTO admin_operation_logs (operator_id, target_user_id, operation, detail) VALUES (?, ?, ?, ?)",

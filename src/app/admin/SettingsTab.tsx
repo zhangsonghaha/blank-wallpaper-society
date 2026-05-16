@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import {
   Settings,
   Globe,
@@ -132,6 +133,22 @@ const settingGroups: SettingGroup[] = [
     ],
   },
   {
+    id: "email",
+    title: "邮件服务配置",
+    icon: Server,
+    description: "邮件发送服务配置，用于密码重置、通知推送等功能",
+    fields: [
+      { key: "email_enabled", label: "启用邮件服务", type: "toggle", description: "开启后系统将发送邮件通知" },
+      { key: "email_provider", label: "邮件服务商", type: "text", placeholder: "resend / smtp", description: "选择邮件发送方式：resend 或 smtp" },
+      { key: "email_from", label: "发件人地址", type: "text", placeholder: "noreply@imagegallery.app", description: "邮件发件人地址" },
+      { key: "resend_api_key", label: "Resend API Key", type: "password", placeholder: "re_xxxxxxxx", description: "Resend 邮件服务密钥" },
+      { key: "smtp_host", label: "SMTP 主机", type: "text", placeholder: "smtp.example.com", description: "SMTP 服务器地址（使用 SMTP 模式时填写）" },
+      { key: "smtp_port", label: "SMTP 端口", type: "number", placeholder: "587", description: "SMTP 服务器端口，通常为 587" },
+      { key: "smtp_user", label: "SMTP 用户名", type: "text", placeholder: "user@example.com", description: "SMTP 登录用户名" },
+      { key: "smtp_pass", label: "SMTP 密码", type: "password", placeholder: "••••••••", description: "SMTP 登录密码" },
+    ],
+  },
+  {
     id: "ai",
     title: "AI 生成配置",
     icon: Sparkles,
@@ -165,6 +182,15 @@ export default function SettingsTab() {
   const [dbTotal, setDbTotal] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+
+  /* ==================== 邮件测试状态 ==================== */
+  const [emailTesting, setEmailTesting] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState<{
+    success: boolean;
+    message?: string;
+    error?: string;
+    to?: string;
+  } | null>(null);
 
   /* ==================== AI 连通性测试状态 ==================== */
   const [aiTesting, setAiTesting] = useState(false);
@@ -245,7 +271,8 @@ export default function SettingsTab() {
     if (!confirm("确定要重建索引吗？这会清空现有索引并重新同步所有图片。")) return;
     setRebuilding(true);
     try {
-      const res = await fetch("/api/admin/search-sync", { method: "DELETE" });
+      const csrfHeaders = await withCsrfHeader();
+      const res = await fetch("/api/admin/search-sync", { method: "DELETE", headers: { ...csrfHeaders } });
       const data = await res.json();
       if (res.ok) {
         toast.success(`索引重建完成，已索引 ${data.synced} 张图片`);
@@ -257,6 +284,33 @@ export default function SettingsTab() {
       toast.error("重建失败");
     }
     setRebuilding(false);
+  };
+
+  /* ==================== 邮件发送测试 ==================== */
+
+  const handleEmailTest = async () => {
+    setEmailTesting(true);
+    setEmailTestResult(null);
+    try {
+      const testTo = settings.email_from || undefined;
+      const res = await fetch("/api/admin/test-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await withCsrfHeader()) },
+        body: JSON.stringify({ to: testTo }),
+      });
+      const data = await res.json();
+      setEmailTestResult({ success: res.ok, ...data });
+
+      if (res.ok) {
+        toast.success("测试邮件已发送");
+      } else {
+        toast.error("邮件发送失败", { description: data.error });
+      }
+    } catch {
+      setEmailTestResult({ success: false, error: "请求失败" });
+      toast.error("测试请求失败");
+    }
+    setEmailTesting(false);
   };
 
   /* ==================== AI 连通性测试 ==================== */
@@ -276,7 +330,7 @@ export default function SettingsTab() {
 
       const res = await fetch("/api/admin/ai-test", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await withCsrfHeader()) },
         body: JSON.stringify(testPayload),
       });
       const data = await res.json();
@@ -329,9 +383,10 @@ export default function SettingsTab() {
         return;
       }
 
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/admin/settings", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ settings: changed }),
       });
 
@@ -594,6 +649,115 @@ export default function SettingsTab() {
               <p className="text-amber-600">
                 请确保已设置环境变量 MEILISEARCH_HOST 和 MEILISEARCH_API_KEY，
                 并且 Meilisearch 服务已启动。未配置时搜索将使用数据库 LIKE 查询。
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 邮件服务测试 */}
+      <Card>
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-[var(--color-surface-card)] flex items-center justify-center">
+              <Server className="w-5 h-5 text-[var(--color-mute)]" />
+            </div>
+            <div>
+              <CardTitle className="text-base">邮件服务测试</CardTitle>
+              <CardDescription className="text-xs">
+                验证邮件服务配置是否正确，发送测试邮件
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* 当前配置概览 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3 rounded-lg bg-[var(--color-surface-card)]">
+              <div className="text-xs text-[var(--color-mute)] mb-1">邮件服务商</div>
+              <div className="text-sm font-medium">{settings.email_provider || "未配置"}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-[var(--color-surface-card)]">
+              <div className="text-xs text-[var(--color-mute)] mb-1">发件人</div>
+              <div className="text-sm font-medium break-all">{settings.email_from || "未配置"}</div>
+            </div>
+          </div>
+
+          {settings.email_provider === "smtp" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 rounded-lg bg-[var(--color-surface-card)]">
+                <div className="text-xs text-[var(--color-mute)] mb-1">SMTP 主机</div>
+                <div className="text-sm font-medium">{settings.smtp_host || "未配置"}</div>
+              </div>
+              <div className="p-3 rounded-lg bg-[var(--color-surface-card)]">
+                <div className="text-xs text-[var(--color-mute)] mb-1">SMTP 端口</div>
+                <div className="text-sm font-medium">{settings.smtp_port || "未配置"}</div>
+              </div>
+            </div>
+          )}
+
+          {/* 配置状态 */}
+          <div className="flex items-center gap-2">
+            <div className={`w-2.5 h-2.5 rounded-full ${settings.email_enabled === "true" ? "bg-emerald-500" : "bg-red-400"}`} />
+            <span className="text-sm">
+              {settings.email_enabled === "true" ? "邮件服务已启用" : "邮件服务未启用"}
+            </span>
+          </div>
+
+          {/* 测试按钮 */}
+          <div className="flex items-center gap-2 pt-1">
+            <Button
+              onClick={handleEmailTest}
+              disabled={emailTesting || settings.email_enabled !== "true"}
+              variant="outline"
+              className="rounded-full"
+              size="sm"
+            >
+              {emailTesting ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Server className="w-3.5 h-3.5 mr-1.5" />
+              )}
+              {emailTesting ? "发送中..." : "发送测试邮件"}
+            </Button>
+          </div>
+
+          {/* 测试结果 */}
+          {emailTestResult && (
+            <div className={`p-3 rounded-lg border ${
+              emailTestResult.success
+                ? "bg-emerald-50 border-emerald-200"
+                : "bg-red-50 border-red-200"
+            }`}>
+              <div className="flex items-center gap-2 mb-1">
+                {emailTestResult.success ? (
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-red-600" />
+                )}
+                <span className={`text-sm font-medium ${
+                  emailTestResult.success ? "text-emerald-800" : "text-red-800"
+                }`}>
+                  {emailTestResult.success ? "发送成功" : "发送失败"}
+                </span>
+              </div>
+              {emailTestResult.message && (
+                <p className={`text-xs mt-1 ${emailTestResult.success ? "text-emerald-700" : "text-red-600"}`}>
+                  {emailTestResult.message}
+                </p>
+              )}
+              {emailTestResult.error && (
+                <p className="text-xs text-red-600 mt-1">{emailTestResult.error}</p>
+              )}
+            </div>
+          )}
+
+          {/* 提示信息 */}
+          {settings.email_enabled !== "true" && (
+            <div className="p-3 rounded-lg bg-amber-50 text-amber-700 text-xs">
+              <p className="font-medium mb-1">邮件服务未启用</p>
+              <p className="text-amber-600">
+                请在上方"邮件服务配置"分组中启用邮件服务，并填写对应的配置信息（SMTP 或 Resend），然后点击发送测试邮件验证配置是否正确。
               </p>
             </div>
           )}

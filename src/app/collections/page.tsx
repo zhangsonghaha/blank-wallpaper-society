@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import Link from "next/link";
 import {
   Plus,
@@ -93,9 +94,10 @@ export default function CollectionsPage() {
       return;
     }
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(
         `/api/collections/${collectionId}/subscribe`,
-        { method: isSubscribed ? "DELETE" : "POST" }
+        { method: isSubscribed ? "DELETE" : "POST", headers: { ...csrfHeaders } }
       );
       if (res.ok) {
         toast.success(isSubscribed ? "已取消订阅" : "订阅成功");

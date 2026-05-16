@@ -20,6 +20,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import CollectionDialog from "./CollectionDialog";
+import { withCsrfHeader } from "@/lib/csrf-client";
 
 interface Collection {
   id: number;
@@ -67,9 +68,10 @@ export default function AddToCollectionDialog({
     if (!imageId) return;
     setAddingTo(collectionId);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/collections/${collectionId}/images`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ imageId }),
       });
       if (res.ok) {

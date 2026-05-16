@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, Send, Trash2, Reply, X } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
+import { withCsrfHeader } from "@/lib/csrf-client";
 
 interface Comment {
   id: number;
@@ -81,9 +82,10 @@ export default function CommentSection({
     }
     setSubmitting(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/images/${imageId}/comments`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({
           content: newComment.trim(),
           parent_id: replyTo?.id || null,
@@ -106,8 +108,10 @@ export default function CommentSection({
 
   const handleDelete = async (commentId: number) => {
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/comments/${commentId}`, {
         method: "DELETE",
+        headers: { ...csrfHeaders },
       });
       if (res.ok) {
         toast.success("删除成功");

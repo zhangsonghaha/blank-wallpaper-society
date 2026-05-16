@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import Link from "next/link";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import {
   ArrowLeft,
   Users,
@@ -138,8 +139,10 @@ export default function CollectionDetailPage() {
     if (!collection) return;
     setSubscribing(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/collections/${collectionId}/subscribe`, {
         method: collection.is_subscribed ? "DELETE" : "POST",
+        headers: { ...csrfHeaders },
       });
       if (res.ok) {
         toast.success(collection.is_subscribed ? "已取消订阅" : "订阅成功");
@@ -169,8 +172,10 @@ export default function CollectionDetailPage() {
     if (!confirm("确定要删除此合集吗？此操作不可撤销。")) return;
     setDeleting(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/collections/${collectionId}`, {
         method: "DELETE",
+        headers: { ...csrfHeaders },
       });
       if (res.ok) {
         toast.success("合集已删除");

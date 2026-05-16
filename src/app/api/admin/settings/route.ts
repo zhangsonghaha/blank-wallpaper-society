@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { clearEmailConfigCache } from "@/lib/email";
 
 // GET /api/admin/settings - 获取所有系统设置
 export async function GET() {
@@ -41,6 +42,9 @@ export async function PATCH(request: NextRequest) {
     );
 
     await Promise.all(updates);
+
+    // 清除邮件配置缓存，确保新设置立即生效
+    clearEmailConfigCache();
 
     return NextResponse.json({ message: "设置已保存" });
   } catch (error: any) {

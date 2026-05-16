@@ -3,20 +3,39 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
-import { Users, Sparkles, TrendingUp, LayoutGrid, Loader2 } from "lucide-react";
+import {
+  Users,
+  Sparkles,
+  TrendingUp,
+  LayoutGrid,
+  Loader2,
+  FileText,
+  Image as ImageIcon,
+} from "lucide-react";
 import PinCard from "@/components/PinCard";
+import PostEditor from "@/components/PostEditor";
+import PostCard from "@/components/PostCard";
 
 const FEED_TYPES = [
   { id: "all", label: "全部", icon: LayoutGrid },
+  { id: "posts", label: "动态", icon: FileText },
+  { id: "images", label: "壁纸", icon: ImageIcon },
   { id: "following", label: "关注", icon: Users },
   { id: "recommended", label: "推荐", icon: Sparkles },
   { id: "trending", label: "热门", icon: TrendingUp },
 ];
 
+interface FeedItem {
+  id: string;
+  type: "post" | "image";
+  data: any;
+  created_at: string;
+}
+
 export default function FeedClient() {
   const { status } = useSession();
   const [feedType, setFeedType] = useState("all");
-  const [images, setImages] = useState<any[]>([]);
+  const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -24,16 +43,49 @@ export default function FeedClient() {
   const fetchFeed = useCallback(async (type: string, pageNum: number) => {
     if (pageNum === 1) setLoading(true);
     try {
-      const res = await fetch(`/api/feed?type=${type}&page=${pageNum}&limit=20`);
-      if (res.ok) {
-        const data = await res.json();
-        if (pageNum === 1) {
-          setImages(data.data || []);
-        } else {
-          setImages((prev) => [...prev, ...(data.data || [])]);
+      let newItems: FeedItem[] = [];
+
+      if (type === "posts" || type === "all") {
+        // 获取帖子
+        const postsRes = await fetch(`/api/posts?page=${pageNum}&limit=10`);
+        if (postsRes.ok) {
+          const postsData = await postsRes.json();
+          const posts: FeedItem[] = (postsData.data || []).map((post: any) => ({
+            id: `post-${post.id}`,
+            type: "post" as const,
+            data: post,
+            created_at: post.created_at,
+          }));
+          newItems = [...newItems, ...posts];
         }
-        setHasMore(pageNum < (data.pagination?.totalPages || 1));
       }
+
+      if (type === "images" || type === "all" || type === "following" || type === "recommended" || type === "trending") {
+        // 获取图片
+        const feedTypeParam = type === "all" ? "all" : type === "images" ? "all" : type;
+        const imagesRes = await fetch(`/api/feed?type=${feedTypeParam}&page=${pageNum}&limit=20`);
+        if (imagesRes.ok) {
+          const imagesData = await imagesRes.json();
+          const images: FeedItem[] = (imagesData.data || []).map((img: any) => ({
+            id: `image-${img.id}`,
+            type: "image" as const,
+            data: img,
+            created_at: img.created_at,
+          }));
+          newItems = [...newItems, ...images];
+        }
+      }
+
+      // 按时间排序混合
+      newItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      if (pageNum === 1) {
+        setFeedItems(newItems);
+      } else {
+        setFeedItems((prev) => [...prev, ...newItems]);
+      }
+
+      setHasMore(newItems.length > 0);
     } catch (err) {
       console.error("获取Feed失败:", err);
     } finally {
@@ -50,9 +102,11 @@ export default function FeedClient() {
     try {
       const res = await fetch(`/api/favorites/${imageId}`, { method: "POST" });
       if (res.ok) {
-        setImages((prev) =>
-          prev.map((img) =>
-            img.id === imageId ? { ...img, is_favorited: !img.is_favorited } : img
+        setFeedItems((prev) =>
+          prev.map((item) =>
+            item.type === "image" && item.data.id === imageId
+              ? { ...item, data: { ...item.data, is_favorited: !item.data.is_favorited } }
+              : item
           )
         );
       }
@@ -61,11 +115,39 @@ export default function FeedClient() {
     }
   };
 
+  const handlePostCreated = (newPost: any) => {
+    const newItem: FeedItem = {
+      id: `post-${newPost.id}`,
+      type: "post",
+      data: newPost,
+      created_at: newPost.created_at,
+    };
+    setFeedItems((prev) => [newItem, ...prev]);
+  };
+
+  const handlePostUpdated = (updatedPost: any) => {
+    setFeedItems((prev) =>
+      prev.map((item) =>
+        item.type === "post" && item.data.id === updatedPost.id
+          ? { ...item, data: updatedPost }
+          : item
+      )
+    );
+  };
+
+  const handlePostDeleted = (postId: number) => {
+    setFeedItems((prev) => prev.filter((item) => !(item.type === "post" && item.data.id === postId)));
+  };
+
   const loadMore = () => {
     const nextPage = page + 1;
     setPage(nextPage);
     fetchFeed(feedType, nextPage);
   };
+
+  // 分离帖子和图片，用于双列布局
+  const posts = feedItems.filter((item) => item.type === "post");
+  const images = feedItems.filter((item) => item.type === "image");
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-6">
@@ -81,7 +163,7 @@ export default function FeedClient() {
               key={ft.id}
               onClick={() => !disabled && setFeedType(ft.id)}
               disabled={disabled}
-              className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-full transition-all ${
+              className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-full transition-all whitespace-nowrap ${
                 feedType === ft.id
                   ? "bg-[var(--color-ink)] text-white"
                   : disabled
@@ -96,35 +178,87 @@ export default function FeedClient() {
         })}
       </div>
 
+      {/* 发布动态编辑器 */}
+      {(feedType === "all" || feedType === "posts") && (
+        <div className="mb-6 max-w-[680px] mx-auto">
+          <PostEditor onPostCreated={handlePostCreated} />
+        </div>
+      )}
+
       {/* Feed 内容 */}
       {loading ? (
         <div className="flex justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin text-[var(--color-mute)]" />
         </div>
-      ) : images.length === 0 ? (
+      ) : feedItems.length === 0 ? (
         <div className="text-center py-20 text-[var(--color-mute)]">
           <p>暂无内容</p>
           {feedType === "following" && <p className="text-sm mt-2">关注更多创作者来获取动态</p>}
         </div>
       ) : (
         <>
-          <div className="columns-2 sm:columns-3 lg:columns-4 xl:columns-5 gap-4 space-y-4">
-            {images.map((img, idx) => (
-              <motion.div
-                key={img.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.03, duration: 0.3 }}
-              >
-                <PinCard
-                  image={img}
-                  index={idx}
-                  isFavorited={img.is_favorited || false}
-                  onToggleFavorite={(id) => toggleFavorite(id)}
-                  onClick={() => {}}
-                />
-              </motion.div>
-            ))}
+          <div className="flex gap-6 max-w-[1200px] mx-auto">
+            {/* 左列：帖子流 */}
+            {(feedType === "all" || feedType === "posts") && posts.length > 0 && (
+              <div className="flex-1 max-w-[680px] space-y-0">
+                {posts.map((item, idx) => (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.03, duration: 0.3 }}
+                  >
+                    <PostCard
+                      post={item.data}
+                      onUpdated={handlePostUpdated}
+                      onDeleted={handlePostDeleted}
+                    />
+                  </motion.div>
+                ))}
+              </div>
+            )}
+
+            {/* 右列：图片瀑布流 */}
+            {(feedType === "all" || feedType === "images" || feedType === "following" || feedType === "recommended" || feedType === "trending") && images.length > 0 && (
+              <div className={`${
+                posts.length > 0 && (feedType === "all")
+                  ? "flex-1"
+                  : "w-full"
+              }`}>
+                <div className={`${
+                  posts.length > 0 && (feedType === "all")
+                    ? "columns-2 sm:columns-2 lg:columns-3"
+                    : "columns-2 sm:columns-3 lg:columns-4 xl:columns-5"
+                } gap-4 space-y-4`}>
+                  {images.map((item, idx) => (
+                    <motion.div
+                      key={item.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.03, duration: 0.3 }}
+                      className="break-inside-avoid"
+                    >
+                      <PinCard
+                        image={item.data}
+                        index={idx}
+                        isFavorited={item.data.is_favorited || false}
+                        onToggleFavorite={(id) => toggleFavorite(id)}
+                        onClick={() => {}}
+                      />
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 仅帖子模式且无图片 */}
+            {feedType === "posts" && posts.length === 0 && !loading && (
+              <div className="flex-1 text-center py-10 text-[var(--color-mute)]">
+                <FileText className="w-12 h-12 mx-auto mb-3 text-[var(--color-ash)]" />
+                <p>还没有动态</p>
+                <p className="text-sm mt-1">发布第一条动态吧</p>
+              </div>
+            )}
           </div>
 
           {hasMore && (

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Bell, Check, CheckCheck, Trash2, X, Settings } from "lucide-react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import { withCsrfHeader } from "@/lib/csrf-client";
 
 interface Notification {
   id: number;
@@ -100,7 +101,8 @@ export default function NotificationBell() {
   // 标记单条已读
   const markAsRead = async (id: number) => {
     try {
-      const res = await fetch(`/api/notifications/${id}`, { method: "PATCH" });
+      const csrfHeaders = await withCsrfHeader();
+      const res = await fetch(`/api/notifications/${id}`, { method: "PATCH", headers: { ...csrfHeaders } });
       if (res.ok) {
         setNotifications((prev) =>
           prev.map((n) => (n.id === id ? { ...n, is_read: 1 } : n))
@@ -115,9 +117,10 @@ export default function NotificationBell() {
   // 全部标记已读
   const markAllAsRead = async () => {
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/notifications", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ markAll: true }),
       });
       if (res.ok) {
@@ -132,7 +135,8 @@ export default function NotificationBell() {
   // 删除通知
   const deleteNotification = async (id: number) => {
     try {
-      const res = await fetch(`/api/notifications/${id}`, { method: "DELETE" });
+      const csrfHeaders = await withCsrfHeader();
+      const res = await fetch(`/api/notifications/${id}`, { method: "DELETE", headers: { ...csrfHeaders } });
       if (res.ok) {
         const deleted = notifications.find((n) => n.id === id);
         setNotifications((prev) => prev.filter((n) => n.id !== id));

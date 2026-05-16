@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (statusFilter) {
-      const validStatuses = ["active", "banned"];
+      const validStatuses = ["active", "banned", "suspended", "pending_deletion", "deleted"];
       if (validStatuses.includes(statusFilter)) {
         conditions.push("u.status = ?");
         params.push(statusFilter);
@@ -71,6 +71,7 @@ export async function GET(request: NextRequest) {
       `SELECT 
         u.id, u.email, u.name, u.avatar, u.role, u.status,
         u.banned_reason, u.banned_at, u.created_at, u.updated_at,
+        u.deletion_requested_at, u.deletion_scheduled_at,
         COALESCE(upload_stats.upload_count, 0) as upload_count,
         COALESCE(fav_stats.favorite_count, 0) as favorite_count
       FROM users u

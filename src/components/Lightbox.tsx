@@ -16,6 +16,7 @@ import {
   CATEGORY_LABELS,
   type Resolution,
 } from "@/lib/resolutions";
+import { withCsrfHeader } from "@/lib/csrf-client";
 
 interface LightboxProps {
   images: GalleryImage[];
@@ -137,9 +138,10 @@ export default function Lightbox({
   // 记录浏览日志
   const trackView = useCallback(async (imageId: number) => {
     try {
+      const csrfHeaders = await withCsrfHeader();
       await fetch("/api/logs", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ type: "view", image_id: imageId }),
       });
     } catch {
@@ -265,15 +267,17 @@ export default function Lightbox({
       toast.success(resolution ? `已下载 ${resolution}` : "原图下载完成");
 
       // 记录下载日志（异步，不阻塞）
-      fetch("/api/logs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "download",
-          image_id: currentImage.id,
-          resolution: resolution || "original",
-        }),
-      }).catch(() => {});
+      withCsrfHeader().then((csrfHeaders) => {
+        fetch("/api/logs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...csrfHeaders },
+          body: JSON.stringify({
+            type: "download",
+            image_id: currentImage.id,
+            resolution: resolution || "original",
+          }),
+        }).catch(() => {});
+      });
     } catch {
       toast.error("下载失败，请重试");
     } finally {
@@ -332,9 +336,10 @@ export default function Lightbox({
     }
     setSubmitting(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/reports", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({
           imageId: currentImage.id,
           reason: `[${reportCategories.find(c => c.value === reportCategory)?.label || reportCategory}] ${reportReason.trim()}`,
@@ -365,9 +370,10 @@ export default function Lightbox({
 
     try {
       const method = newFollowing ? "POST" : "DELETE";
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/users/${currentImage.uploaded_by}/follow`, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
       });
 
       if (!res.ok) {

@@ -10,6 +10,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
+import { withCsrfHeader } from "@/lib/csrf-client";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +19,7 @@ import {
 } from "@/components/ui/card";
 import {
   Dialog,
+
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -112,9 +114,10 @@ function ReviewQueue() {
   const handleApprove = async (imageId: number) => {
     setReviewing(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/admin/review", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ imageId, action: "approve" }),
       });
       const data = await res.json();
@@ -143,9 +146,10 @@ function ReviewQueue() {
     }
     setReviewing(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/admin/review", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({
           imageId: rejectImageId,
           action: "reject",
