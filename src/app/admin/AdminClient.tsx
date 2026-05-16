@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Toaster } from "sonner";
 import {
@@ -19,6 +19,7 @@ import {
   Bug,
   BarChart3,
   Trophy,
+  XCircle,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -193,6 +194,69 @@ export default function AdminClient() {
     }
   }, [activeTab, tabs]);
 
+  // 关闭当前标签左边的所有标签
+  const closeLeftTabs = useCallback((tabId: string) => {
+    const idx = tabs.findIndex(t => t.id === tabId);
+    if (idx <= 0) return;
+    const keep = tabs.filter((t, i) => i >= idx || !t.closable);
+    setTabs(keep);
+    if (!keep.find(t => t.id === activeTab)) {
+      setActiveTab(tabId);
+    }
+  }, [tabs, activeTab]);
+
+  // 关闭当前标签右边的所有标签
+  const closeRightTabs = useCallback((tabId: string) => {
+    const idx = tabs.findIndex(t => t.id === tabId);
+    if (idx < 0) return;
+    const keep = tabs.filter((t, i) => i <= idx || !t.closable);
+    setTabs(keep);
+    if (!keep.find(t => t.id === activeTab)) {
+      setActiveTab(tabId);
+    }
+  }, [tabs, activeTab]);
+
+  // 关闭除当前标签外的所有可关闭标签
+  const closeOtherTabs = useCallback((tabId: string) => {
+    const keep = tabs.filter(t => !t.closable || t.id === tabId);
+    setTabs(keep);
+    if (!keep.find(t => t.id === activeTab)) {
+      setActiveTab(tabId);
+    }
+  }, [tabs, activeTab]);
+
+  // 关闭所有可关闭的标签
+  const closeAllTabs = useCallback(() => {
+    const keep = tabs.filter(t => !t.closable);
+    setTabs(keep);
+    setActiveTab(keep[keep.length - 1]?.id || "dashboard");
+  }, [tabs]);
+
+  // 右键菜单状态
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    tabId: string;
+  } | null>(null);
+
+  // 监听仪表盘导航事件
+  useEffect(() => {
+    const handleNavigate = (e: Event) => {
+      const tabId = (e as CustomEvent).detail;
+      if (tabId) switchTab(tabId);
+    };
+    window.addEventListener("admin:navigate", handleNavigate);
+    return () => window.removeEventListener("admin:navigate", handleNavigate);
+  }, [switchTab]);
+
+  // 点击其他区域关闭右键菜单
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClick = () => setContextMenu(null);
+    window.addEventListener("click", handleClick);
+    return () => window.removeEventListener("click", handleClick);
+  }, [contextMenu]);
+
   return (
     <div className="min-h-screen bg-[var(--color-surface-soft)] flex overflow-hidden">
       <Toaster position="top-right" richColors />
@@ -309,7 +373,7 @@ export default function AdminClient() {
         </header>
 
         {/* 标签页栏 */}
-        <div className="bg-white border-b h-12 flex items-center px-4 overflow-x-auto hide-scrollbar">
+        <div className="bg-white border-b h-12 flex items-center px-4 overflow-x-auto hide-scrollbar relative">
           <style jsx global>{`
             .hide-scrollbar::-webkit-scrollbar {
               display: none;
@@ -324,6 +388,10 @@ export default function AdminClient() {
               <div
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
+                }}
                 className={`h-full flex items-center gap-2 px-4 border-b-2 transition-all cursor-pointer group ${
                   activeTab === tab.id
                     ? "border-[var(--color-primary)] text-[var(--color-primary)]"
@@ -347,6 +415,80 @@ export default function AdminClient() {
               </div>
             ))}
           </div>
+
+          {/* 右键菜单 */}
+          {contextMenu && (
+            <div
+              className="fixed z-50 bg-white rounded-lg shadow-xl border py-1 min-w-[160px] animate-in fade-in-0 zoom-in-95"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+            >
+              {/* 关闭当前标签 */}
+              {contextMenu.tabId !== "dashboard" && (
+                <button
+                  onClick={() => {
+                    closeTab(contextMenu.tabId, {} as React.MouseEvent);
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] transition-colors"
+                >
+                  <X className="w-4 h-4 text-[var(--color-mute)]" />
+                  关闭标签
+                </button>
+              )}
+              {/* 关闭左边所有 */}
+              {tabs.findIndex(t => t.id === contextMenu.tabId) > 1 && (
+                <button
+                  onClick={() => {
+                    closeLeftTabs(contextMenu.tabId);
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4 text-[var(--color-mute)]" />
+                  关闭左侧标签
+                </button>
+              )}
+              {/* 关闭右边所有 */}
+              {contextMenu.tabId !== tabs[tabs.length - 1]?.id && tabs.some((t, i) => i > tabs.findIndex(tt => tt.id === contextMenu.tabId) && t.closable) && (
+                <button
+                  onClick={() => {
+                    closeRightTabs(contextMenu.tabId);
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4 text-[var(--color-mute)] rotate-180" />
+                  关闭右侧标签
+                </button>
+              )}
+              {/* 关闭其他 */}
+              {tabs.some(t => t.closable && t.id !== contextMenu.tabId) && (
+                <button
+                  onClick={() => {
+                    closeOtherTabs(contextMenu.tabId);
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface-soft)] transition-colors"
+                >
+                  <XCircle className="w-4 h-4 text-[var(--color-mute)]" />
+                  关闭其他标签
+                </button>
+              )}
+              {/* 关闭全部 */}
+              {tabs.some(t => t.closable) && (
+                <button
+                  onClick={() => {
+                    closeAllTabs();
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <XCircle className="w-4 h-4" />
+                  关闭全部标签
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 内容区 */}

@@ -27,8 +27,8 @@ export async function POST(request: NextRequest) {
        AND width > 0 AND height > 0 
        AND (mime_type IS NULL OR mime_type LIKE 'image/%')
        ORDER BY id ASC 
-       LIMIT ?`,
-      [limit]
+       LIMIT ${limit}`,
+      []
     ) as any[];
 
     if (images.length === 0) {
