@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import crypto from "crypto";
-import { verifySolution, AltchaPayload } from "@/lib/altcha";
+import { verifyAltchaSolution } from "@/lib/altcha";
 import { sendWelcomeEmail } from "@/lib/email";
 
 export async function POST(request: NextRequest) {
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const altchaResult = verifySolution(altchaPayload as AltchaPayload);
+    const altchaResult = await verifyAltchaSolution(altchaPayload);
     if (!altchaResult.valid) {
       return NextResponse.json(
         { error: altchaResult.error || "验证码验证失败" },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Toaster, toast } from "sonner";
@@ -9,6 +9,7 @@ import "altcha";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import AltchaWidget from "@/components/AltchaWidget";
 import {
   Card,
   CardContent,
@@ -22,37 +23,7 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [altchaVerified, setAltchaVerified] = useState(false);
-  const altchaRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (altchaRef.current && !altchaRef.current.hasChildNodes()) {
-      const widget = document.createElement("altcha-widget");
-      widget.setAttribute("challengeurl", "/api/auth/altcha-challenge");
-      widget.setAttribute("name", "altchaPayload");
-      widget.setAttribute("hidelogo", "true");
-      widget.setAttribute("auto", "onfocus");
-      widget.setAttribute("floating", "true");
-      // 中文国际化
-      widget.setAttribute("strings", JSON.stringify({
-        verify: "验证中…",
-        verification: "人机验证",
-        verified: "已验证",
-        verifying: "正在验证…",
-        error: "验证失败，请重试",
-        expired: "验证已过期，请重试",
-        footer: "由 ALTCHA 保护",
-      }));
-      widget.addEventListener("statechange", ((e: CustomEvent) => {
-        const state = e.detail?.state;
-        if (state === "verified") {
-          setAltchaVerified(true);
-        } else {
-          setAltchaVerified(false);
-        }
-      }) as EventListener);
-      altchaRef.current.appendChild(widget);
-    }
-  }, []);
+  const [altchaPayload, setAltchaPayload] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,14 +33,11 @@ export default function ForgotPasswordPage() {
     }
 
     if (!altchaVerified) {
-      toast.error("请完成验证码验证");
+      toast.error("请完成人机验证");
       return;
     }
 
-    // 从 altcha-widget 获取 payload
-    const altchaWidget = altchaRef.current?.querySelector("altcha-widget") as any;
-    const payloadValue = altchaWidget?.value || null;
-    if (!payloadValue) {
+    if (!altchaPayload) {
       toast.error("验证码数据获取失败，请重试");
       return;
     }
@@ -79,7 +47,7 @@ export default function ForgotPasswordPage() {
       const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, altchaPayload: payloadValue }),
+        body: JSON.stringify({ email, altchaPayload }),
       });
       const data = await res.json();
 
@@ -134,6 +102,8 @@ export default function ForgotPasswordPage() {
                   onClick={() => {
                     setSent(false);
                     setEmail("");
+                    setAltchaVerified(false);
+                    setAltchaPayload(null);
                   }}
                   variant="outline"
                   className="w-full rounded-xl"
@@ -159,9 +129,15 @@ export default function ForgotPasswordPage() {
                     />
                   </div>
                 </div>
-                {/* Altcha 验证码 */}
-                <div ref={altchaRef} className="altcha-container" />
+                {/* Altcha 人机验证 */}
+                <AltchaWidget
+                  onVerifiedChange={setAltchaVerified}
+                  onPayloadChange={setAltchaPayload}
+                />
                 <Button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full h-12 rounded-[var(--radius-md)]"
                 >
                   {loading ? (
                     <>
