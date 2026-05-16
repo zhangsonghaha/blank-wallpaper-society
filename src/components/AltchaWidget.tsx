@@ -86,7 +86,7 @@ export default function AltchaWidget({
 
     const widget = document.createElement("altcha-widget");
 
-    // v3 属性：challenge 代替 challengeurl
+    // challenge 属性用于指定挑战接口 URL（altcha-widget v3/v2 统一使用此属性）
     widget.setAttribute("challenge", challengeUrl);
     widget.setAttribute("name", name);
     widget.setAttribute("language", "cn");
@@ -112,17 +112,19 @@ export default function AltchaWidget({
         setVerified(newVerified);
         onVerifiedChange?.(newVerified);
 
-        // 验证通过后获取 payload
-        if (newVerified && widgetRef.current) {
-          try {
-            const value = (widgetRef.current as any).value || null;
-            onPayloadChange?.(value);
-          } catch {
-            onPayloadChange?.(null);
-          }
-        } else {
+        // 非 verified 状态清除 payload
+        if (!newVerified) {
           onPayloadChange?.(null);
         }
+      }) as EventListener
+    );
+
+    // 监听 verified 事件获取 payload（官方推荐方式）
+    widget.addEventListener(
+      "verified",
+      ((e: CustomEvent) => {
+        const payload = e.detail?.payload || null;
+        onPayloadChange?.(payload);
       }) as EventListener
     );
 

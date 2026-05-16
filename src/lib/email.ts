@@ -12,6 +12,8 @@ interface SendEmailParams {
   subject: string;
   html: string;
   text?: string;
+  /** 发送失败时是否抛出异常（默认 false，仅记录日志） */
+  throwOnError?: boolean;
 }
 
 // === 邮件配置（从数据库或环境变量获取） ===
@@ -128,24 +130,30 @@ async function sendViaSmtp(params: SendEmailParams, config: EmailConfig): Promis
 
 // === 通用邮件发送（核心函数） ===
 export async function sendEmail(params: SendEmailParams): Promise<void> {
+  const { throwOnError = false, ...emailParams } = params;
   try {
     const config = await getEmailConfig();
     const configured = await isEmailConfigured();
     if (!configured) {
       console.warn("[Email] 邮件服务未配置或未启用，跳过发送");
+      console.warn(`[Email] 当前配置: enabled=${config.enabled}, provider=${config.provider}, from=${config.from}`);
       return;
     }
 
+    console.log(`[Email] 正在发送邮件到 ${emailParams.to}，提供商: ${config.provider}`);
+
     if (config.provider === "resend") {
-      await sendViaResend(params, config);
+      await sendViaResend(emailParams, config);
     } else if (config.provider === "smtp") {
-      await sendViaSmtp(params, config);
+      await sendViaSmtp(emailParams, config);
     } else {
-      console.error(`[Email] 未知的邮件提供商: ${config.provider}`);
+      throw new Error(`未知的邮件提供商: ${config.provider}`);
     }
+
+    console.log(`[Email] 邮件发送成功: ${emailParams.to}`);
   } catch (error) {
-    // 邮件发送失败不阻断业务流程，仅记录日志
     console.error("[Email] 发送邮件失败:", error);
+    if (throwOnError) throw error;
   }
 }
 
@@ -158,6 +166,7 @@ export async function sendPasswordResetEmail(
 
   await sendEmail({
     to,
+    throwOnError: true,
     subject: "重置您的密码 - 壁纸社区",
     html: `
       <div style="max-width:600px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:20px;">

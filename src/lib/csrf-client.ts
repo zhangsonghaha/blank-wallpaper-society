@@ -21,7 +21,11 @@ export async function getCsrfToken(): Promise<string | null> {
       if (res.ok) {
         const data = await res.json();
         if (data.csrfToken) {
-          cachedToken = data.csrfToken;
+          // NextAuth 返回的 csrfToken 格式为 "token|hash"
+          // 服务端 validateCsrfToken 从 cookie 中取值后会 split("|")[0] 取前半部分
+          // 因此客户端也需要只发送 token 部分，保持一致
+          const token = (data.csrfToken as string).split("|")[0];
+          cachedToken = token;
           return cachedToken;
         }
       }
