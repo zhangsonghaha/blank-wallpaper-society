@@ -44,7 +44,7 @@ export async function GET(
          LEFT JOIN challenge_votes cv ON cs.id = cv.submission_id
          LEFT JOIN users u ON cs.user_id = u.id
          LEFT JOIN images i ON cs.image_id = i.id
-         WHERE cs.challenge_id = ? AND cs.status = 'approved'
+         WHERE cs.challenge_id = ? AND cs.status IN ('approved', 'pending')
          GROUP BY cs.id
          ORDER BY vote_count DESC, cs.created_at ASC
          LIMIT 50`,
@@ -65,14 +65,14 @@ export async function GET(
     const offset = (page - 1) * limit;
 
     const submissions = await query(
-      `SELECT cs.id, cs.user_id, cs.image_id, cs.created_at,
+      `SELECT cs.id, cs.user_id, cs.image_id, cs.created_at, cs.status as sub_status,
               u.name as user_name, u.avatar as user_avatar,
               i.title, i.url, i.thumbnail_url, i.width, i.height,
               (SELECT COUNT(*) FROM challenge_votes cv WHERE cv.submission_id = cs.id) as vote_count
        FROM challenge_submissions cs
        LEFT JOIN users u ON cs.user_id = u.id
        LEFT JOIN images i ON cs.image_id = i.id
-       WHERE cs.challenge_id = ? AND cs.status = 'approved'
+       WHERE cs.challenge_id = ? AND cs.status IN ('approved', 'pending')
        ORDER BY cs.created_at DESC
        LIMIT ? OFFSET ?`,
       [challengeId, limit, offset]

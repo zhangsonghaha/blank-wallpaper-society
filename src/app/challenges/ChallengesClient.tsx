@@ -563,7 +563,12 @@ export default function ChallengesClient() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.03, duration: 0.3 }}
               >
-                <div className="break-inside-avoid rounded-xl overflow-hidden bg-[var(--color-surface-card)] shadow-sm hover:shadow-md transition-shadow group">
+                <a
+                  href={sub.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="break-inside-avoid rounded-xl overflow-hidden bg-[var(--color-surface-card)] shadow-sm hover:shadow-md transition-shadow group block"
+                >
                   <div className="relative">
                     <img
                       src={sub.thumbnail_url || sub.url}
@@ -594,7 +599,7 @@ export default function ChallengesClient() {
                       </span>
                     </div>
                   </div>
-                </div>
+                </a>
               </motion.div>
             ))}
           </div>
@@ -617,7 +622,12 @@ export default function ChallengesClient() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: idx * 0.05, duration: 0.3 }}
               >
-                <Card className={idx < 3 ? "ring-2 ring-yellow-400/30" : ""}>
+                <a
+                  href={sub.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`block ${idx < 3 ? "ring-2 ring-yellow-400/30" : ""} cursor-pointer hover:shadow-md transition-shadow`}
+                >
                   <CardContent className="flex items-center gap-4 py-3">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
                       idx === 0 ? "bg-yellow-400 text-yellow-900" :
@@ -640,7 +650,7 @@ export default function ChallengesClient() {
                       <Heart className="w-4 h-4" /> {sub.vote_count}
                     </div>
                   </CardContent>
-                </Card>
+                </a>
               </motion.div>
             ))}
           </div>
