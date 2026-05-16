@@ -109,6 +109,24 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
+
+  --color-surface-soft: #1a1a18;
+  --color-surface-card: #222220;
+  --color-secondary-bg: #3a3a38;
+  --color-secondary-pressed: #4a4a48;
+  --color-surface-dark: #111110;
+  --color-hairline: #3a3a38;
+  --color-hairline-soft: #333330;
+  --color-ink: #f0f0f0;
+  --color-ink-soft: #e8e8e6;
+  --color-body: #d0d0cc;
+  --color-charcoal: #f0f0f0;
+  --color-mute: #91918c;
+  --color-ash: #7a7a76;
+  --color-stone: #5a5a58;
+  --color-on-dark: #ffffff;
+  --color-focus-outer: #435ee5;
+  --color-error: #ff4d4d;
 }
 
 @layer base {

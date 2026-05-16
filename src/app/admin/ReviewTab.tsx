@@ -8,6 +8,7 @@ import {
   XCircle,
   ChevronLeft,
   ChevronRight,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { withCsrfHeader } from "@/lib/csrf-client";
@@ -51,6 +52,8 @@ interface ReviewImage {
   reject_reason: string | null;
   reviewer_name: string | null;
   created_at: string;
+  nsfw_score: string | null;
+  nsfw_flagged: number;
 }
 
 const formatDate = (dateStr: string) => {
@@ -229,11 +232,17 @@ function ReviewQueue() {
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
                   {/* 状态标签 */}
-                  <div className="absolute top-2 left-2">
+                  <div className="absolute top-2 left-2 flex gap-1">
                     <Badge className={`${cfg.bgColor} ${cfg.color} border gap-1 rounded-full text-xs`}>
                       <StatusIcon className="w-3 h-3" />
                       {cfg.label}
                     </Badge>
+                    {image.nsfw_flagged === 1 && (
+                      <Badge className="bg-red-500/90 text-white border-none gap-1 rounded-full text-xs">
+                        <AlertTriangle className="w-3 h-3" />
+                        NSFW
+                      </Badge>
+                    )}
                   </div>
                   {/* 操作按钮覆盖层 */}
                   {image.status === "pending" && (
@@ -273,6 +282,26 @@ function ReviewQueue() {
                       原因: {image.reject_reason}
                     </p>
                   )}
+                  {image.nsfw_score && (() => {
+                    try {
+                      const scores = JSON.parse(image.nsfw_score);
+                      const flaggedCategories = Object.entries(scores)
+                        .filter(([k, v]) => (k === "Porn" || k === "Hentai" || k === "Sexy") && (v as number) > 0.3)
+                        .sort(([, a], [, b]) => (b as number) - (a as number));
+                      if (flaggedCategories.length > 0) {
+                        return (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {flaggedCategories.map(([cat, val]) => (
+                              <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">
+                                {cat} {((val as number) * 100).toFixed(0)}%
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      }
+                    } catch {}
+                    return null;
+                  })()}
                   {image.reviewed_at && (
                     <p className="text-xs text-[var(--color-ash)] mt-1">
                       审核人: {image.reviewer_name || "未知"} · {formatDate(image.reviewed_at)}

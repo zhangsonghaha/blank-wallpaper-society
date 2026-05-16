@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { query, safeQuery } from "@/lib/db";
 import { indexImage, deleteImage, dbRowToSearchData } from "@/lib/meilisearch";
 import { notifyReviewResult } from "@/lib/notification";
+import { logAudit } from "@/lib/audit-log";
 
 // GET /api/admin/review - 获取待审核图片列表（分页），支持按状态筛选
 export async function GET(request: NextRequest) {
@@ -154,6 +155,20 @@ export async function PATCH(request: NextRequest) {
     } catch {
       // 通知推送失败不影响主流程
     }
+
+    // 记录审计日志
+    const clientIp = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || undefined;
+    logAudit({
+      operatorId: adminId,
+      operation: action === "approve" ? "review_approve" : "review_reject",
+      targetUserId: imageInfo.uploaded_by || undefined,
+      detail: {
+        imageId,
+        imageTitle: imageInfo.title,
+        rejectReason: action === "reject" ? rejectReason?.trim() : undefined,
+      },
+      ip: clientIp?.split(",")[0]?.trim(),
+    }).catch(() => {});
 
     return NextResponse.json({
       message: action === "approve" ? "已通过审核" : "已拒绝",

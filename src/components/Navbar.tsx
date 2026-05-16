@@ -26,8 +26,12 @@ import {
   Grid3X3,
   Trophy,
   Sparkles,
+  Sun,
+  Moon,
 } from "lucide-react";
 import NotificationBell from "./NotificationBell";
+import { useTheme } from "next-themes";
+import { getSearchHistory, addSearchHistory, removeSearchHistory, clearSearchHistory } from "@/lib/search-history";
 
 export default function Navbar() {
   const router = useRouter();
@@ -39,13 +43,32 @@ export default function Navbar() {
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestTimeout, setSuggestTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [hotKeywords, setHotKeywords] = useState<string[]>([]);
 
   const isAdmin = (session?.user as any)?.role === "admin";
   const isLoggedIn = status === "authenticated";
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
+
+  const toggleTheme = () => {
+    setTheme(theme === "dark" ? "light" : theme === "light" ? "dark" : "dark");
+  };
 
   useEffect(() => {
     setLocalQuery(searchQuery);
   }, [searchQuery]);
+
+  // 加载搜索历史和热门搜索
+  useEffect(() => {
+    setSearchHistory(getSearchHistory());
+    fetch("/api/search/hot")
+      .then((res) => res.json())
+      .then((data) => setHotKeywords(data.hot || []))
+      .catch(() => {});
+  }, []);
 
   // 移动端菜单打开时锁定body滚动
   useEffect(() => {
@@ -63,6 +86,11 @@ export default function Navbar() {
     setLocalQuery(value);
     setSearchQuery(value);
     setShowSuggestions(false);
+    // 记录搜索历史
+    if (value.trim()) {
+      addSearchHistory(value.trim());
+      setSearchHistory(getSearchHistory());
+    }
 
     // 搜索建议（防抖 300ms）
     if (suggestTimeout) clearTimeout(suggestTimeout);
@@ -89,7 +117,7 @@ export default function Navbar() {
     "?";
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-[var(--color-hairline)]">
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-[var(--color-surface-soft)] border-b border-[var(--color-hairline)]">
       <div className="max-w-[1440px] mx-auto px-4 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Left: Logo + Nav Links */}
@@ -202,14 +230,17 @@ export default function Navbar() {
                 value={localQuery}
                 onChange={(e) => handleSearch(e.target.value)}
                 onFocus={() => {
-                  if (suggestions.length > 0) setShowSuggestions(true);
+                  setShowSuggestions(true);
+                  if (suggestions.length === 0) {
+                    setSearchHistory(getSearchHistory());
+                  }
                 }}
                 onBlur={() => {
                   // 延迟关闭，允许点击建议项
                   setTimeout(() => setShowSuggestions(false), 200);
                 }}
                 placeholder="搜索图片、灵感..."
-                className="w-full h-12 pl-11 pr-10 bg-[var(--color-surface-card)] text-[var(--color-ink)] text-base rounded-full placeholder:text-[var(--color-ash)] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[var(--color-focus-outer)] focus:ring-offset-2 transition-all"
+                className="w-full h-12 pl-11 pr-10 bg-[var(--color-surface-card)] text-[var(--color-ink)] text-base rounded-full placeholder:text-[var(--color-ash)] focus:outline-none focus:bg-[var(--color-surface-soft)] focus:ring-2 focus:ring-[var(--color-focus-outer)] focus:ring-offset-2 transition-all"
               />
               {localQuery && (
                 <button
@@ -232,9 +263,77 @@ export default function Navbar() {
                 </button>
               )}
 
+              {/* Search History & Hot Keywords Dropdown (when input is empty) */}
+              {showSuggestions && !localQuery && (searchHistory.length > 0 || hotKeywords.length > 0) && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-[var(--color-surface-soft)] rounded-xl shadow-lg border border-[var(--color-hairline)] overflow-hidden z-50 max-h-80 overflow-y-auto">
+                  {searchHistory.length > 0 && (
+                    <>
+                      <div className="px-4 py-2 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-[var(--color-mute)]">搜索历史</span>
+                        <button
+                          className="text-xs text-[var(--color-ash)] hover:text-[var(--color-ink)]"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            clearSearchHistory();
+                            setSearchHistory([]);
+                          }}
+                        >清空</button>
+                      </div>
+                      {searchHistory.slice(0, 8).map((h, i) => (
+                        <button
+                          key={`history-${i}`}
+                          className="w-full px-4 py-2 flex items-center gap-3 hover:bg-[var(--color-surface-card)] transition-colors text-left"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleSearch(h);
+                          }}
+                        >
+                          <svg className="w-4 h-4 text-[var(--color-ash)] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="text-sm text-[var(--color-ink)] truncate">{h}</span>
+                          <button
+                            className="ml-auto w-5 h-5 flex items-center justify-center rounded-full hover:bg-[var(--color-secondary-bg)]"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              removeSearchHistory(h);
+                              setSearchHistory(getSearchHistory());
+                            }}
+                          >
+                            <svg className="w-3 h-3 text-[var(--color-ash)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {hotKeywords.length > 0 && (
+                    <>
+                      <div className="px-4 py-2 border-t border-[var(--color-hairline)]">
+                        <span className="text-xs font-semibold text-[var(--color-mute)]">热门搜索</span>
+                      </div>
+                      <div className="px-4 pb-3 flex flex-wrap gap-2">
+                        {hotKeywords.map((kw, i) => (
+                          <button
+                            key={`hot-${i}`}
+                            className="px-3 py-1 text-xs text-[var(--color-ink)] bg-[var(--color-surface-card)] rounded-full hover:bg-[var(--color-secondary-bg)] transition-colors"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              handleSearch(kw);
+                            }}
+                          >{kw}</button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* Search Suggestions Dropdown */}
-              {showSuggestions && suggestions.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-[var(--color-hairline)] overflow-hidden z-50">
+              {showSuggestions && localQuery && suggestions.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-[var(--color-surface-soft)] rounded-xl shadow-lg border border-[var(--color-hairline)] overflow-hidden z-50">
                   {suggestions.map((s, i) => (
                     <button
                       key={`${s.type}-${s.text}-${i}`}
@@ -309,6 +408,21 @@ export default function Navbar() {
                 </span>
               )}
             </button>
+
+            {/* Theme Toggle */}
+            {mounted && (
+              <button
+                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[var(--color-surface-card)] transition-colors"
+                onClick={toggleTheme}
+                title={theme === "dark" ? "切换到亮色模式" : "切换到暗黑模式"}
+              >
+                {theme === "dark" ? (
+                  <Sun className="w-5 h-5 text-[var(--color-ink)]" />
+                ) : (
+                  <Moon className="w-5 h-5 text-[var(--color-ink)]" />
+                )}
+              </button>
+            )}
 
             {/* Notification Bell */}
             {isLoggedIn && <NotificationBell />}
@@ -475,7 +589,7 @@ export default function Navbar() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="sm:hidden border-b border-[var(--color-hairline)] bg-white overflow-hidden"
+            className="sm:hidden border-b border-[var(--color-hairline)] bg-[var(--color-surface-soft)] overflow-hidden"
           >
             <div className="px-4 py-3">
               <div className="relative">
@@ -498,7 +612,7 @@ export default function Navbar() {
                   onChange={(e) => handleSearch(e.target.value)}
                   placeholder="搜索图片、灵感..."
                   autoFocus
-                  className="w-full h-11 pl-11 pr-10 bg-[var(--color-surface-card)] text-[var(--color-ink)] text-sm rounded-full placeholder:text-[var(--color-ash)] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[var(--color-focus-outer)] transition-all"
+                  className="w-full h-11 pl-11 pr-10 bg-[var(--color-surface-card)] text-[var(--color-ink)] text-sm rounded-full placeholder:text-[var(--color-ash)] focus:outline-none focus:bg-[var(--color-surface-soft)] focus:ring-2 focus:ring-[var(--color-focus-outer)] transition-all"
                 />
                 {localQuery && (
                   <button

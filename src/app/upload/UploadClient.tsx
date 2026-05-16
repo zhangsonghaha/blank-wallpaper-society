@@ -102,8 +102,9 @@ export default function UploadClient() {
   const [files, setFiles] = useState<PreviewFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
   const [uploadResults, setUploadResults] = useState<
-    { title: string; status: string; message: string }[]
+    { title: string; status: string; message: string; imageStatus?: string }[]
   >([]);
   const [todayCount, setTodayCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -379,6 +380,18 @@ export default function UploadClient() {
     });
   };
 
+  // 批量设置所有文件的分类和标签
+  const applyBatchSettings = useCallback((category: string, tags: string) => {
+    setFiles((prev) =>
+      prev.map((f) => ({
+        ...f,
+        category: category || f.category,
+        tags: tags || f.tags,
+      }))
+    );
+    toast.success(`已批量应用设置到 ${files.length} 张图片`);
+  }, [files.length]);
+
   const handleUpload = async () => {
     const validFiles = files.filter((f) => f.valid);
     if (validFiles.length === 0) {
@@ -388,9 +401,12 @@ export default function UploadClient() {
 
     setUploading(true);
     setUploadResults([]);
-    const results: { title: string; status: string; message: string }[] = [];
+    setUploadProgress({ current: 0, total: validFiles.length });
+    const results: { title: string; status: string; message: string; imageStatus?: string }[] = [];
 
-    for (const fileItem of validFiles) {
+    for (let i = 0; i < validFiles.length; i++) {
+      const fileItem = validFiles[i];
+      setUploadProgress({ current: i, total: validFiles.length });
       try {
         const formData = new FormData();
         formData.append("file", fileItem.file);
@@ -411,6 +427,7 @@ export default function UploadClient() {
             title: fileItem.title,
             status: "success",
             message: data.message,
+            imageStatus: data.status, // approved / pending / rejected
           });
         } else if (res.status === 409 && data.duplicate) {
           results.push({
@@ -422,7 +439,7 @@ export default function UploadClient() {
           results.push({
             title: fileItem.title,
             status: "error",
-            message: data.error || "上传失败",
+            message: data.message || data.error || "上传失败",
           });
         }
       } catch (err) {
@@ -434,6 +451,7 @@ export default function UploadClient() {
       }
     }
 
+    setUploadProgress({ current: validFiles.length, total: validFiles.length });
     setUploadResults(results);
     setUploading(false);
 
@@ -553,6 +571,100 @@ export default function UploadClient() {
             </div>
           </div>
         </motion.div>
+
+        {/* Batch Settings & Progress */}
+        {files.length > 1 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-6"
+          >
+            <Card className="rounded-xl border-[var(--color-hairline)]">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <FolderOpen className="w-4 h-4" />
+                  批量设置
+                  <Badge variant="outline" className="text-xs font-normal">
+                    应用到全部 {files.length} 张
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                <div className="flex gap-3 items-end">
+                  <div className="flex-1">
+                    <Label className="text-xs text-[var(--color-mute)]">统一分类</Label>
+                    <Select onValueChange={(v: any) => applyBatchSettings(String(v), "")}>
+                      <SelectTrigger className="mt-1 rounded-lg h-9 text-sm">
+                        <SelectValue placeholder="选择分类..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CATEGORIES.map((cat) => (
+                          <SelectItem key={cat.value} value={cat.value}>
+                            {cat.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex-1">
+                    <Label className="text-xs text-[var(--color-mute)]">统一标签（逗号分隔）</Label>
+                    <Input
+                      className="mt-1 rounded-lg h-9 text-sm"
+                      placeholder="自然,风光,旅行"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          applyBatchSettings("", (e.target as HTMLInputElement).value);
+                        }
+                      }}
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-lg h-9"
+                    onClick={() => {
+                      const tagsInput = document.querySelector('input[placeholder="自然,风光,旅行"]') as HTMLInputElement;
+                      applyBatchSettings("", tagsInput?.value || "");
+                    }}
+                  >
+                    应用标签
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Upload Progress */}
+        {uploading && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4"
+          >
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-4 h-4 animate-spin text-[var(--color-primary)]" />
+              <div className="flex-1">
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-[var(--color-ink)]">
+                    正在上传 {uploadProgress.current + 1} / {uploadProgress.total}
+                  </span>
+                  <span className="text-[var(--color-mute)]">
+                    {Math.round(((uploadProgress.current) / uploadProgress.total) * 100)}%
+                  </span>
+                </div>
+                <div className="h-2 bg-[var(--color-surface-card)] rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-[var(--color-primary)] rounded-full"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                    transition={{ duration: 0.3 }}
+                  />
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {/* File Previews */}
         <AnimatePresence>
@@ -886,13 +998,31 @@ export default function UploadClient() {
                         </p>
                       </div>
                       {result.status === "success" && (
-                        <Badge
-                          variant="outline"
-                          className="shrink-0 text-yellow-600 border-yellow-300 bg-yellow-50"
-                        >
-                          <Clock className="w-3 h-3 mr-1" />
-                          待审核
-                        </Badge>
+                        result.imageStatus === "approved" ? (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 text-green-600 border-green-300 bg-green-50"
+                          >
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            已通过
+                          </Badge>
+                        ) : result.imageStatus === "rejected" ? (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 text-red-600 border-red-300 bg-red-50"
+                          >
+                            <AlertCircle className="w-3 h-3 mr-1" />
+                            已拒绝
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 text-yellow-600 border-yellow-300 bg-yellow-50"
+                          >
+                            <Clock className="w-3 h-3 mr-1" />
+                            待审核
+                          </Badge>
+                        )
                       )}
                       {result.status === "duplicate" && (
                         <Badge

@@ -99,14 +99,29 @@ async function getPersonalizedRecommendations(userId: number, limit: number): Pr
     [Math.ceil(limit * 0.4)]
   )) as any[];
 
-  // 4. 合并去重
+  // 4. 合并去重 + 推荐理由
   const seen = new Set<number>();
   const result: any[] = [];
 
-  for (const img of [...preferredImages, ...trendingImages]) {
+  for (const img of preferredImages) {
     if (!seen.has(img.id) && result.length < limit) {
       seen.add(img.id);
-      result.push(img);
+      result.push({
+        ...img,
+        reason: `因为你喜欢「${img.category}」类壁纸`,
+        reasonType: "category_preference",
+      });
+    }
+  }
+
+  for (const img of trendingImages) {
+    if (!seen.has(img.id) && result.length < limit) {
+      seen.add(img.id);
+      result.push({
+        ...img,
+        reason: "热门推荐",
+        reasonType: "trending",
+      });
     }
   }
 
@@ -128,5 +143,9 @@ async function getTrendingRecommendations(limit: number): Promise<any[]> {
     [limit]
   )) as any[];
 
-  return rows;
+  return rows.map((img: any) => ({
+    ...img,
+    reason: "热门推荐",
+    reasonType: "trending",
+  }));
 }

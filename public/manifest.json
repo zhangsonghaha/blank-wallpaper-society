@@ -1,0 +1,27 @@
+{
+  "name": "ImageGallery - 发现视觉灵感",
+  "short_name": "ImageGallery",
+  "description": "探索精选摄影作品，从自然风光到城市建筑，从美食到艺术，找到属于你的视觉灵感。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fbfbf9",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["photo", "entertainment", "lifestyle"],
+  "lang": "zh-CN",
+  "dir": "ltr"
+}

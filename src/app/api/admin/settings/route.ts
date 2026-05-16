@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { clearEmailConfigCache } from "@/lib/email";
+import { logAudit } from "@/lib/audit-log";
+import { clearNSFWSettingsCache } from "@/lib/nsfw";
 
 // GET /api/admin/settings - 获取所有系统设置
 export async function GET() {
@@ -45,6 +47,18 @@ export async function PATCH(request: NextRequest) {
 
     // 清除邮件配置缓存，确保新设置立即生效
     clearEmailConfigCache();
+    // 清除 NSFW 设置缓存
+    clearNSFWSettingsCache();
+
+    // 记录审计日志
+    const adminId = (session.user as any).id;
+    const clientIp = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || undefined;
+    logAudit({
+      operatorId: adminId,
+      operation: "settings_update",
+      detail: { updatedKeys: Object.keys(settings), changeCount: Object.keys(settings).length },
+      ip: clientIp?.split(",")[0]?.trim(),
+    }).catch(() => {});
 
     return NextResponse.json({ message: "设置已保存" });
   } catch (error: any) {

@@ -9,6 +9,7 @@ import { extractExif, ExifData } from "@/lib/exif";
 import { addExp, checkAchievements } from "@/lib/user-level";
 import { indexImage, dbRowToSearchData } from "@/lib/meilisearch";
 import { generateAndUploadVariants } from "@/lib/image-variants";
+import { processNSFWDetection } from "@/lib/nsfw";
 import sharp from "sharp";
 
 // pHash 去重阈值：hamming distance <= 5 判定为重复
@@ -29,6 +30,12 @@ const ALLOWED_TYPES = [
   "image/jpeg",
   "image/png",
   "image/webp",
+];
+
+// 允许的视频类型（动态壁纸）
+const ALLOWED_VIDEO_TYPES = [
+  "video/mp4",
+  "video/webm",
 ];
 
 // POST /api/upload - 上传图片到 MinIO 并记录到数据库
@@ -254,14 +261,33 @@ export async function POST(request: NextRequest) {
           });
       }
 
+      // NSFW 自动审核（同步，决定图片最终状态）
+      let finalStatus = status;
+      let statusMessage = isAdmin ? "上传成功" : "上传成功，等待审核";
+      try {
+        const nsfwResult = await processNSFWDetection(insertId, imageBuffer);
+        if (nsfwResult.autoRejected) {
+          finalStatus = "rejected";
+          statusMessage = "上传失败：内容不符合规范，已被自动拒绝";
+        } else if (nsfwResult.autoApproved) {
+          finalStatus = "approved";
+          statusMessage = "上传成功，内容审核通过";
+        } else if (nsfwResult.flagged) {
+          finalStatus = "pending";
+          statusMessage = "上传成功，内容待人工审核";
+        }
+      } catch {
+        // NSFW 检测失败不影响上传
+      }
+
       return NextResponse.json(
         {
           id: insertId,
           title: title || "网络图片",
           url: storedUrl,
           thumbnail_url: thumbnailUrl,
-          status,
-          message: isAdmin ? "上传成功" : "上传成功，等待审核",
+          status: finalStatus,
+          message: statusMessage,
         },
         { status: 201 }
       );
@@ -275,10 +301,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "请选择文件" }, { status: 400 });
     }
 
-    // 验证文件类型（非管理员只允许 jpg/png/webp）
-    if (!ALLOWED_TYPES.includes(file.type)) {
+    // 验证文件类型
+    const isVideo = ALLOWED_VIDEO_TYPES.includes(file.type);
+    if (!ALLOWED_TYPES.includes(file.type) && !isVideo) {
       return NextResponse.json(
-        { error: "不支持的文件类型，仅支持: JPEG, PNG, WebP" },
+        { error: "不支持的文件类型，仅支持: JPEG, PNG, WebP, MP4, WebM" },
         { status: 400 }
       );
     }
@@ -421,11 +448,12 @@ export async function POST(request: NextRequest) {
 
     // 非管理员上传状态为 pending，管理员为 approved
     const status = isAdmin ? "approved" : "pending";
+    const mediaType = isVideo ? "video" : "image";
 
     // 写入数据库
     const result = await query(
-      `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by, phash, exif)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by, phash, exif, media_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         title,
         description,
@@ -446,6 +474,7 @@ export async function POST(request: NextRequest) {
         userId,
         phash,
         exifJson,
+        mediaType,
       ]
     );
 
@@ -475,14 +504,33 @@ export async function POST(request: NextRequest) {
         });
     }
 
+    // NSFW 自动审核（同步，决定图片最终状态）
+    let finalStatus = status;
+    let statusMessage = isAdmin ? "上传成功" : "上传成功，等待审核";
+    try {
+      const nsfwResult = await processNSFWDetection(insertId, processedBuffer);
+      if (nsfwResult.autoRejected) {
+        finalStatus = "rejected";
+        statusMessage = "上传失败：内容不符合规范，已被自动拒绝";
+      } else if (nsfwResult.autoApproved) {
+        finalStatus = "approved";
+        statusMessage = "上传成功，内容审核通过";
+      } else if (nsfwResult.flagged) {
+        finalStatus = "pending";
+        statusMessage = "上传成功，内容待人工审核";
+      }
+    } catch {
+      // NSFW 检测失败不影响上传
+    }
+
     return NextResponse.json(
       {
         id: insertId,
         title,
         url,
         thumbnail_url: thumbnailUrl,
-        status,
-        message: isAdmin ? "上传成功" : "上传成功，等待审核",
+        status: finalStatus,
+        message: statusMessage,
       },
       { status: 201 }
     );

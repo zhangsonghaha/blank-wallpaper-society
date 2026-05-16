@@ -54,9 +54,10 @@ interface SettingItem {
 interface SettingField {
   key: string;
   label: string;
-  type: "text" | "number" | "textarea" | "toggle" | "password";
+  type: "text" | "number" | "textarea" | "toggle" | "password" | "select";
   description?: string;
   placeholder?: string;
+  options?: { value: string; label: string }[];
 }
 
 interface SettingGroup {
@@ -159,6 +160,27 @@ const settingGroups: SettingGroup[] = [
       { key: "ai_api_base_url", label: "API 地址", type: "text", placeholder: "https://api.openai.com/v1", description: "API 基础地址，支持自定义兼容端点" },
       { key: "ai_api_key", label: "API 密钥", type: "password", placeholder: "sk-xxxx...", description: "API 密钥，将安全存储在数据库中" },
       { key: "ai_model", label: "模型名称", type: "text", placeholder: "dall-e-3", description: "使用的模型名称，如 dall-e-3、stable-diffusion-xl 等" },
+    ],
+  },
+  {
+    id: "nsfw",
+    title: "NSFW 内容检测",
+    icon: Shield,
+    description: "自动检测上传图片是否包含违规内容，安全内容自动通过审核",
+    fields: [
+      { key: "nsfw_enabled", label: "启用 NSFW 检测", type: "toggle", description: "开启后上传图片将自动进行内容安全检测，安全内容自动通过审核" },
+      { key: "nsfw_threshold", label: "检测阈值", type: "number", description: "0-1 之间，Porn/Hentai 概率超过此值标记为可疑（推荐 0.7）", placeholder: "0.7" },
+      {
+        key: "nsfw_action",
+        label: "违规处理方式",
+        type: "select",
+        description: "检测到违规内容时的处理方式",
+        options: [
+          { value: "reject", label: "自动拒绝（违规直接拒绝，安全自动通过）" },
+          { value: "pending", label: "待人工审核（违规标记为待审核，安全自动通过）" },
+          { value: "flag", label: "仅标记（只记录不改变状态，需手动审核）" },
+        ],
+      },
     ],
   },
 ];
@@ -514,6 +536,18 @@ export default function SettingsTab() {
                                 }`}
                               />
                             </button>
+                          ) : field.type === "select" ? (
+                            <select
+                              value={settings[field.key] || ""}
+                              onChange={(e) => updateSetting(field.key, e.target.value)}
+                              className="w-full rounded-lg border border-[var(--color-surface-card)] bg-white px-3 py-2 text-sm text-[var(--color-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                            >
+                              {field.options?.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
                           ) : field.type === "textarea" ? (
                             <Textarea
                               value={settings[field.key] || ""}

@@ -216,7 +216,7 @@ export default function AdminClient() {
         animate={{
           width: sidebarCollapsed ? "80px" : "260px",
         }}
-        className={`fixed lg:relative top-0 left-0 h-screen bg-white border-r z-50 transition-all duration-300 ${
+        className={`fixed top-0 left-0 h-screen bg-[var(--color-surface-soft)] border-r z-50 transition-all duration-300 flex flex-col ${
           mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
@@ -251,7 +251,7 @@ export default function AdminClient() {
         </div>
 
         {/* 菜单列表 */}
-        <nav className="p-3 space-y-1">
+        <nav className="p-3 space-y-1 overflow-y-auto flex-1">
           {menuItems.map((item) => (
             <button
               key={item.id}
@@ -288,7 +288,11 @@ export default function AdminClient() {
       </motion.aside>
 
       {/* 主内容区 */}
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div
+        className={`flex-1 min-w-0 flex flex-col transition-all duration-300 ${
+          sidebarCollapsed ? "lg:ml-[80px]" : "lg:ml-[260px]"
+        }`}
+      >
         {/* 顶部导航栏 */}
         <header className="h-16 bg-white border-b sticky top-0 z-30 flex items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-4">

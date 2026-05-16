@@ -5,6 +5,9 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { SearchProvider } from "@/context/SearchContext";
 import AuthProvider from "@/components/AuthProvider";
+import { ThemeProvider } from "next-themes";
+import OnboardingGuide from "@/components/OnboardingGuide";
+import CookieConsent from "@/components/CookieConsent";
 import { Toaster } from "sonner";
 
 const inter = Inter({
@@ -40,6 +43,7 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({
@@ -48,16 +52,26 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" className={`${inter.variable} h-full`}>
+    <html lang="zh-CN" className={`${inter.variable} h-full`} suppressHydrationWarning>
+      <head>
+        <meta name="theme-color" content="#000000" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+      </head>
       <body className="min-h-full flex flex-col antialiased">
-        <SearchProvider>
-          <AuthProvider>
-            <Navbar />
-            <div className="flex-1 pt-16 min-h-0">{children}</div>
-            <Footer />
-            <Toaster position="top-right" richColors closeButton />
-          </AuthProvider>
-        </SearchProvider>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <SearchProvider>
+            <AuthProvider>
+              <Navbar />
+              <div className="flex-1 pt-16 min-h-0">{children}</div>
+              <Footer />
+              <OnboardingGuide />
+              <CookieConsent />
+              <Toaster position="top-right" richColors closeButton />
+            </AuthProvider>
+          </SearchProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
