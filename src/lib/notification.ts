@@ -1,5 +1,7 @@
 import { query } from "@/lib/db";
 import { isEmailConfigured, sendNotificationEmail } from "@/lib/email";
+import { pushBotNotification } from "@/lib/bot-notification";
+import { triggerWebhookAsync } from "@/lib/webhook";
 
 // === 通知类型定义 ===
 export type NotificationType =
@@ -126,6 +128,15 @@ export async function pushNotification(params: {
       }
     }
 
+    // 机器人通知推送（飞书/QQ/钉钉等）
+    pushBotNotification({
+      type: params.type,
+      title: params.title,
+      content: params.content,
+    }).catch((err) => {
+      console.error("[Notification] 机器人推送失败:", err);
+    });
+
     return insertId;
   } catch (error) {
     console.error("pushNotification error:", error);
@@ -184,6 +195,12 @@ export async function notifyReviewResult(
     relatedId: imageId,
     relatedType: "image",
   });
+
+  // 触发 Webhook 事件
+  triggerWebhookAsync(
+    approved ? "image.approved" : "image.rejected",
+    { imageId, imageTitle, userId, approved, reason }
+  );
 }
 
 // === 新关注通知 ===
@@ -200,6 +217,9 @@ export async function notifyNewFollower(
     relatedId: followerId,
     relatedType: "user",
   });
+
+  // 触发 Webhook 事件
+  triggerWebhookAsync("user.followed", { userId, followerId, followerName });
 }
 
 // === 新收藏通知 ===
@@ -234,4 +254,7 @@ export async function notifyCommentReply(
     relatedId: imageId,
     relatedType: "image",
   });
+
+  // 触发 Webhook 事件
+  triggerWebhookAsync("comment.created", { imageId, imageTitle, commenterName, userId });
 }

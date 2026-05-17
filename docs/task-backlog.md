@@ -78,10 +78,11 @@
 
 | 编号 | 任务 | 状态 | 说明 | 工作量 |
 |------|------|------|------|--------|
-| P4-4 | API 版本化 | 🔴 待开发 | 无 /api/v1/ 版本前缀 | 中 |
-| P4-5 | Webhook 机制 | 🔴 待开发 | 无事件 Webhook 支持 | 中-大 |
-| P4-6 | API Schema 验证（Zod） | 🔴 待开发 | API 无统一 Schema 验证 | 中-大 |
-| P4-7 | 用户行为分析 | 🔴 待开发 | 无 Umami/PostHog 等分析工具 | 中 |
+| P4-4 | API 版本化 | ✅ 已完成 | next.config.ts rewrites: /api/v1/* → /api/* | 小 |
+| P4-5 | Webhook 机制 | ✅ 已完成 | webhook.ts 事件投递库 + webhook_subscriptions/delivery_logs 表 + /api/webhooks CRUD + HMAC-SHA256签名 + 重试机制 + 投递日志 | 中-大 |
+| P4-6 | API Schema 验证（Zod） | ✅ 已完成 | api-schemas.ts Zod验证库 + 全API Schema定义 + validateRequestBody工具函数 + bots API已集成 | 中-大 |
+| P4-7 | 用户行为分析 | ✅ 已完成 | analytics.ts + Umami/PostHog双服务支持 + 管理后台分析配置分组 + /api/analytics-config客户端配置 + 服务端事件追踪 | 中 |
+| P4-8 | 飞书/QQ机器人通知 | ✅ 已完成 | bot-notification.ts（6种机器人）+ bot_configs表 + /api/admin/bots CRUD + /api/admin/bots/test测试 + BotsTab管理UI + pushNotification集成 + 事件订阅过滤 | 中 |
 
 ---
 

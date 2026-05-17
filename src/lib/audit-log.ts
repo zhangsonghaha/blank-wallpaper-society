@@ -23,7 +23,11 @@ export type AuditOperation =
   | "crawl_stop"
   | "notification_send"
   | "account_deletion_approve"
-  | "account_deletion_cancel";
+  | "account_deletion_cancel"
+  | "bot_config_create"
+  | "bot_config_update"
+  | "bot_config_delete"
+  | "bot_config_test";
 
 // 敏感操作（需要额外关注）
 const SENSITIVE_OPERATIONS: AuditOperation[] = [

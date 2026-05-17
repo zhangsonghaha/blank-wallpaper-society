@@ -256,6 +256,29 @@ const settingGroups: SettingGroup[] = [
       { key: "db_connection_limit", label: "数据库连接池大小", type: "number", description: "MySQL 连接池最大连接数，默认 15", placeholder: "15" },
     ],
   },
+  {
+    id: "analytics",
+    title: "用户行为分析",
+    icon: Server,
+    description: "集成 Umami 或 PostHog 进行用户行为追踪",
+    fields: [
+      {
+        key: "analytics_provider",
+        label: "分析服务",
+        type: "select",
+        description: "选择用户行为分析服务提供商",
+        options: [
+          { value: "none", label: "不启用" },
+          { value: "umami", label: "Umami（自托管，推荐）" },
+          { value: "posthog", label: "PostHog" },
+        ],
+      },
+      { key: "analytics_umami_website_id", label: "Umami 网站 ID", type: "text", placeholder: "如：a1b2c3d4-xxxx", description: "Umami 后台获取的网站 ID" },
+      { key: "analytics_umami_api_url", label: "Umami API 地址", type: "text", placeholder: "https://analytics.example.com", description: "Umami 实例地址（不含 /api）" },
+      { key: "analytics_posthog_api_key", label: "PostHog API Key", type: "password", placeholder: "phc_xxxx", description: "PostHog 项目 API Key" },
+      { key: "analytics_posthog_api_host", label: "PostHog API Host", type: "text", placeholder: "https://app.posthog.com", description: "PostHog 实例地址，默认为官方 SaaS" },
+    ],
+  },
 ];
 
 /* ==================== 系统设置组件 ==================== */

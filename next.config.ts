@@ -13,6 +13,15 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // API 版本化：/api/v1/* 映射到 /api/*
+  async rewrites() {
+    return [
+      {
+        source: "/api/v1/:path*",
+        destination: "/api/:path*",
+      },
+    ];
+  },
   async headers() {
     return [
       {

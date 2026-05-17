@@ -26,6 +26,7 @@ import {
   UserCog,
   Megaphone,
   ScrollText,
+  Bot,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ import MenuManagementTab from "./MenuManagementTab";
 import RoleManagementTab from "./RoleManagementTab";
 import AnnouncementsTab from "./AnnouncementsTab";
 import LogsTab from "./LogsTab";
+import BotsTab from "./BotsTab";
 
 // 标签页接口
 interface TabItem {
@@ -135,6 +137,7 @@ export default function AdminClient() {
         { id: "dashboard", title: "仪表盘", icon: <LayoutDashboard className="w-4 h-4" /> },
         { id: "api-usage", title: "API用量", icon: <BarChart3 className="w-4 h-4" /> },
         { id: "email-templates", title: "邮件模板", icon: <Mail className="w-4 h-4" /> },
+        { id: "bots", title: "机器人通知", icon: <Bot className="w-4 h-4" /> },
       ],
     },
     {
@@ -235,6 +238,9 @@ export default function AdminClient() {
         break;
       case "logs":
         content = <LogsTab />;
+        break;
+      case "bots":
+        content = <BotsTab />;
         break;
       default:
         content = <div className="p-6">功能开发中...</div>;

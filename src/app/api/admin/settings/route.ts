@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { clearEmailConfigCache } from "@/lib/email";
 import { logAudit } from "@/lib/audit-log";
 import { clearNSFWSettingsCache } from "@/lib/nsfw";
+import { clearAnalyticsConfigCache } from "@/lib/analytics";
 
 // GET /api/admin/settings - 获取所有系统设置
 export async function GET() {
@@ -49,6 +50,8 @@ export async function PATCH(request: NextRequest) {
     clearEmailConfigCache();
     // 清除 NSFW 设置缓存
     clearNSFWSettingsCache();
+    // 清除分析配置缓存
+    clearAnalyticsConfigCache();
 
     // 记录审计日志
     const adminId = (session.user as any).id;
