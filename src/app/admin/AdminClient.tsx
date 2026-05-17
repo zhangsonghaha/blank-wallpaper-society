@@ -25,6 +25,7 @@ import {
   MenuIcon,
   UserCog,
   Megaphone,
+  ScrollText,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ import EmailTemplatesTab from "./EmailTemplatesTab";
 import MenuManagementTab from "./MenuManagementTab";
 import RoleManagementTab from "./RoleManagementTab";
 import AnnouncementsTab from "./AnnouncementsTab";
+import LogsTab from "./LogsTab";
 
 // 标签页接口
 interface TabItem {
@@ -144,6 +146,7 @@ export default function AdminClient() {
         { id: "role-management", title: "角色管理", icon: <UserCog className="w-4 h-4" /> },
         { id: "users", title: "用户管理", icon: <Users className="w-4 h-4" /> },
         { id: "announcements", title: "通知公告", icon: <Megaphone className="w-4 h-4" /> },
+        { id: "logs", title: "日志管理", icon: <ScrollText className="w-4 h-4" /> },
         { id: "settings", title: "系统设置", icon: <Settings className="w-4 h-4" /> },
       ],
     },
@@ -229,6 +232,9 @@ export default function AdminClient() {
         break;
       case "announcements":
         content = <AnnouncementsTab />;
+        break;
+      case "logs":
+        content = <LogsTab />;
         break;
       default:
         content = <div className="p-6">功能开发中...</div>;
