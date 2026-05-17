@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import redis from "@/lib/redis";
 
 // ========== API 套餐配置 ==========
 export const API_TIERS = {
@@ -27,14 +28,14 @@ export const API_TIERS = {
 
 export type ApiTier = keyof typeof API_TIERS;
 
-// ========== 内存限流存储 ==========
+// ========== 内存限流存储（Redis 不可用时降级） ==========
 interface RateLimitEntry {
   count: number;
   resetAt: number; // 时间戳（ms），当天的结束时间
 }
 
-// 全局Map存储，key格式: "apiKey:{id}" 或 "ip:{ip}"
-const rateLimitStore = new Map<string, RateLimitEntry>();
+// 内存降级存储，仅在 Redis 不可用时使用
+const memoryRateLimitStore = new Map<string, RateLimitEntry>();
 
 // 匿名IP每日请求上限
 const ANONYMOUS_DAILY_LIMIT = 100;
@@ -43,15 +44,24 @@ const ANONYMOUS_DAILY_LIMIT = 100;
 if (typeof globalThis !== "undefined") {
   const cleanInterval = setInterval(() => {
     const now = Date.now();
-    for (const [key, entry] of rateLimitStore) {
+    for (const [key, entry] of memoryRateLimitStore) {
       if (now > entry.resetAt) {
-        rateLimitStore.delete(key);
+        memoryRateLimitStore.delete(key);
       }
     }
   }, 10 * 60 * 1000);
-  // 防止Node.js进程因定时器不退出
   if (cleanInterval && typeof cleanInterval === "object" && "unref" in cleanInterval) {
     (cleanInterval as NodeJS.Timeout).unref();
+  }
+}
+
+// 检查 Redis 是否可用
+async function isRedisAvailable(): Promise<boolean> {
+  try {
+    const result = await redis.ping();
+    return result === "PONG";
+  } catch {
+    return false;
   }
 }
 
@@ -101,7 +111,7 @@ export async function updateKeyLastUsed(apiKeyId: number) {
 }
 
 /**
- * 基于API Key的限流检查
+ * 基于API Key的限流检查（优先 Redis，降级内存）
  * @returns { allowed: boolean; limit: number; remaining: number; reset: number }
  */
 export async function checkApiKeyRateLimit(
@@ -113,16 +123,35 @@ export async function checkApiKeyRateLimit(
   remaining: number;
   reset: number;
 }> {
-  const key = `apiKey:${apiKeyId}`;
+  const key = `ratelimit:apiKey:${apiKeyId}`;
   const resetAt = getEndOfDay();
   const now = Date.now();
+  const ttlSeconds = Math.ceil((resetAt - now) / 1000);
 
-  let entry = rateLimitStore.get(key);
+  // 尝试使用 Redis
+  if (await isRedisAvailable()) {
+    try {
+      const count = await redis.incr(key);
+      if (count === 1) {
+        await redis.expire(key, ttlSeconds);
+      }
+      const allowed = count <= rateLimit;
+      return {
+        allowed,
+        limit: rateLimit,
+        remaining: allowed ? Math.max(0, rateLimit - count) : 0,
+        reset: ttlSeconds,
+      };
+    } catch {
+      // Redis 失败，降级到内存
+    }
+  }
 
-  // 如果过期了或不存在，重置
+  // 内存降级
+  let entry = memoryRateLimitStore.get(key);
   if (!entry || now > entry.resetAt) {
     entry = { count: 0, resetAt };
-    rateLimitStore.set(key, entry);
+    memoryRateLimitStore.set(key, entry);
   }
 
   const remaining = Math.max(0, rateLimit - entry.count);
@@ -136,29 +165,49 @@ export async function checkApiKeyRateLimit(
     allowed,
     limit: rateLimit,
     remaining: allowed ? Math.max(0, rateLimit - entry.count) : 0,
-    reset: Math.ceil((resetAt - now) / 1000), // 秒
+    reset: Math.ceil((resetAt - now) / 1000),
   };
 }
 
 /**
- * 基于IP的匿名限流检查
+ * 基于IP的匿名限流检查（优先 Redis，降级内存）
  * @returns { allowed: boolean; limit: number; remaining: number; reset: number }
  */
-export function checkIpRateLimit(ipAddress: string): {
+export async function checkIpRateLimit(ipAddress: string): Promise<{
   allowed: boolean;
   limit: number;
   remaining: number;
   reset: number;
-} {
-  const key = `ip:${ipAddress}`;
+}> {
+  const key = `ratelimit:ip:${ipAddress}`;
   const resetAt = getEndOfDay();
   const now = Date.now();
+  const ttlSeconds = Math.ceil((resetAt - now) / 1000);
 
-  let entry = rateLimitStore.get(key);
+  // 尝试使用 Redis
+  if (await isRedisAvailable()) {
+    try {
+      const count = await redis.incr(key);
+      if (count === 1) {
+        await redis.expire(key, ttlSeconds);
+      }
+      const allowed = count <= ANONYMOUS_DAILY_LIMIT;
+      return {
+        allowed,
+        limit: ANONYMOUS_DAILY_LIMIT,
+        remaining: allowed ? Math.max(0, ANONYMOUS_DAILY_LIMIT - count) : 0,
+        reset: ttlSeconds,
+      };
+    } catch {
+      // Redis 失败，降级到内存
+    }
+  }
 
+  // 内存降级
+  let entry = memoryRateLimitStore.get(key);
   if (!entry || now > entry.resetAt) {
     entry = { count: 0, resetAt };
-    rateLimitStore.set(key, entry);
+    memoryRateLimitStore.set(key, entry);
   }
 
   const remaining = Math.max(0, ANONYMOUS_DAILY_LIMIT - entry.count);

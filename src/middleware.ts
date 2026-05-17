@@ -9,6 +9,7 @@ import { validateCsrfToken } from "@/lib/csrf";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const startTime = Date.now();
 
   // 检查是否存在 session cookie（任意一个）
   const sessionCookie =
@@ -77,6 +78,7 @@ export async function middleware(request: NextRequest) {
       "/api/posts",
       "/api/feed",
       "/api/proxy-image",
+      "/api/health",
     ];
 
     // 管理员/审核员 API - 需要登录但在这里只检查 session，角色验证在 route handler 中
@@ -121,6 +123,25 @@ export async function middleware(request: NextRequest) {
     const isPublic = publicApis.some((p) => pathname.startsWith(p));
     if (!isPublic && !hasSession) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
+    }
+  }
+
+  // === API 请求日志 ===
+  if (pathname.startsWith("/api/")) {
+    const duration = Date.now() - startTime;
+    const method = request.method;
+    // 跳过健康检查和 auth 回调的日志（太频繁）
+    const skipLog = pathname === "/api/health" || pathname.startsWith("/api/auth/callback");
+    if (!skipLog) {
+      console.log(JSON.stringify({
+        type: "api_request",
+        method,
+        path: pathname,
+        duration,
+        userAgent: request.headers.get("user-agent") || "",
+        ip: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "",
+        timestamp: new Date().toISOString(),
+      }));
     }
   }
 

@@ -1,17 +1,17 @@
 import mysql from "mysql2/promise";
 
 const pool = mysql.createPool({
-  host: "rm-bp128b691n9909ih3ho.mysql.rds.aliyuncs.com",
-  port: 3306,
-  user: "zhangsong",
-  password: "zs15210265092!",
-  database: "img",
+  host: process.env.DB_HOST || "rm-bp128b691n9909ih3ho.mysql.rds.aliyuncs.com",
+  port: parseInt(process.env.DB_PORT || "3306"),
+  user: process.env.DB_USER || "zhangsong",
+  password: process.env.DB_PASSWORD || "zs15210265092!",
+  database: process.env.DB_NAME || "img",
   waitForConnections: true,
-  connectionLimit: 3,
+  connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || "15"),
   queueLimit: 0,
   ssl: undefined,
-  idleTimeout: 30000,       // 空闲连接30秒后自动关闭
-  maxIdle: 1,               // 最多保留1个空闲连接
+  idleTimeout: 60000,       // 空闲连接60秒后自动关闭（生产环境推荐）
+  maxIdle: 5,               // 最多保留5个空闲连接
   enableKeepAlive: true,     // 启用TCP keepAlive防止连接被断
   keepAliveInitialDelay: 10000,
 });

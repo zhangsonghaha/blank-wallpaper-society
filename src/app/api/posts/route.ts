@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { uploadFile } from "@/lib/minio";
+import { sanitizeComment, sanitizeStrict } from "@/lib/sanitize";
 
 // POST /api/posts - 创建动态
 export async function POST(request: NextRequest) {
@@ -66,6 +67,12 @@ export async function POST(request: NextRequest) {
     if (!content.trim() && attachments.length === 0 && !linkUrl) {
       return NextResponse.json({ error: "动态内容不能为空" }, { status: 400 });
     }
+
+    // XSS 净化：过滤动态内容和链接预览中的危险 HTML
+    content = sanitizeComment(content);
+    if (linkTitle) linkTitle = sanitizeStrict(linkTitle);
+    if (linkDescription) linkDescription = sanitizeStrict(linkDescription);
+    if (linkSiteName) linkSiteName = sanitizeStrict(linkSiteName);
 
     if (content.length > 2000) {
       return NextResponse.json({ error: "动态内容不能超过2000字" }, { status: 400 });

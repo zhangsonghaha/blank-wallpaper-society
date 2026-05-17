@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { getMinioClient, PUBLIC_URL_BASE, BUCKET_NAME } from "@/lib/minio";
 import sharp from "sharp";
+import { sanitizeName } from "@/lib/sanitize";
 
 // PATCH /api/auth/profile - 更新用户信息
 export async function PATCH(request: NextRequest) {
@@ -104,13 +105,14 @@ export async function PATCH(request: NextRequest) {
 
     // 修改昵称
     if (name !== undefined) {
-      if (!name || name.trim().length === 0) {
+      const cleanName = sanitizeName(name);
+      if (!cleanName || cleanName.trim().length === 0) {
         return NextResponse.json({ error: "昵称不能为空" }, { status: 400 });
       }
-      if (name.length > 50) {
+      if (cleanName.length > 50) {
         return NextResponse.json({ error: "昵称最长 50 个字符" }, { status: 400 });
       }
-      await query("UPDATE users SET name = ? WHERE id = ?", [name.trim(), userId]);
+      await query("UPDATE users SET name = ? WHERE id = ?", [cleanName.trim(), userId]);
     }
 
     return NextResponse.json({ message: "更新成功" });

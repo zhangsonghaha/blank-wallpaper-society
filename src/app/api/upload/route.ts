@@ -10,6 +10,8 @@ import { addExp, checkAchievements } from "@/lib/user-level";
 import { indexImage, dbRowToSearchData } from "@/lib/meilisearch";
 import { generateAndUploadVariants } from "@/lib/image-variants";
 import { processNSFWDetection } from "@/lib/nsfw";
+import { sanitizeStrict, sanitizeName } from "@/lib/sanitize";
+import { canUpload } from "@/lib/storage-quota";
 import sharp from "sharp";
 
 // pHash 去重阈值：hamming distance <= 5 判定为重复
@@ -57,7 +59,12 @@ export async function POST(request: NextRequest) {
     // === 网络链接模式 ===
     if (contentType.includes("application/json")) {
       const body = await request.json();
-      const { url, title, description, author, tags, category } = body;
+      let { url, title, description, author, tags, category } = body;
+
+      // XSS 净化：过滤用户输入中的危险 HTML
+      title = sanitizeStrict(title);
+      description = sanitizeStrict(description);
+      author = sanitizeName(author);
 
       if (!url) {
         return NextResponse.json({ error: "请输入图片链接" }, { status: 400 });
@@ -335,6 +342,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 存储配额检查
+    const quotaCheck = await canUpload(userId, userRole, file.size);
+    if (!quotaCheck.allowed) {
+      return NextResponse.json(
+        { 
+          error: `存储空间不足，剩余 ${quotaCheck.quotaInfo.remainingMB}MB，需要 ${Math.round(file.size / (1024 * 1024) * 100) / 100}MB`,
+          quota: quotaCheck.quotaInfo,
+        },
+        { status: 429 }
+      );
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
     const filename = file.name;
 
@@ -441,9 +460,9 @@ export async function POST(request: NextRequest) {
     const exifJson = exifData && Object.keys(exifData).length > 0 ? JSON.stringify(exifData) : null;
 
     // 获取表单其他字段
-    const title = (formData.get("title") as string) || filename;
-    const description = (formData.get("description") as string) || "";
-    const tags = (formData.get("tags") as string) || "";
+    const title = sanitizeStrict((formData.get("title") as string) || filename);
+    const description = sanitizeStrict((formData.get("description") as string) || "");
+    const tags = sanitizeStrict((formData.get("tags") as string) || "");
     const category = (formData.get("category") as string) || "";
 
     // 非管理员上传状态为 pending，管理员为 approved
@@ -539,3 +558,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+

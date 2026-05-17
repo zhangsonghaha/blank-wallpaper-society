@@ -21,6 +21,7 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -183,6 +184,52 @@ const settingGroups: SettingGroup[] = [
       },
     ],
   },
+  {
+    id: "quota",
+    title: "存储配额",
+    icon: Database,
+    description: "用户存储空间限制配置，根据角色分配不同配额",
+    fields: [
+      { key: "quota_default_mb", label: "普通用户配额 (MB)", type: "number", description: "普通用户最大存储空间，默认 500MB", placeholder: "500" },
+      { key: "quota_premium_mb", label: "付费用户配额 (MB)", type: "number", description: "付费/审核员用户最大存储空间，默认 2000MB", placeholder: "2000" },
+      { key: "quota_admin_mb", label: "管理员配额 (MB)", type: "number", description: "管理员最大存储空间，默认 10000MB", placeholder: "10000" },
+    ],
+  },
+  {
+    id: "upload_advanced",
+    title: "高级上传设置",
+    icon: ImageIcon,
+    description: "批量上传、文件限制等高级上传配置",
+    fields: [
+      { key: "batch_max_files", label: "批量上传最大文件数", type: "number", description: "单次批量上传允许的最大文件数，默认 5", placeholder: "5" },
+      { key: "daily_upload_limit", label: "每日上传限制", type: "number", description: "非管理员每日上传图片数量限制，默认 10", placeholder: "10" },
+    ],
+  },
+  {
+    id: "monitoring",
+    title: "监控与日志",
+    icon: Server,
+    description: "错误监控、日志级别等运维配置",
+    fields: [
+      { key: "sentry_enabled", label: "启用 Sentry 错误监控", type: "toggle", description: "开启后生产环境错误将上报到 Sentry" },
+      { key: "sentry_dsn", label: "Sentry DSN", type: "password", placeholder: "https://xxx@sentry.io/xxx", description: "Sentry 项目 DSN 地址" },
+      {
+        key: "log_level",
+        label: "日志级别",
+        type: "select",
+        description: "控制日志输出详细程度，生产环境建议 info",
+        options: [
+          { value: "fatal", label: "Fatal（仅致命错误）" },
+          { value: "error", label: "Error（错误）" },
+          { value: "warn", label: "Warn（警告）" },
+          { value: "info", label: "Info（信息，推荐生产环境）" },
+          { value: "debug", label: "Debug（调试，推荐开发环境）" },
+          { value: "trace", label: "Trace（追踪，最详细）" },
+        ],
+      },
+      { key: "db_connection_limit", label: "数据库连接池大小", type: "number", description: "MySQL 连接池最大连接数，默认 15", placeholder: "15" },
+    ],
+  },
 ];
 
 /* ==================== 系统设置组件 ==================== */
@@ -193,6 +240,29 @@ export default function SettingsTab() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+
+  /* ==================== 健康检查状态 ==================== */
+  const [healthData, setHealthData] = useState<{
+    status: string;
+    timestamp: string;
+    latency: number;
+    checks: Record<string, { status: string; latency?: number; error?: string; detail?: string }>;
+    version: string;
+    uptime: string;
+  } | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+
+  const fetchHealth = useCallback(async () => {
+    setHealthLoading(true);
+    try {
+      const res = await fetch("/api/health");
+      const data = await res.json();
+      setHealthData(data);
+    } catch {
+      setHealthData(null);
+    }
+    setHealthLoading(false);
+  }, []);
 
   /* ==================== 搜索管理状态 ==================== */
   const [searchAvailable, setSearchAvailable] = useState(false);
@@ -251,7 +321,8 @@ export default function SettingsTab() {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    fetchHealth();
+  }, [loadData, fetchHealth]);
 
   /* ==================== 搜索管理数据加载 ==================== */
 
@@ -467,6 +538,92 @@ export default function SettingsTab() {
           </Button>
         </div>
       </div>
+
+      {/* ===== 健康检查状态面板 ===== */}
+      <Card className="mb-6">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Server className="w-5 h-5 text-[var(--color-primary)]" />
+              <CardTitle className="text-base">系统健康状态</CardTitle>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchHealth}
+              disabled={healthLoading}
+              className="rounded-full text-xs"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1 ${healthLoading ? "animate-spin" : ""}`} />
+              刷新
+            </Button>
+          </div>
+          <CardDescription>实时监控数据库、Redis、MinIO 连接状态</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {healthData ? (
+            <div className="space-y-3">
+              {/* 总体状态 */}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--color-surface-muted)]">
+                <div className="flex items-center gap-2">
+                  {healthData.status === "healthy" ? (
+                    <CheckCircle className="w-5 h-5 text-green-500" />
+                  ) : healthData.status === "degraded" ? (
+                    <AlertTriangle className="w-5 h-5 text-yellow-500" />
+                  ) : (
+                    <XCircle className="w-5 h-5 text-red-500" />
+                  )}
+                  <span className="font-semibold text-sm">
+                    {healthData.status === "healthy" ? "运行正常" : healthData.status === "degraded" ? "部分降级" : "异常"}
+                  </span>
+                </div>
+                <div className="text-xs text-[var(--color-mute)] space-x-3">
+                  <span>版本 {healthData.version}</span>
+                  <span>运行 {healthData.uptime}</span>
+                  <span>检测耗时 {healthData.latency}ms</span>
+                </div>
+              </div>
+              {/* 各检查项 */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {Object.entries(healthData.checks).map(([name, check]) => (
+                  <div key={name} className={`p-3 rounded-lg border ${
+                    check.status === "ok" ? "border-green-200 bg-green-50/50" :
+                    check.status === "warning" ? "border-yellow-200 bg-yellow-50/50" :
+                    "border-red-200 bg-red-50/50"
+                  }`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      {check.status === "ok" ? (
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                      ) : check.status === "warning" ? (
+                        <AlertTriangle className="w-4 h-4 text-yellow-500" />
+                      ) : (
+                        <XCircle className="w-4 h-4 text-red-500" />
+                      )}
+                      <span className="font-medium text-sm capitalize">{name === "database" ? "数据库" : name === "redis" ? "Redis" : "MinIO 存储"}</span>
+                    </div>
+                    {check.latency !== undefined && (
+                      <p className="text-xs text-[var(--color-mute)]">延迟: {check.latency}ms</p>
+                    )}
+                    {check.detail && (
+                      <p className="text-xs text-[var(--color-mute)]">{check.detail}</p>
+                    )}
+                    {check.error && (
+                      <p className="text-xs text-red-500 truncate" title={check.error}>{check.error}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-[var(--color-mute)] text-right">
+                最后检查: {new Date(healthData.timestamp).toLocaleString("zh-CN")}
+              </p>
+            </div>
+          ) : (
+            <div className="text-center py-4 text-sm text-[var(--color-mute)]">
+              {healthLoading ? "检测中..." : "点击刷新获取系统健康状态"}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {loading ? (
         <div className="space-y-6">

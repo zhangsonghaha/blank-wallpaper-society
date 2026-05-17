@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { sanitizeComment } from "@/lib/sanitize";
 
 // GET /api/posts/[id]/comments - 获取帖子评论列表
 export async function GET(
@@ -84,7 +85,10 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { content, parent_id } = body;
+    let { content, parent_id } = body;
+
+    // XSS 净化：过滤评论内容中的危险 HTML
+    content = sanitizeComment(content);
 
     if (!content || !content.trim()) {
       return NextResponse.json({ error: "评论内容不能为空" }, { status: 400 });

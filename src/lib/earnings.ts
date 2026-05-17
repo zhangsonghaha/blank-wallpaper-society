@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { withTransaction } from "@/lib/db-tx";
 
 // === 收益配置 ===
 export const PLATFORM_FEE_RATE = 0.15; // 平台抽成15%
@@ -50,40 +51,45 @@ export async function createTip(
   if (fromUserId === toUserId) throw new Error("不能给自己打赏");
   if (!TIP_AMOUNTS.includes(amount)) throw new Error("无效的打赏金额");
 
-  // 创建订单
-  const orderResult = await query(
-    `INSERT INTO orders (user_id, type, related_id, amount, payment_status)
-     VALUES (?, 'tip', NULL, ?, 'pending')`,
-    [fromUserId, amount]
-  );
-  const orderId = (orderResult as any).insertId;
+  // 使用事务保护打赏流程，确保订单、打赏记录和收益一致性
+  const result = await withTransaction(async (conn) => {
+    // 创建订单
+    const [orderResult] = await conn.execute(
+      `INSERT INTO orders (user_id, type, related_id, amount, payment_status)
+       VALUES (?, 'tip', NULL, ?, 'pending')`,
+      [fromUserId, amount]
+    );
+    const orderId = (orderResult as any).insertId;
 
-  // 创建打赏记录
-  const tipResult = await query(
-    `INSERT INTO tips (from_user_id, to_user_id, image_id, amount, message)
-     VALUES (?, ?, ?, ?, ?)`,
-    [fromUserId, toUserId, imageId || null, amount, message || null]
-  );
-  const tipId = (tipResult as any).insertId;
+    // 创建打赏记录
+    const [tipResult] = await conn.execute(
+      `INSERT INTO tips (from_user_id, to_user_id, image_id, amount, message)
+       VALUES (?, ?, ?, ?, ?)`,
+      [fromUserId, toUserId, imageId || null, amount, message || null]
+    );
+    const tipId = (tipResult as any).insertId;
 
-  // 更新订单关联
-  await query("UPDATE orders SET related_id = ? WHERE id = ?", [tipId, orderId]);
+    // 更新订单关联
+    await conn.execute("UPDATE orders SET related_id = ? WHERE id = ?", [tipId, orderId]);
 
-  // TODO: 调用支付接口（微信/支付宝）
-  // 此处简化为直接完成
-  await query("UPDATE orders SET payment_status = 'paid', paid_at = NOW() WHERE id = ?", [orderId]);
-  await query("UPDATE tips SET status = 'completed' WHERE id = ?", [tipId]);
+    // TODO: 调用支付接口（微信/支付宝）
+    // 此处简化为直接完成
+    await conn.execute("UPDATE orders SET payment_status = 'paid', paid_at = NOW() WHERE id = ?", [orderId]);
+    await conn.execute("UPDATE tips SET status = 'completed' WHERE id = ?", [tipId]);
 
-  // 记录收益
-  const platformFee = Math.round(amount * PLATFORM_FEE_RATE * 100) / 100;
-  const netAmount = amount - platformFee;
-  await query(
-    `INSERT INTO earnings (user_id, type, related_id, amount, platform_fee, net_amount, status)
-     VALUES (?, 'tip', ?, ?, ?, ?, 'pending')`,
-    [toUserId, tipId, amount, platformFee, netAmount]
-  );
+    // 记录收益
+    const platformFee = Math.round(amount * PLATFORM_FEE_RATE * 100) / 100;
+    const netAmount = amount - platformFee;
+    await conn.execute(
+      `INSERT INTO earnings (user_id, type, related_id, amount, platform_fee, net_amount, status)
+       VALUES (?, 'tip', ?, ?, ?, ?, 'pending')`,
+      [toUserId, tipId, amount, platformFee, netAmount]
+    );
 
-  return { tipId, orderId, amount, netAmount };
+    return { tipId, orderId, amount, netAmount };
+  });
+
+  return result;
 }
 
 // === 会员订阅 ===
@@ -111,28 +117,33 @@ export async function subscribeMembership(
     endDate.setFullYear(endDate.getFullYear() + 1);
   }
 
-  // 创建订单
-  const orderResult = await query(
-    `INSERT INTO orders (user_id, type, amount, payment_status)
-     VALUES (?, 'membership', ?, 'pending')`,
-    [userId, price]
-  );
-  const orderId = (orderResult as any).insertId;
+  // 使用事务保护会员订阅流程
+  const result = await withTransaction(async (conn) => {
+    // 创建订单
+    const [orderResult] = await conn.execute(
+      `INSERT INTO orders (user_id, type, amount, payment_status)
+       VALUES (?, 'membership', ?, 'pending')`,
+      [userId, price]
+    );
+    const orderId = (orderResult as any).insertId;
 
-  // TODO: 调用支付接口
+    // TODO: 调用支付接口
 
-  // 更新或创建会员记录
-  await query(
-    `INSERT INTO memberships (user_id, plan, started_at, expires_at, status)
-     VALUES (?, ?, ?, ?, 'active')
-     ON DUPLICATE KEY UPDATE plan = ?, started_at = ?, expires_at = ?, status = 'active'`,
-    [userId, plan, startDate, endDate, plan, startDate, endDate]
-  );
+    // 更新或创建会员记录
+    await conn.execute(
+      `INSERT INTO memberships (user_id, plan, started_at, expires_at, status)
+       VALUES (?, ?, ?, ?, 'active')
+       ON DUPLICATE KEY UPDATE plan = ?, started_at = ?, expires_at = ?, status = 'active'`,
+      [userId, plan, startDate, endDate, plan, startDate, endDate]
+    );
 
-  // 更新订单状态
-  await query("UPDATE orders SET payment_status = 'paid', paid_at = NOW() WHERE id = ?", [orderId]);
+    // 更新订单状态
+    await conn.execute("UPDATE orders SET payment_status = 'paid', paid_at = NOW() WHERE id = ?", [orderId]);
 
-  return { orderId, plan, price, expiresAt: endDate };
+    return { orderId, plan, price, expiresAt: endDate };
+  });
+
+  return result;
 }
 
 // === 获取创作者收益概览 ===

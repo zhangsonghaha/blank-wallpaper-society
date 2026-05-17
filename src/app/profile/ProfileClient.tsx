@@ -353,6 +353,58 @@ function AccountDeletionZone({ userId }: { userId: number }) {
   );
 }
 
+/** 存储配额展示条 */
+function StorageQuotaBar() {
+  const [quota, setQuota] = useState<{
+    usedMB: number;
+    quotaMB: number;
+    usagePercent: number;
+    remainingMB: number;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/quota")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.quotaMB) setQuota(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  if (!quota) return null;
+
+  const getColor = () => {
+    if (quota.usagePercent >= 90) return "bg-red-500";
+    if (quota.usagePercent >= 70) return "bg-yellow-500";
+    return "bg-[var(--color-primary)]";
+  };
+
+  return (
+    <div className="mb-4 p-3 rounded-xl bg-[var(--color-surface-card)] border border-[var(--color-hairline)]">
+      <div className="flex items-center justify-between text-xs mb-1.5">
+        <span className="text-[var(--color-mute)]">
+          存储空间：{quota.usedMB} MB / {quota.quotaMB >= 1024 ? `${(quota.quotaMB / 1024).toFixed(1)} GB` : `${quota.quotaMB} MB`}
+        </span>
+        <span className={`font-semibold ${quota.usagePercent >= 90 ? "text-red-500" : quota.usagePercent >= 70 ? "text-yellow-500" : "text-[var(--color-primary)]"}`}>
+          {quota.usagePercent.toFixed(1)}%
+        </span>
+      </div>
+      <div className="h-2 bg-[var(--color-surface-muted)] rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${getColor()}`}
+          style={{ width: `${Math.min(100, quota.usagePercent)}%` }}
+        />
+      </div>
+      {quota.usagePercent >= 90 && (
+        <p className="text-xs text-red-500 mt-1.5">存储空间不足，请删除部分图片或升级账号</p>
+      )}
+      {quota.usagePercent < 90 && (
+        <p className="text-xs text-[var(--color-mute)] mt-1">剩余 {quota.remainingMB} MB</p>
+      )}
+    </div>
+  );
+}
+
 export default function ProfileClient({
   user,
   stats,
@@ -1389,7 +1441,8 @@ export default function ProfileClient({
                   {/* Uploads Tab */}
                   <TabsContent value="uploads">
                     <div className="mt-4">
-                      {/* Filter Chips */}
+                      {/* Storage Quota Bar */}
+                      <StorageQuotaBar />
                       <div className="flex items-center gap-2 mb-4">
                         {[
                           { key: "all", label: "全部" },

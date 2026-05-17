@@ -111,7 +111,7 @@ export async function authenticateApiRequest(
   }
 
   // 匿名IP限流
-  const ipRateResult = checkIpRateLimit(ipAddress);
+  const ipRateResult = await checkIpRateLimit(ipAddress);
   const rateLimitHeaders = buildRateLimitHeaders(
     ipRateResult.limit,
     ipRateResult.remaining,

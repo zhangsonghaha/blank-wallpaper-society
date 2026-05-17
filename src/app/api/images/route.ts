@@ -7,13 +7,14 @@ import {
   searchWallpapers,
   SearchOptions,
 } from "@/lib/meilisearch";
+import { sanitizeQueryParam, sanitizeStrict } from "@/lib/sanitize";
 
 // GET /api/images - 获取图片列表
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const category = searchParams.get("category");
-    const search = searchParams.get("search");
+    const search = searchParams.get("search") ? sanitizeQueryParam(searchParams.get("search")!) : null;
     const color = searchParams.get("color");
     const colorThreshold = parseInt(searchParams.get("colorThreshold") || "30");
     const page = parseInt(searchParams.get("page") || "1");
@@ -169,7 +170,7 @@ export async function GET(request: NextRequest) {
 
     // 标签筛选
     if (tags) {
-      const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
+      const tagList = tags.split(",").map((t) => sanitizeStrict(t.trim())).filter(Boolean);
       if (tagList.length > 0) {
         const tagConditions = tagList.map(() => "tags LIKE ?").join(" AND ");
         sql += ` AND (${tagConditions})`;

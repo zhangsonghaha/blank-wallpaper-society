@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { query, safeQuery } from "@/lib/db";
+import { withTransaction } from "@/lib/db-tx";
 
 /**
  * 账号注销与数据删除库
@@ -50,24 +51,26 @@ export async function requestAccountDeletion(userId: number): Promise<{ schedule
   const now = new Date();
   const scheduledAt = new Date(now.getTime() + COOLING_OFF_DAYS * 24 * 60 * 60 * 1000);
 
-  await query(
-    `UPDATE users SET 
-      deletion_requested_at = NOW(), 
-      deletion_scheduled_at = ?, 
-      status = 'pending_deletion' 
-    WHERE id = ?`,
-    [scheduledAt, userId]
-  );
+  await withTransaction(async (conn) => {
+    await conn.execute(
+      `UPDATE users SET 
+        deletion_requested_at = NOW(), 
+        deletion_scheduled_at = ?, 
+        status = 'pending_deletion' 
+      WHERE id = ?`,
+      [scheduledAt, userId]
+    );
 
-  // 记录操作日志
-  await query(
-    `INSERT INTO account_deletion_logs (user_id, action, details) VALUES (?, 'requested', ?)`,
-    [userId, JSON.stringify({
-      userName: user.name,
-      userEmail: user.email,
-      scheduledAt: scheduledAt.toISOString(),
-    })]
-  );
+    // 记录操作日志
+    await conn.execute(
+      `INSERT INTO account_deletion_logs (user_id, action, details) VALUES (?, 'requested', ?)`,
+      [userId, JSON.stringify({
+        userName: user.name,
+        userEmail: user.email,
+        scheduledAt: scheduledAt.toISOString(),
+      })]
+    );
+  });
 
   return { scheduledAt };
 }
@@ -91,20 +94,22 @@ export async function cancelAccountDeletion(userId: number): Promise<void> {
     throw new Error("账号未在注销流程中，无法取消");
   }
 
-  await query(
-    `UPDATE users SET 
-      deletion_requested_at = NULL, 
-      deletion_scheduled_at = NULL, 
-      status = 'active' 
-    WHERE id = ?`,
-    [userId]
-  );
+  await withTransaction(async (conn) => {
+    await conn.execute(
+      `UPDATE users SET 
+        deletion_requested_at = NULL, 
+        deletion_scheduled_at = NULL, 
+        status = 'active' 
+      WHERE id = ?`,
+      [userId]
+    );
 
-  // 记录操作日志
-  await query(
-    `INSERT INTO account_deletion_logs (user_id, action, details) VALUES (?, 'cancelled', ?)`,
-    [userId, JSON.stringify({ cancelledAt: new Date().toISOString() })]
-  );
+    // 记录操作日志
+    await conn.execute(
+      `INSERT INTO account_deletion_logs (user_id, action, details) VALUES (?, 'cancelled', ?)`,
+      [userId, JSON.stringify({ cancelledAt: new Date().toISOString() })]
+    );
+  });
 }
 
 /**
@@ -137,73 +142,74 @@ export async function executeAccountDeletion(userId: number): Promise<void> {
   const randomPassword = crypto.randomBytes(32).toString("hex");
   const hashedPassword = crypto.createHash("sha256").update(randomPassword).digest("hex");
 
-  await query(
-    `UPDATE users SET 
-      name = ?, 
-      email = ?, 
-      avatar = NULL, 
-      password = ?, 
-      status = 'deleted',
-      deletion_requested_at = NULL,
-      deletion_scheduled_at = NULL
-    WHERE id = ?`,
-    [deletedName, deletedEmail, hashedPassword, userId]
-  );
+  // 使用事务保护整个注销流程，确保数据一致性
+  await withTransaction(async (conn) => {
+    // 1. 匿名化用户信息
+    await conn.execute(
+      `UPDATE users SET 
+        name = ?, 
+        email = ?, 
+        avatar = NULL, 
+        password = ?, 
+        status = 'deleted',
+        deletion_requested_at = NULL,
+        deletion_scheduled_at = NULL
+      WHERE id = ?`,
+      [deletedName, deletedEmail, hashedPassword, userId]
+    );
 
-  // 删除用户收藏
-  await safeQuery("DELETE FROM favorites WHERE user_id = ?", [userId]);
+    // 2. 删除用户收藏
+    await conn.execute("DELETE FROM favorites WHERE user_id = ?", [userId]);
 
-  // 匿名化评论（保留但标记为已删除）
-  await safeQuery(
-    "UPDATE comments SET content = '该评论已被删除', user_id = NULL WHERE user_id = ?",
-    [userId]
-  );
+    // 3. 匿名化评论
+    await conn.execute(
+      "UPDATE comments SET content = '该评论已被删除', user_id = NULL WHERE user_id = ?",
+      [userId]
+    );
 
-  // 删除 OAuth 关联
-  await safeQuery("DELETE FROM oauth_accounts WHERE user_id = ?", [userId]);
+    // 4. 删除 OAuth 关联
+    await conn.execute("DELETE FROM oauth_accounts WHERE user_id = ?", [userId]);
 
-  // 删除通知设置
-  await safeQuery("DELETE FROM notification_settings WHERE user_id = ?", [userId]);
+    // 5. 删除通知设置
+    await conn.execute("DELETE FROM notification_settings WHERE user_id = ?", [userId]);
 
-  // 删除用户成就
-  await safeQuery("DELETE FROM user_achievements WHERE user_id = ?", [userId]);
+    // 6. 删除用户成就
+    await conn.execute("DELETE FROM user_achievements WHERE user_id = ?", [userId]);
 
-  // 删除用户等级
-  await safeQuery("DELETE FROM user_levels WHERE user_id = ?", [userId]);
+    // 7. 删除用户等级
+    await conn.execute("DELETE FROM user_levels WHERE user_id = ?", [userId]);
 
-  // 停用 API Keys
-  await safeQuery(
-    "UPDATE api_keys SET status = 'revoked' WHERE user_id = ?",
-    [userId]
-  );
+    // 8. 停用 API Keys
+    await conn.execute(
+      "UPDATE api_keys SET status = 'revoked' WHERE user_id = ?",
+      [userId]
+    );
 
-  // 删除密码重置令牌
-  await safeQuery("DELETE FROM password_reset_tokens WHERE user_id = ?", [userId]);
+    // 9. 删除密码重置令牌
+    await conn.execute("DELETE FROM password_reset_tokens WHERE user_id = ?", [userId]);
 
-  // 删除关注关系
-  await safeQuery("DELETE FROM user_follows WHERE follower_id = ? OR following_id = ?", [userId, userId]);
+    // 10. 删除关注关系
+    await conn.execute("DELETE FROM user_follows WHERE follower_id = ? OR following_id = ?", [userId, userId]);
 
-  // 删除用户通知
-  await safeQuery("DELETE FROM notifications WHERE user_id = ?", [userId]);
+    // 11. 删除用户通知
+    await conn.execute("DELETE FROM notifications WHERE user_id = ?", [userId]);
 
-  // 合集改为匿名（保留其他用户可能收藏的合集）
-  await safeQuery(
-    "UPDATE collections SET user_id = NULL WHERE user_id = ?",
-    [userId]
-  );
+    // 12. 合集改为匿名
+    await conn.execute(
+      "UPDATE collections SET user_id = NULL WHERE user_id = ?",
+      [userId]
+    );
 
-  // 注意：保留用户上传的图片（其他用户可能已收藏）
-  // 图片的 uploaded_by 保持不变
-
-  // 记录操作日志
-  await query(
-    `INSERT INTO account_deletion_logs (user_id, action, details) VALUES (?, 'completed', ?)`,
-    [userId, JSON.stringify({
-      originalName,
-      originalEmail,
-      completedAt: new Date().toISOString(),
-    })]
-  );
+    // 13. 记录操作日志
+    await conn.execute(
+      `INSERT INTO account_deletion_logs (user_id, action, details) VALUES (?, 'completed', ?)`,
+      [userId, JSON.stringify({
+        originalName,
+        originalEmail,
+        completedAt: new Date().toISOString(),
+      })]
+    );
+  });
 }
 
 /**
