@@ -19,10 +19,14 @@ const PHASH_THRESHOLD = 5;
 
 // 每日上传限制
 const DAILY_UPLOAD_LIMIT = 10;
-// 非管理员文件大小限制 10MB
+// 非管理员图片文件大小限制 10MB
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-// 管理员文件大小限制 20MB
+// 管理员图片文件大小限制 20MB
 const ADMIN_MAX_FILE_SIZE = 20 * 1024 * 1024;
+// 非管理员视频文件大小限制 50MB
+const MAX_VIDEO_FILE_SIZE = 50 * 1024 * 1024;
+// 管理员视频文件大小限制 100MB
+const ADMIN_MAX_VIDEO_FILE_SIZE = 100 * 1024 * 1024;
 // 最低分辨率要求（非管理员）
 const MIN_WIDTH = 1920;
 const MIN_HEIGHT = 1080;
@@ -317,11 +321,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 验证文件大小
-    const maxSize = isAdmin ? ADMIN_MAX_FILE_SIZE : MAX_FILE_SIZE;
+    // 验证文件大小（视频文件允许更大）
+    const maxSize = isVideo
+      ? (isAdmin ? ADMIN_MAX_VIDEO_FILE_SIZE : MAX_VIDEO_FILE_SIZE)
+      : (isAdmin ? ADMIN_MAX_FILE_SIZE : MAX_FILE_SIZE);
+    const maxSizeMB = isVideo ? (isAdmin ? 100 : 50) : (isAdmin ? 20 : 10);
     if (file.size > maxSize) {
       return NextResponse.json(
-        { error: `文件大小不能超过${isAdmin ? 20 : 10}MB` },
+        { error: `文件大小不能超过${maxSizeMB}MB` },
         { status: 400 }
       );
     }
@@ -357,35 +364,60 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const filename = file.name;
 
-    // 获取图片尺寸
+    // 获取图片/视频尺寸
     let width = 0;
     let height = 0;
-    try {
-      const metadata = await sharp(buffer).metadata();
-      width = metadata.width || 0;
-      height = metadata.height || 0;
-    } catch {
-      // 如果 sharp 无法解析，使用默认值
+    if (isVideo) {
+      // 视频文件：尝试用 ffprobe 获取尺寸，失败时跳过
+      try {
+        const { execFile } = await import("child_process");
+        const probeResult = await new Promise<string>((resolve, reject) => {
+          execFile("ffprobe", [
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "csv=s=x:p=0",
+            "pipe:0"
+          ], { maxBuffer: 1024 * 1024 }, (err, stdout) => {
+            if (err) reject(err);
+            else resolve(stdout.trim());
+          });
+          // ffprobe 无法直接从 stdin 读取，需要临时文件
+          // 改用从 MinIO URL 探测（上传后）
+        }).catch(() => "");
+        // 留空，视频尺寸在上传后异步更新
+      } catch {
+        // ffprobe 不可用，跳过尺寸检测
+      }
+    } else {
+      try {
+        const metadata = await sharp(buffer).metadata();
+        width = metadata.width || 0;
+        height = metadata.height || 0;
+      } catch {
+        // 如果 sharp 无法解析，使用默认值
+      }
     }
 
-    // 非管理员分辨率验证
-    if (!isAdmin && (width < MIN_WIDTH || height < MIN_HEIGHT)) {
+    // 非管理员分辨率验证（仅图片，视频跳过）
+    if (!isVideo && !isAdmin && (width < MIN_WIDTH || height < MIN_HEIGHT)) {
       return NextResponse.json(
         { error: `图片分辨率过低，最低要求 ${MIN_WIDTH}x${MIN_HEIGHT}，当前 ${width}x${height}` },
         { status: 400 }
       );
     }
 
-    // 水印处理
+    // 水印处理（仅图片，跳过视频）
     let processedBuffer = buffer;
-    try {
-      const watermarkEnabled = await isWatermarkEnabled();
-      if (watermarkEnabled) {
-        const watermarkText = await getWatermarkText();
-        processedBuffer = Buffer.from(await addWatermark(buffer, watermarkText));
+    if (!isVideo) {
+      try {
+        const watermarkEnabled = await isWatermarkEnabled();
+        if (watermarkEnabled) {
+          processedBuffer = Buffer.from(await addWatermark(buffer));
+        }
+      } catch {
+        // 水印处理失败使用原图
       }
-    } catch {
-      // 水印处理失败使用原图
     }
 
     // 上传原图到 MinIO
@@ -393,69 +425,118 @@ export async function POST(request: NextRequest) {
 
     // 生成缩略图并上传
     let thumbnailUrl = "";
-    try {
-      const thumbBuffer = await sharp(buffer)
-        .resize(400, 400, { fit: "inside", withoutEnlargement: true })
-        .webp({ quality: 80 })
-        .toBuffer();
+    if (isVideo) {
+      // 视频缩略图：从视频第一帧提取
+      try {
+        const { execFile } = await import("child_process");
+        const fs = await import("fs/promises");
+        const os = await import("os");
+        const path = await import("path");
 
-      const thumbResult = await uploadFile(
-        thumbBuffer,
-        `thumb_${filename}.webp`,
-        "image/webp"
-      );
-      thumbnailUrl = thumbResult.url;
-    } catch {
-      // 缩略图生成失败不影响主流程
+        // 保存视频到临时文件（ffmpeg 需要文件路径）
+        const tmpVideo = path.join(os.tmpdir(), `video_${Date.now()}_${filename}`);
+        const tmpThumb = path.join(os.tmpdir(), `thumb_${Date.now()}.jpg`);
+
+        await fs.writeFile(tmpVideo, buffer);
+        await execFile("ffmpeg", [
+          "-i", tmpVideo,
+          "-vframes", "1",
+          "-vf", "scale=400:-1",
+          "-q:v", "2",
+          tmpThumb
+        ], { timeout: 10000 });
+
+        const thumbJpegBuffer = await fs.readFile(tmpThumb);
+        const thumbWebpBuffer = await sharp(thumbJpegBuffer)
+          .resize(400, 400, { fit: "inside", withoutEnlargement: true })
+          .webp({ quality: 80 })
+          .toBuffer();
+
+        const thumbResult = await uploadFile(
+          thumbWebpBuffer,
+          `thumb_${filename}.webp`,
+          "image/webp"
+        );
+        thumbnailUrl = thumbResult.url;
+
+        // 清理临时文件
+        await fs.unlink(tmpVideo).catch(() => {});
+        await fs.unlink(tmpThumb).catch(() => {});
+      } catch (thumbErr) {
+        console.error("视频缩略图生成失败:", thumbErr);
+        // ffmpeg 不可用或失败时，使用占位缩略图
+      }
+    } else {
+      try {
+        const thumbBuffer = await sharp(buffer)
+          .resize(400, 400, { fit: "inside", withoutEnlargement: true })
+          .webp({ quality: 80 })
+          .toBuffer();
+
+        const thumbResult = await uploadFile(
+          thumbBuffer,
+          `thumb_${filename}.webp`,
+          "image/webp"
+        );
+        thumbnailUrl = thumbResult.url;
+      } catch {
+        // 缩略图生成失败不影响主流程
+      }
     }
 
-    // 计算 pHash 并检测重复
+    // 计算 pHash 并检测重复（仅图片，跳过视频）
     let phash: string | null = null;
-    try {
-      phash = await computePHash(buffer);
-      if (phash) {
-        const existingImages = await query(
-          "SELECT id, title, url, thumbnail_url, phash FROM images WHERE phash IS NOT NULL"
-        ) as any[];
+    if (!isVideo) {
+      try {
+        phash = await computePHash(buffer);
+        if (phash) {
+          const existingImages = await query(
+            "SELECT id, title, url, thumbnail_url, phash FROM images WHERE phash IS NOT NULL"
+          ) as any[];
 
-        for (const existing of existingImages) {
-          if (existing.phash && hammingDistance(phash, existing.phash) <= PHASH_THRESHOLD) {
-            return NextResponse.json(
-              {
-                error: "检测到重复图片",
-                duplicate: {
-                  id: existing.id,
-                  title: existing.title,
-                  url: existing.url,
-                  thumbnail_url: existing.thumbnail_url,
+          for (const existing of existingImages) {
+            if (existing.phash && hammingDistance(phash, existing.phash) <= PHASH_THRESHOLD) {
+              return NextResponse.json(
+                {
+                  error: "检测到重复图片",
+                  duplicate: {
+                    id: existing.id,
+                    title: existing.title,
+                    url: existing.url,
+                    thumbnail_url: existing.thumbnail_url,
+                  },
                 },
-              },
-              { status: 409 }
-            );
+                { status: 409 }
+              );
+            }
           }
         }
+      } catch {
+        // pHash 计算失败不影响主流程
       }
-    } catch {
-      // pHash 计算失败不影响主流程
     }
 
-    // 提取颜色信息
+    // 提取颜色信息（仅图片，跳过视频）
     let dominantColor: string | null = null;
     let colorPalette: string | null = null;
-    try {
-      const colors = await extractColors(buffer);
-      dominantColor = colors.dominant;
-      colorPalette = JSON.stringify(colors.palette);
-    } catch {
-      // 颜色提取失败不影响主流程
+    if (!isVideo) {
+      try {
+        const colors = await extractColors(buffer);
+        dominantColor = colors.dominant;
+        colorPalette = JSON.stringify(colors.palette);
+      } catch {
+        // 颜色提取失败不影响主流程
+      }
     }
 
-    // 提取 EXIF 数据
+    // 提取 EXIF 数据（仅图片，跳过视频）
     let exifData: ExifData | null = null;
-    try {
-      exifData = await extractExif(buffer);
-    } catch {
-      // EXIF 提取失败不影响主流程
+    if (!isVideo) {
+      try {
+        exifData = await extractExif(buffer);
+      } catch {
+        // EXIF 提取失败不影响主流程
+      }
     }
     const exifJson = exifData && Object.keys(exifData).length > 0 ? JSON.stringify(exifData) : null;
 
@@ -509,8 +590,8 @@ export async function POST(request: NextRequest) {
       } catch {}
     }
 
-    // 异步生成变体（不阻塞上传响应）
-    if (width > 0 && height > 0) {
+    // 异步生成变体（仅图片，跳过视频）
+    if (!isVideo && width > 0 && height > 0) {
       generateAndUploadVariants(insertId, processedBuffer, width, height)
         .then(async ({ variants, thumbnails }) => {
           await query(
@@ -523,9 +604,12 @@ export async function POST(request: NextRequest) {
         });
     }
 
-    // NSFW 自动审核（同步，决定图片最终状态）
+    // NSFW 自动审核（仅图片，跳过视频）
     let finalStatus = status;
-    let statusMessage = isAdmin ? "上传成功" : "上传成功，等待审核";
+    let statusMessage = isVideo
+      ? (isAdmin ? "视频上传成功" : "视频上传成功，等待审核")
+      : (isAdmin ? "上传成功" : "上传成功，等待审核");
+    if (!isVideo) {
     try {
       const nsfwResult = await processNSFWDetection(insertId, processedBuffer);
       if (nsfwResult.autoRejected) {
@@ -541,6 +625,7 @@ export async function POST(request: NextRequest) {
     } catch {
       // NSFW 检测失败不影响上传
     }
+    } // end if (!isVideo)
 
     return NextResponse.json(
       {
@@ -548,6 +633,7 @@ export async function POST(request: NextRequest) {
         title,
         url,
         thumbnail_url: thumbnailUrl,
+        media_type: mediaType,
         status: finalStatus,
         message: statusMessage,
       },

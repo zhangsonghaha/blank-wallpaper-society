@@ -227,6 +227,7 @@ export async function checkIpRateLimit(ipAddress: string): Promise<{
 
 /**
  * 通过API Key哈希查找Key信息
+ * 包含过期检查：过期Key自动标记为不活跃
  */
 export async function findApiKeyByKey(rawKey: string): Promise<{
   id: number;
@@ -240,12 +241,22 @@ export async function findApiKeyByKey(rawKey: string): Promise<{
   const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
 
   const rows = (await query(
-    "SELECT id, user_id, key_prefix, name, rate_limit, is_active FROM api_keys WHERE key_hash = ?",
+    "SELECT id, user_id, key_prefix, name, rate_limit, is_active, expires_at FROM api_keys WHERE key_hash = ?",
     [keyHash]
   )) as any[];
 
   if (rows.length === 0) return null;
-  return rows[0];
+
+  const key = rows[0];
+
+  // 检查是否已过期
+  if (key.expires_at && new Date(key.expires_at) < new Date()) {
+    // 异步标记为不活跃
+    query("UPDATE api_keys SET is_active = 0 WHERE id = ?", [key.id]).catch(() => {});
+    return { ...key, is_active: false };
+  }
+
+  return key;
 }
 
 /**

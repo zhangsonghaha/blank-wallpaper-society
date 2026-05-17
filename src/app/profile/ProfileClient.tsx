@@ -459,6 +459,7 @@ export default function ProfileClient({
   const [createKeyOpen, setCreateKeyOpen] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyLimit, setNewKeyLimit] = useState(1000);
+  const [newKeyExpiry, setNewKeyExpiry] = useState(90); // 默认90天
   const [creatingKey, setCreatingKey] = useState(false);
   const [newKeyResult, setNewKeyResult] = useState<any>(null);
   const [copiedKey, setCopiedKey] = useState(false);
@@ -1038,6 +1039,47 @@ export default function ProfileClient({
                 </form>
               </div>
 
+              {/* Data Export - GDPR */}
+              <Separator />
+              <div className="px-6 md:px-8 py-6">
+                <h2 className="text-lg font-semibold text-[var(--color-ink)] mb-4 flex items-center gap-2">
+                  <Download className="w-5 h-5" />
+                  数据导出
+                </h2>
+                <p className="text-sm text-[var(--color-mute)] mb-4">
+                  根据 GDPR 数据可携带权，您可以导出所有个人数据。导出文件为 JSON 格式，包含您的个人信息、上传图片、收藏、评论、下载历史等。
+                </p>
+                <Button
+                  onClick={async () => {
+                    try {
+                      toast.loading("正在准备导出数据...");
+                      const res = await fetch("/api/user/export");
+                      if (res.ok) {
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `data_export_${new Date().toISOString().slice(0, 10)}.json`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                        toast.success("数据导出成功");
+                      } else {
+                        const data = await res.json();
+                        toast.error(data.error || "导出失败");
+                      }
+                    } catch {
+                      toast.error("导出失败，请重试");
+                    }
+                  }}
+                  className="rounded-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)] gap-1"
+                >
+                  <Download className="w-4 h-4" />
+                  导出我的数据
+                </Button>
+              </div>
+
               {/* Account Deletion - 危险区域 */}
               <Separator />
               <div className="px-6 md:px-8 py-6">
@@ -1232,6 +1274,7 @@ export default function ProfileClient({
                           onClick={() => {
                             setNewKeyName("");
                             setNewKeyLimit(1000);
+                            setNewKeyExpiry(90);
                             setNewKeyResult(null);
                             setCreateKeyOpen(true);
                           }}
@@ -1259,20 +1302,30 @@ export default function ProfileClient({
                                       <span className="font-medium text-sm text-[var(--color-ink)]">{key.name}</span>
                                       <Badge
                                         className={`rounded-full text-[10px] ${
-                                          key.is_active
-                                            ? "bg-emerald-100 text-emerald-700"
-                                            : "bg-gray-100 text-gray-500"
+                                          key.is_expired
+                                            ? "bg-red-100 text-red-700"
+                                            : key.is_active
+                                              ? "bg-emerald-100 text-emerald-700"
+                                              : "bg-gray-100 text-gray-500"
                                         }`}
                                       >
-                                        {key.is_active ? "启用" : "禁用"}
+                                        {key.is_expired ? "已过期" : key.is_active ? "启用" : "禁用"}
                                       </Badge>
                                     </div>
                                     <div className="flex items-center gap-3 text-xs text-[var(--color-mute)]">
-                                      <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">{key.key_prefix}••••••</span>
+                                      <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">{key.key_preview || `${key.key_prefix}****`}</span>
                                       <span>限额: {key.rate_limit}/天</span>
                                       <span>今日: {key.usage?.today || 0}</span>
                                       <span>7天: {key.usage?.last7days || 0}</span>
                                     </div>
+                                    {key.expires_at && (
+                                      <p className={`text-[10px] mt-1 ${key.is_expired ? "text-red-500 font-medium" : "text-[var(--color-mute)]"}`}>
+                                        {key.is_expired ? "已过期" : "过期时间"}: {new Date(key.expires_at).toLocaleString("zh-CN")}
+                                      </p>
+                                    )}
+                                    {!key.expires_at && (
+                                      <p className="text-[10px] text-[var(--color-mute)] mt-1">永不过期</p>
+                                    )}
                                     {key.last_used_at && (
                                       <p className="text-[10px] text-[var(--color-mute)] mt-1">
                                         最后使用: {new Date(key.last_used_at).toLocaleString("zh-CN")}
@@ -1673,6 +1726,22 @@ export default function ProfileClient({
                         />
                         <p className="text-xs text-[var(--color-mute)] mt-1">默认 1000 次/天，最大 100000</p>
                       </div>
+                      <div>
+                        <Label className="mb-1.5 block">有效期</Label>
+                        <select
+                          value={newKeyExpiry}
+                          onChange={(e) => setNewKeyExpiry(parseInt(e.target.value))}
+                          className="w-full rounded-xl border border-[var(--color-hairline)] bg-transparent px-3 py-2 text-sm"
+                        >
+                          <option value={30}>30 天</option>
+                          <option value={60}>60 天</option>
+                          <option value={90}>90 天（默认）</option>
+                          <option value={180}>180 天</option>
+                          <option value={365}>1 年</option>
+                          <option value={0}>永不过期</option>
+                        </select>
+                        <p className="text-xs text-[var(--color-mute)] mt-1">Key 过期后将自动禁用，0 表示永不过期</p>
+                      </div>
                     </div>
                   )}
                   <DialogFooter>
@@ -1709,7 +1778,7 @@ export default function ProfileClient({
                               const res = await fetch("/api/api-keys", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json", ...csrfHeaders },
-                                body: JSON.stringify({ name: newKeyName, rate_limit: newKeyLimit }),
+                                body: JSON.stringify({ name: newKeyName, rate_limit: newKeyLimit, expires_in_days: newKeyExpiry }),
                               });
                               const data = await res.json();
                               if (res.ok) {

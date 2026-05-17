@@ -107,8 +107,7 @@ export async function POST(request: NextRequest) {
         try {
           const watermarkEnabled = await isWatermarkEnabled();
           if (watermarkEnabled) {
-            const watermarkText = await getWatermarkText();
-            processedBuffer = Buffer.from(await addWatermark(buffer, watermarkText));
+            processedBuffer = Buffer.from(await addWatermark(buffer, { text: await getWatermarkText() }));
           }
         } catch {}
 

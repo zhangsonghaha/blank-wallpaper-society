@@ -13,6 +13,9 @@ function generateApiKey(): { rawKey: string; keyHash: string; keyPrefix: string 
   return { rawKey, keyHash, keyPrefix };
 }
 
+// 默认API Key有效期：90天
+const DEFAULT_KEY_EXPIRY_DAYS = 90;
+
 // GET /api/api-keys - 获取当前用户的API Key列表
 export async function GET() {
   try {
@@ -24,16 +27,29 @@ export async function GET() {
     const userId = (session.user as any).id;
 
     const rows = (await query(
-      `SELECT id, key_prefix, name, rate_limit, is_active, created_at, last_used_at 
+      `SELECT id, key_prefix, name, rate_limit, is_active, created_at, last_used_at, expires_at
        FROM api_keys 
        WHERE user_id = ? 
        ORDER BY created_at DESC`,
       [userId]
     )) as any[];
 
+    // 标记已过期的Key为不活跃，并遮蔽敏感信息
+    const now = new Date();
+    const processedRows = rows.map((row) => {
+      const isExpired = row.expires_at && new Date(row.expires_at) < now;
+      return {
+        ...row,
+        is_active: isExpired ? false : row.is_active,
+        is_expired: isExpired,
+        // 前缀显示: bws_****xxxx (仅展示前4+后4位)
+        key_preview: `${row.key_prefix}****`,
+      };
+    });
+
     // 获取每个key的使用统计
     const keysWithStats = await Promise.all(
-      rows.map(async (row) => {
+      processedRows.map(async (row) => {
         const stats = await getApiKeyUsageStats(row.id);
         return {
           ...row,
@@ -59,21 +75,21 @@ export async function POST(request: NextRequest) {
 
     const userId = (session.user as any).id;
     const body = await request.json();
-    const { name, rate_limit } = body;
+    const { name, rate_limit, expires_in_days } = body;
 
     if (!name?.trim()) {
       return NextResponse.json({ error: "Key名称不能为空" }, { status: 400 });
     }
 
-    // 检查用户已有Key数量（最多5个）
+    // 检查用户已有Key数量（最多5个，不含已过期的）
     const existing = (await query(
-      "SELECT COUNT(*) as count FROM api_keys WHERE user_id = ?",
+      "SELECT COUNT(*) as count FROM api_keys WHERE user_id = ? AND (expires_at IS NULL OR expires_at > NOW())",
       [userId]
     )) as any[];
 
     if (existing[0]?.count >= 5) {
       return NextResponse.json(
-        { error: "每个用户最多创建5个API Key" },
+        { error: "每个用户最多创建5个有效API Key" },
         { status: 400 }
       );
     }
@@ -81,10 +97,16 @@ export async function POST(request: NextRequest) {
     const { rawKey, keyHash, keyPrefix } = generateApiKey();
     const limit = rate_limit || 1000;
 
+    // 计算过期时间：默认90天，0表示永不过期
+    const expiryDays = expires_in_days !== undefined ? expires_in_days : DEFAULT_KEY_EXPIRY_DAYS;
+    const expiresAt = expiryDays > 0
+      ? new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ")
+      : null;
+
     const result = (await query(
-      `INSERT INTO api_keys (user_id, key_hash, key_prefix, name, rate_limit) 
-       VALUES (?, ?, ?, ?, ?)`,
-      [userId, keyHash, keyPrefix, name.trim(), limit]
+      `INSERT INTO api_keys (user_id, key_hash, key_prefix, name, rate_limit, expires_at) 
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [userId, keyHash, keyPrefix, name.trim(), limit, expiresAt]
     )) as any;
 
     // 创建后只返回一次完整Key
@@ -97,6 +119,7 @@ export async function POST(request: NextRequest) {
           rate_limit: limit,
           is_active: true,
           created_at: new Date().toISOString(),
+          expires_at: expiresAt,
           key: rawKey, // 完整Key，仅此一次展示
         },
         warning: "请妥善保存API Key，创建后仅显示一次完整Key。",

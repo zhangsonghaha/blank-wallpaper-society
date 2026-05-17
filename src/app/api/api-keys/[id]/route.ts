@@ -53,7 +53,7 @@ export async function PATCH(
     const userId = (session.user as any).id;
     const { id } = await params;
     const body = await request.json();
-    const { name, rate_limit, is_active } = body;
+    const { name, rate_limit, is_active, expires_in_days } = body;
 
     // 确认Key属于当前用户
     const rows = (await query(
@@ -89,6 +89,14 @@ export async function PATCH(
       updates.push("is_active = ?");
       values.push(is_active ? 1 : 0);
     }
+    if (expires_in_days !== undefined) {
+      // expires_in_days: 0=永不过期, >0=从现在起N天后
+      const expiresAt = expires_in_days > 0
+        ? new Date(Date.now() + expires_in_days * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ")
+        : null;
+      updates.push("expires_at = ?");
+      values.push(expiresAt);
+    }
 
     if (updates.length === 0) {
       return NextResponse.json({ error: "没有需要更新的字段" }, { status: 400 });
@@ -102,7 +110,7 @@ export async function PATCH(
 
     // 返回更新后的数据
     const updated = (await query(
-      "SELECT id, key_prefix, name, rate_limit, is_active, created_at, last_used_at FROM api_keys WHERE id = ?",
+      "SELECT id, key_prefix, name, rate_limit, is_active, created_at, last_used_at, expires_at FROM api_keys WHERE id = ?",
       [id]
     )) as any[];
 

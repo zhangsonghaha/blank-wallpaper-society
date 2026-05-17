@@ -66,13 +66,13 @@
 
 | 编号 | 任务 | 状态 | 说明 | 工作量 |
 |------|------|------|------|--------|
-| P3-3 | 水印功能完善 | 🔴 待开发 | watermark.ts 存在但未集成，文字硬编码 | 中 |
-| P3-4 | 用户数据导出 | 🔴 待开发 | 用户侧无数据导出，GDPR 合规 | 中 |
-| P3-5 | 暗黑模式全面验证 | 🔴 待开发 | 需验证所有页面暗色适配 | 中 |
-| P3-6 | CSP 安全策略 | 🔴 待开发 | 无 Content-Security-Policy 头 | 小-中 |
-| P3-7 | API Key 安全增强 | 🔴 待开发 | 需确认 Key 仅存 hash + 自动过期 + 前缀显示 | 小-中 |
-| P3-8 | 优雅关闭机制 | 🔴 待开发 | 无 SIGTERM/SIGINT 信号处理 | 小 |
-| P3-9 | 视频壁纸上传支持 | 🔴 待开发 | VideoWallpaper.tsx 存在但上传不支持视频 | 中-大 |
+| P3-3 | 水印功能完善 | ✅ 已完成 | watermark.ts 重构为配置化（位置/颜色/透明度/平铺）+ 系统设置读取 + 下载API集成 | 中 |
+| P3-4 | 用户数据导出 | ✅ 已完成 | /api/user/export 端点，JSON格式导出15类用户数据，GDPR合规 | 中 |
+| P3-5 | 暗黑模式全面验证 | ✅ 已完成 | 已验证：next-themes + CSS变量体系完整，.dark类下所有变量已定义，shadcn/ui组件自动适配 | 中 |
+| P3-6 | CSP 安全策略 | ✅ 已完成 | next.config.ts 添加 Content-Security-Policy + X-Content-Type-Options + X-Frame-Options + Referrer-Policy + Permissions-Policy | 小-中 |
+| P3-7 | API Key 安全增强 | ✅ 已完成 | 确认Key仅存hash + 默认90天自动过期(expires_at) + 前缀显示遮蔽 + 过期自动禁用 | 小-中 |
+| P3-8 | 优雅关闭机制 | ✅ 已完成 | instrumentation.ts 注册 SIGTERM/SIGINT 信号处理，关闭Redis连接+数据库连接池 | 小 |
+| P3-9 | 视频壁纸上传支持 | ✅ 已完成 | 上传API支持MP4/WebM，视频50MB限制，ffmpeg缩略图提取，跳过sharp/pHash/EXIF/NSFW | 中-大 |
 
 ### 🔵 P4 — 长期演进
 

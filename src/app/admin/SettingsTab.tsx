@@ -107,8 +107,34 @@ const settingGroups: SettingGroup[] = [
     icon: Paintbrush,
     description: "图片水印保护配置",
     fields: [
-      { key: "watermark_enabled", label: "启用水印", type: "toggle", description: "开启后预览图将自动叠加水印" },
-      { key: "watermark_text", label: "水印文字", type: "text", placeholder: "输入水印文字" },
+      { key: "watermark_enabled", label: "启用水印", type: "toggle", description: "开启后下载图片时将自动叠加水印" },
+      { key: "watermark_text", label: "水印文字", type: "text", placeholder: "输入水印文字", description: "显示在图片上的水印文字内容" },
+      {
+        key: "watermark_position",
+        label: "水印位置",
+        type: "select",
+        description: "水印在图片上的显示位置",
+        options: [
+          { value: "bottom-right", label: "右下角" },
+          { value: "bottom-left", label: "左下角" },
+          { value: "top-right", label: "右上角" },
+          { value: "top-left", label: "左上角" },
+          { value: "center", label: "居中" },
+        ],
+      },
+      { key: "watermark_opacity", label: "水印透明度", type: "number", description: "0-1 之间，值越小越透明（推荐 0.15）", placeholder: "0.15" },
+      {
+        key: "watermark_color",
+        label: "水印颜色",
+        type: "select",
+        description: "水印文字颜色",
+        options: [
+          { value: "white", label: "白色" },
+          { value: "black", label: "黑色" },
+          { value: "gray", label: "灰色" },
+        ],
+      },
+      { key: "watermark_tiled", label: "平铺防盗水印", type: "toggle", description: "开启后在图片中央区域添加旋转平铺的半透明水印，防止裁切盗用" },
     ],
   },
   {

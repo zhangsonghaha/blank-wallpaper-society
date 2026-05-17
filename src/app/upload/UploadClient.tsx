@@ -51,8 +51,11 @@ const CATEGORIES = [
   { value: "minimal", label: "极简" },
 ];
 
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/webm"];
+const ALLOWED_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB 图片
+const MAX_VIDEO_FILE_SIZE = 50 * 1024 * 1024; // 50MB 视频
 const MIN_WIDTH = 1920;
 const MIN_HEIGHT = 1080;
 const DAILY_LIMIT = 10;
@@ -122,11 +125,14 @@ export default function UploadClient() {
   });
 
   const validateFile = (file: File): { valid: boolean; error?: string } => {
+    const isVideo = ALLOWED_VIDEO_TYPES.includes(file.type);
     if (!ALLOWED_TYPES.includes(file.type)) {
-      return { valid: false, error: "不支持的文件类型，仅支持 JPEG、PNG、WebP" };
+      return { valid: false, error: "不支持的文件类型，仅支持 JPEG、PNG、WebP、MP4、WebM" };
     }
-    if (file.size > MAX_FILE_SIZE) {
-      return { valid: false, error: "文件大小超过10MB限制" };
+    const maxSize = isVideo ? MAX_VIDEO_FILE_SIZE : MAX_FILE_SIZE;
+    const maxSizeMB = isVideo ? 50 : 10;
+    if (file.size > maxSize) {
+      return { valid: false, error: `文件大小超过${maxSizeMB}MB限制` };
     }
     return { valid: true };
   };
@@ -499,9 +505,9 @@ export default function UploadClient() {
               <div className="text-sm">
                 <p className="font-medium text-blue-700 dark:text-blue-400 mb-1">上传须知</p>
                 <ul className="text-blue-600 dark:text-blue-300 space-y-0.5 list-disc list-inside">
-                  <li>支持格式：JPEG、PNG、WebP</li>
-                  <li>文件大小：最大10MB</li>
-                  <li>分辨率要求：最低 1920x1080</li>
+                  <li>支持格式：JPEG、PNG、WebP、MP4、WebM（动态壁纸）</li>
+                  <li>文件大小：图片最大10MB，视频最大50MB</li>
+                  <li>分辨率要求：图片最低 1920x1080</li>
                   {!isAdmin && (
                     <li>
                       每日限额：{todayCount}/{DAILY_LIMIT} 张（今日已用/总额）
@@ -539,7 +545,7 @@ export default function UploadClient() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
               multiple
               className="hidden"
               onChange={handleFileInput}

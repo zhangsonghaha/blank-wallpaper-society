@@ -57,6 +57,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 
@@ -277,9 +278,10 @@ export default function UsersTab() {
     if (!roleTarget || !newRole) return;
     setRoleSaving(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/admin/users/${roleTarget.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ role: newRole }),
       });
       const data = await res.json();
@@ -304,9 +306,10 @@ export default function UsersTab() {
     setBanSaving(true);
     try {
       const isBanned = banTarget.status === "banned" || banTarget.status === "suspended";
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/admin/users/${banTarget.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({
           status: isBanned ? "active" : "suspended",
           bannedReason: banReason || undefined,
@@ -339,9 +342,10 @@ export default function UsersTab() {
     if (!deleteTarget) return;
     setDeleteSaving(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/admin/users/${deleteTarget.id}/account-deletion`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({
           reason: `管理员删除用户 ${deleteTarget.name}`,
         }),
@@ -372,9 +376,10 @@ export default function UsersTab() {
     }
     setResetPwdSaving(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/admin/users/${resetPwdTarget.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ resetPassword: resetPwdValue }),
       });
       const data = await res.json();

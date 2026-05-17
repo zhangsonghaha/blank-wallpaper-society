@@ -4,6 +4,7 @@ import { getObject, objectExists, putBuffer, getPublicUrl } from "@/lib/minio";
 import { getResizedKey, RESOLUTION_MAP } from "@/lib/resolutions";
 import { addExp, checkAchievements } from "@/lib/user-level";
 import { findBestVariantForResolution, VariantInfo } from "@/lib/image-variants";
+import { isWatermarkEnabled, addWatermark } from "@/lib/watermark";
 import sharp from "sharp";
 
 // GET /api/images/[id]/download?resolution=1920x1080 - 下载指定分辨率的图片
@@ -116,6 +117,18 @@ export async function GET(
       mimeType = image.mime_type || "image/jpeg";
       const ext = mimeType.split("/")[1] || "jpg";
       fileName = `${image.title || "image"}.${ext}`;
+    }
+
+    // 添加水印（仅图片，跳过视频；仅非原始分辨率下载时添加水印）
+    if (!isVideo && resolution) {
+      try {
+        const watermarkEnabled = await isWatermarkEnabled();
+        if (watermarkEnabled) {
+          buffer = await addWatermark(buffer);
+        }
+      } catch (wmErr) {
+        console.error("水印处理失败，返回原图:", wmErr);
+      }
     }
 
     // 返回文件流
