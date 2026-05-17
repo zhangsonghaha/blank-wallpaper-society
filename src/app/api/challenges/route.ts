@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     }
 
     sql += ` ORDER BY c.created_at DESC LIMIT ? OFFSET ?`;
-    params.push(String(limit), String(offset));
+    params.push(limit, offset);
 
     // 自动流转状态：draft → active → ended
     const now = new Date();

@@ -71,6 +71,20 @@ export default function CommentSection({
     }
   }, [isOpen, imageId, fetchComments]);
 
+  // ESC 关闭
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKey, true);
+    return () => window.removeEventListener("keydown", handleKey, true);
+  }, [isOpen, onClose]);
+
   const handleSubmit = async () => {
     if (status !== "authenticated") {
       toast.error("请先登录");
@@ -135,7 +149,7 @@ export default function CommentSection({
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 40 }}
           transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-          className="fixed right-0 top-0 bottom-0 w-full sm:w-[400px] bg-white shadow-2xl z-[120] flex flex-col"
+          className="fixed right-0 top-0 bottom-0 w-full sm:w-[400px] bg-white shadow-2xl z-[101] flex flex-col"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-hairline)]">

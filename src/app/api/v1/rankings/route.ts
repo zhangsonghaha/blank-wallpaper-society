@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
         ORDER BY i.download_count DESC, i.view_count DESC
         LIMIT ?
       `;
-      rows = (await query(sql, [String(limit)])) as any[];
+      rows = (await query(sql, [limit])) as any[];
     } else {
       const logTable = type === "views" ? "view_logs" : "download_logs";
       const dateCondition = getDateCondition(period);
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
         WHERE i.status = 'approved'
         ORDER BY l.log_count DESC
       `;
-      rows = (await query(sql, [String(limit)])) as any[];
+      rows = (await query(sql, [limit])) as any[];
     }
 
     const rankings = rows.map((row, index) => ({

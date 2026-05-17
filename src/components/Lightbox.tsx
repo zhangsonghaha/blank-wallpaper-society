@@ -153,7 +153,7 @@ export default function Lightbox({
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (!isOpen) return;
-      if (downloadPanelOpen || reportOpen) return;
+      if (downloadPanelOpen || reportOpen || commentOpen || similarOpen) return;
       switch (e.key) {
         case "Escape":
           if (devicePreview) {
@@ -170,7 +170,7 @@ export default function Lightbox({
           break;
       }
     },
-    [isOpen, onClose, onPrev, onNext, downloadPanelOpen, reportOpen, devicePreview]
+    [isOpen, onClose, onPrev, onNext, downloadPanelOpen, reportOpen, commentOpen, similarOpen, devicePreview]
   );
 
   useEffect(() => {
@@ -410,7 +410,15 @@ export default function Lightbox({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-sm"
-          onClick={onClose}
+          onClick={() => {
+            if (commentOpen) {
+              setCommentOpen(false);
+            } else if (similarOpen) {
+              setSimilarOpen(false);
+            } else {
+              onClose();
+            }
+          }}
         >
           {/* Close Button */}
           <button

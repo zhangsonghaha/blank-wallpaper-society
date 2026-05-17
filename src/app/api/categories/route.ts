@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
-// GET /api/categories - 获取分类列表
+// GET /api/categories - 获取分类列表（含图片计数）
 export async function GET() {
   try {
     const rows = await query(
-      "SELECT * FROM categories ORDER BY sort_order ASC"
+      `SELECT c.*, COUNT(i.id) as image_count 
+       FROM categories c 
+       LEFT JOIN images i ON c.slug = i.category AND i.status = 'approved'
+       GROUP BY c.id 
+       ORDER BY c.sort_order ASC`
     );
     return NextResponse.json(rows);
   } catch (error: any) {

@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
        ${where}
        ORDER BY p.created_at DESC
        LIMIT ? OFFSET ?`,
-      [...values, String(limit), String(offset)],
+      [...values, limit, offset],
       []
     )) as any[];
 

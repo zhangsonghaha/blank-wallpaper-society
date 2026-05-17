@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
        WHERE i.description LIKE '%[crawl]%' ${statusCondition}
        ORDER BY i.created_at DESC
        LIMIT ? OFFSET ?`,
-      [...params, String(limit), String(offset)]
+      [...params, limit, offset]
     );
 
     const countResult = await query(

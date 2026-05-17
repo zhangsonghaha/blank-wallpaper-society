@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useSession, signOut } from "next-auth/react";
 import { useSearch } from "@/context/SearchContext";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +35,7 @@ import { getSearchHistory, addSearchHistory, removeSearchHistory, clearSearchHis
 
 export default function Navbar() {
   const router = useRouter();
+  const pathname = usePathname();
   const { data: session, status } = useSession();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
@@ -141,25 +142,33 @@ export default function Navbar() {
             <div className="hidden md:flex items-center gap-1">
               <Link
                 href="/"
-                className="px-4 py-2 text-sm font-semibold text-[var(--color-ink)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors"
+                className={`px-4 py-2 text-sm font-semibold rounded-full hover:bg-[var(--color-surface-card)] transition-colors ${
+                  pathname === "/" ? "bg-[var(--color-surface-card)] text-[var(--color-ink)]" : "text-[var(--color-mute)]"
+                }`}
               >
                 探索
               </Link>
               <Link
                 href="/feed"
-                className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors"
+                className={`px-4 py-2 text-sm font-semibold rounded-full hover:bg-[var(--color-surface-card)] transition-colors ${
+                  pathname === "/feed" ? "bg-[var(--color-surface-card)] text-[var(--color-ink)]" : "text-[var(--color-mute)]"
+                }`}
               >
                 动态
               </Link>
               <Link
                 href="/#popular"
-                className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors"
+                className={`px-4 py-2 text-sm font-semibold rounded-full hover:bg-[var(--color-surface-card)] transition-colors ${
+                  pathname === "/" ? "bg-[var(--color-surface-card)] text-[var(--color-ink)]" : "text-[var(--color-mute)]"
+                }`}
               >
                 热门
               </Link>
               <Link
                 href="/#favorites"
-                className="relative px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors"
+                className={`relative px-4 py-2 text-sm font-semibold rounded-full hover:bg-[var(--color-surface-card)] transition-colors ${
+                  pathname === "/" ? "bg-[var(--color-surface-card)] text-[var(--color-ink)]" : "text-[var(--color-mute)]"
+                }`}
               >
                 收藏
                 {favoriteCount > 0 && (
@@ -170,20 +179,26 @@ export default function Navbar() {
               </Link>
               <Link
                 href="/collections"
-                className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors flex items-center gap-1.5"
+                className={`px-4 py-2 text-sm font-semibold rounded-full hover:bg-[var(--color-surface-card)] transition-colors flex items-center gap-1.5 ${
+                  pathname === "/collections" ? "bg-[var(--color-surface-card)] text-[var(--color-ink)]" : "text-[var(--color-mute)]"
+                }`}
               >
                 <Grid3X3 className="w-4 h-4" />
                 合集
               </Link>
               <Link
                 href="/tags"
-                className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors"
+                className={`px-4 py-2 text-sm font-semibold rounded-full hover:bg-[var(--color-surface-card)] transition-colors ${
+                  pathname === "/tags" ? "bg-[var(--color-surface-card)] text-[var(--color-ink)]" : "text-[var(--color-mute)]"
+                }`}
               >
                 标签
               </Link>
               <Link
                 href="/challenges"
-                className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors flex items-center gap-1.5"
+                className={`px-4 py-2 text-sm font-semibold rounded-full hover:bg-[var(--color-surface-card)] transition-colors flex items-center gap-1.5 ${
+                  pathname === "/challenges" ? "bg-[var(--color-surface-card)] text-[var(--color-ink)]" : "text-[var(--color-mute)]"
+                }`}
               >
                 <Trophy className="w-4 h-4" />
                 挑战赛
@@ -191,7 +206,9 @@ export default function Navbar() {
               {isLoggedIn && (
                 <Link
                   href="/ai-generate"
-                  className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors flex items-center gap-1.5"
+                  className={`px-4 py-2 text-sm font-semibold rounded-full hover:bg-[var(--color-surface-card)] transition-colors flex items-center gap-1.5 ${
+                    pathname === "/ai-generate" ? "bg-[var(--color-surface-card)] text-[var(--color-ink)]" : "text-[var(--color-mute)]"
+                  }`}
                 >
                   <Sparkles className="w-4 h-4" />
                   AI生成
@@ -200,7 +217,9 @@ export default function Navbar() {
               {isLoggedIn && (
                 <Link
                   href="/upload"
-                  className="px-4 py-2 text-sm font-semibold text-[var(--color-mute)] rounded-full hover:bg-[var(--color-surface-card)] transition-colors flex items-center gap-1"
+                  className={`px-4 py-2 text-sm font-semibold rounded-full hover:bg-[var(--color-surface-card)] transition-colors flex items-center gap-1 ${
+                    pathname === "/upload" ? "bg-[var(--color-surface-card)] text-[var(--color-ink)]" : "text-[var(--color-mute)]"
+                  }`}
                 >
                   <Upload className="w-4 h-4" />
                   上传
@@ -497,7 +516,7 @@ export default function Navbar() {
                   </DropdownMenuItem>
 
                   <DropdownMenuItem
-                    onClick={() => router.push("/#favorites")}
+                    onClick={() => router.push("/profile")}
                     className="cursor-pointer"
                   >
                     <Heart className="w-4 h-4 mr-2" />

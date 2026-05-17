@@ -28,13 +28,13 @@ export async function GET(request: NextRequest) {
       `SELECT f.id as favorite_id, f.created_at as favorited_at,
         i.id, i.title, i.description, i.url, i.thumbnail_url, i.width, i.height,
         i.category, i.tags, i.author, i.view_count, i.download_count,
-        i.created_at, i.color, i.storage_key
+        i.created_at, i.dominant_color, i.storage_key
       FROM favorites f
       INNER JOIN images i ON f.image_id = i.id
       WHERE f.user_id = ?
       ORDER BY f.created_at DESC
       LIMIT ? OFFSET ?`,
-      [userId, String(limit), String(offset)]
+      [userId, limit, offset]
     );
 
     return NextResponse.json({

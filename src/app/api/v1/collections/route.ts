@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     const total = countResult[0]?.total || 0;
 
     sql += " LIMIT ? OFFSET ?";
-    params.push(String(limit), String(offset));
+    params.push(limit, offset);
 
     const rows = (await query(sql, params)) as any[];
 

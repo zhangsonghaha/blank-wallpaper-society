@@ -177,19 +177,35 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 获取总数
-    const countWhereClause =
-      (!showAll ? " AND status = 'approved'" : "") +
-      (category && category !== "all" ? " AND category = ?" : "") +
-      (search ? " AND (title LIKE ? OR description LIKE ? OR tags LIKE ?)" : "") +
-      (color ? " AND dominant_color IS NOT NULL" : "");
+    // 获取总数 - 使用独立的参数数组
+    const countParams: any[] = [];
+    let countWhereClause = "";
+    if (!showAll && !myImages) {
+      countWhereClause += " AND status = 'approved'";
+    }
+    if (myImages && myUserId) {
+      countWhereClause += " AND uploaded_by = ?";
+      countParams.push(myUserId);
+    }
+    if (category && category !== "all") {
+      countWhereClause += " AND category = ?";
+      countParams.push(category);
+    }
+    if (search) {
+      countWhereClause += " AND (title LIKE ? OR description LIKE ? OR tags LIKE ?)";
+      const like = `%${search}%`;
+      countParams.push(like, like, like);
+    }
+    if (color) {
+      countWhereClause += " AND dominant_color IS NOT NULL";
+    }
     const countResult = await query(
       `SELECT COUNT(*) as total FROM images WHERE 1=1${countWhereClause}`,
-      params
+      countParams
     );
 
     sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-    params.push(String(limit), String(offset));
+    params.push(limit, offset);
 
     const rows = (await query(sql, params)) as any[];
 

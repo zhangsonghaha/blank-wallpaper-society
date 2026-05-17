@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import PinCard from "./PinCard";
 import FilterChips from "./FilterChips";
@@ -12,6 +13,7 @@ import Link from "next/link";
 import { ChevronRight, Users, Image as ImageIcon, Filter, Sparkles } from "lucide-react";
 import HotRankings from "./HotRankings";
 import RecommendForYou from "./RecommendForYou";
+import { withCsrfHeader } from "@/lib/csrf-client";
 
 interface ExifData {
   camera?: string;
@@ -64,6 +66,7 @@ interface CategoryRecord {
 const ITEMS_PER_PAGE = 12;
 
 export default function MasonryGrid() {
+  const searchParams = useSearchParams();
   const {
     searchQuery,
     setSearchQuery,
@@ -136,6 +139,7 @@ export default function MasonryGrid() {
   // 加载图片
   useEffect(() => {
     setLoading(true);
+    const controller = new AbortController();
     const params = new URLSearchParams();
 
     if (activeColor) {
@@ -162,28 +166,49 @@ export default function MasonryGrid() {
     params.set("limit", "100");
 
     if (activeColor) {
-      fetch(`/api/images/search/color?${params}`)
+      fetch(`/api/images/search/color?${params}`, { signal: controller.signal })
         .then((res) => res.json())
         .then((data) => {
+          if (controller.signal.aborted) return;
           setImages(data.data || []);
           setTotalCount(data.total || 0);
           setVisibleCount(ITEMS_PER_PAGE);
           setLoading(false);
         })
-        .catch(() => setLoading(false));
+        .catch((err) => {
+          if (err.name !== 'AbortError') setLoading(false);
+        });
     } else {
-      fetch(`/api/images?${params}`)
+      fetch(`/api/images?${params}`, { signal: controller.signal })
         .then((res) => res.json())
         .then((data) => {
+          if (controller.signal.aborted) return;
           setImages(data.data || []);
           setTotalCount(data.total || 0);
           setSearchEngine(data._searchEngine || "");
           setVisibleCount(ITEMS_PER_PAGE);
           setLoading(false);
         })
-        .catch(() => setLoading(false));
+        .catch((err) => {
+          if (err.name !== 'AbortError') setLoading(false);
+        });
     }
+
+    return () => controller.abort();
   }, [activeCategory, searchQuery, activeColor, colorThreshold, sortBy, resolutionFilter, dateFilter]);
+
+  // 处理 URL 中的 ?pin= 参数，自动打开灯箱
+  useEffect(() => {
+    const pinId = searchParams.get("pin");
+    if (pinId && images.length > 0 && !lightboxOpen) {
+      const id = parseInt(pinId);
+      const idx = images.findIndex((img) => img.id === id);
+      if (idx >= 0) {
+        setLightboxIndex(idx);
+        setLightboxOpen(true);
+      }
+    }
+  }, [searchParams, images, lightboxOpen]);
 
   // 从API加载初始收藏列表
   useEffect(() => {
@@ -246,7 +271,7 @@ export default function MasonryGrid() {
   const hasMore = visibleCount < filteredImages.length;
 
   // 收藏切换
-  const toggleFavorite = useCallback((id: number) => {
+  const toggleFavorite = useCallback(async (id: number) => {
     const isFav = favorites.has(id);
     // 乐观更新UI
     setFavorites((prev) => {
@@ -255,37 +280,30 @@ export default function MasonryGrid() {
       else next.add(id);
       return next;
     });
-    // 调用favorites API
-    if (isFav) {
-      fetch(`/api/favorites/${id}`, { method: "DELETE" })
-        .then((res) => {
-          if (!res.ok) {
-            // 回滚
-            setFavorites((prev) => new Set(prev).add(id));
-          }
-        })
-        .catch(() => {
-          setFavorites((prev) => new Set(prev).add(id));
+    // 调用favorites API（携带CSRF token）
+    try {
+      const csrfHeaders = await withCsrfHeader();
+      const res = await fetch(`/api/favorites/${id}`, {
+        method: isFav ? "DELETE" : "POST",
+        headers: { ...csrfHeaders },
+      });
+      if (!res.ok) {
+        // 回滚
+        setFavorites((prev) => {
+          const next = new Set(prev);
+          if (isFav) next.add(id);
+          else next.delete(id);
+          return next;
         });
-    } else {
-      fetch(`/api/favorites/${id}`, { method: "POST" })
-        .then((res) => {
-          if (!res.ok) {
-            // 回滚
-            setFavorites((prev) => {
-              const next = new Set(prev);
-              next.delete(id);
-              return next;
-            });
-          }
-        })
-        .catch(() => {
-          setFavorites((prev) => {
-            const next = new Set(prev);
-            next.delete(id);
-            return next;
-          });
-        });
+      }
+    } catch {
+      // 回滚
+      setFavorites((prev) => {
+        const next = new Set(prev);
+        if (isFav) next.add(id);
+        else next.delete(id);
+        return next;
+      });
     }
   }, [favorites]);
 
@@ -438,7 +456,7 @@ export default function MasonryGrid() {
           </p>
 
           {/* 搜索状态提示 */}
-          {(searchQuery || activeColor) && (
+          {(searchQuery || activeColor || activeCategory !== "all") && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -453,6 +471,14 @@ export default function MasonryGrid() {
                     搜索 &ldquo;{searchQuery}&rdquo;
                   </span>
                 </>
+              )}
+              {activeCategory !== "all" && (
+                <span className="inline-flex items-center gap-1.5">
+                  <svg className="w-4 h-4 text-[var(--color-mute)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+                  </svg>
+                  {categories.find(c => c.slug === activeCategory)?.name || activeCategory}
+                </span>
               )}
               {activeColor && (
                 <span className="inline-flex items-center gap-1.5">
@@ -474,6 +500,7 @@ export default function MasonryGrid() {
                 onClick={() => {
                   setSearchQuery("");
                   setActiveColor(null);
+                  setActiveCategory("all");
                 }}
                 className="ml-1 w-5 h-5 flex items-center justify-center rounded-full hover:bg-[var(--color-secondary-bg)] transition-colors"
               >
@@ -516,7 +543,7 @@ export default function MasonryGrid() {
               <svg className="w-4 h-4" fill={showFavoritesOnly ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
               </svg>
-              {showFavoritesOnly ? "查看全部" : `收藏 (${favorites.size})`}
+              {showFavoritesOnly ? `收藏 (${favorites.size})` : "查看全部"}
             </button>
 
             {/* 排序切换 */}
@@ -549,7 +576,7 @@ export default function MasonryGrid() {
         <div ref={favoritesRef} id="favorites" className="scroll-mt-32" />
 
         {/* Featured Collections */}
-        {featuredCollections.length > 0 && !searchQuery && !activeColor && !showFavoritesOnly && (
+        {featuredCollections.length > 0 && !searchQuery && !activeColor && !showFavoritesOnly && activeCategory === "all" && (
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-[var(--color-ink)]">
@@ -604,10 +631,10 @@ export default function MasonryGrid() {
         )}
 
         {/* Hot Rankings - 热门排行 */}
-        {!searchQuery && !activeColor && !showFavoritesOnly && <HotRankings />}
+        {!searchQuery && !activeColor && !showFavoritesOnly && activeCategory === "all" && <HotRankings />}
 
         {/* Recommendations - 猜你喜欢 */}
-        {!searchQuery && !activeColor && !showFavoritesOnly && <RecommendForYou />}
+        {!searchQuery && !activeColor && !showFavoritesOnly && activeCategory === "all" && <RecommendForYou />}
 
         {/* Loading State */}
         {loading ? (
@@ -625,13 +652,7 @@ export default function MasonryGrid() {
             ))}
           </div>
         ) : displayedImages.length > 0 ? (
-          <motion.div
-            key={activeCategory + searchQuery + String(showFavoritesOnly) + sortBy + (activeColor || "")}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-          >
+          <div>
             <div className="flex gap-2 sm:gap-3 md:gap-4">
               {columns.map((col, colIndex) => (
                 <div key={colIndex} className="flex-1 flex flex-col gap-4">
@@ -671,7 +692,7 @@ export default function MasonryGrid() {
                 </div>
               ))}
             </div>
-          </motion.div>
+          </div>
         ) : (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -690,13 +711,13 @@ export default function MasonryGrid() {
               )}
             </div>
             <h3 className="text-xl font-semibold text-[var(--color-ink)] mb-2">
-              {showFavoritesOnly ? "还没有收藏" : (searchQuery || activeColor) ? "没有找到匹配的图片" : "还没有图片"}
+              {showFavoritesOnly ? "还没有收藏" : (searchQuery || activeColor || activeCategory !== "all") ? "没有找到匹配的图片" : "还没有图片"}
             </h3>
             <p className="text-[var(--color-mute)] mb-6">
               {showFavoritesOnly
                 ? "浏览图片时点击收藏按钮添加到收藏夹"
-                : (searchQuery || activeColor)
-                  ? "试试其他关键词、更换颜色或清除搜索条件"
+                : (searchQuery || activeColor || activeCategory !== "all")
+                  ? "试试其他关键词、更换颜色或清除筛选条件"
                   : "去管理后台上传第一张图片吧"}
             </p>
             {showFavoritesOnly ? (
@@ -706,15 +727,16 @@ export default function MasonryGrid() {
               >
                 浏览全部图片
               </button>
-            ) : (searchQuery || activeColor) ? (
+            ) : (searchQuery || activeColor || activeCategory !== "all") ? (
               <button
                 onClick={() => {
                   setSearchQuery("");
                   setActiveColor(null);
+                  setActiveCategory("all");
                 }}
                 className="px-6 py-2.5 bg-[var(--color-primary)] text-white text-sm font-bold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors active:scale-95"
               >
-                清除搜索
+                清除筛选
               </button>
             ) : (
               <a

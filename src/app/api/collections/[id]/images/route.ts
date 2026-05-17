@@ -46,7 +46,7 @@ export async function GET(
       WHERE ci.collection_id = ?
       ORDER BY ci.sort_order ASC, ci.added_at DESC
       LIMIT ? OFFSET ?`,
-      [collectionId, String(limit), String(offset)]
+      [collectionId, limit, offset]
     )) as any[];
 
     return NextResponse.json({

@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
     )) as any[];
 
     sql += " ORDER BY n.created_at DESC LIMIT ? OFFSET ?";
-    params.push(String(limit), String(offset));
+    params.push(limit, offset);
 
     const rows = await query(sql, params);
 

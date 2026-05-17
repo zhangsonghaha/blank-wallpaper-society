@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     const unreadCount = unreadResult[0]?.count || 0;
 
     sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-    params.push(String(limit), String(offset));
+    params.push(limit, offset);
 
     const rows = await query(sql, params);
 

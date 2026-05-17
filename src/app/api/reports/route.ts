@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
        WHERE r.status = ?
        ORDER BY r.created_at DESC
        LIMIT ? OFFSET ?`,
-      [status, String(limit), String(offset)]
+      [status, limit, offset]
     );
 
     return NextResponse.json({

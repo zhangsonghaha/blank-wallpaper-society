@@ -268,7 +268,7 @@ export default function PinCard({
           </Link>
           {/* Tags */}
           <div className="flex flex-wrap gap-1.5 mt-2">
-            {image.tags.slice(0, 2).map((tag) => (
+            {(Array.isArray(image.tags) ? image.tags : []).slice(0, 2).map((tag: string) => (
               <span
                 key={tag}
                 className="text-[10px] font-medium text-[var(--color-mute)] bg-[var(--color-surface-card)] px-2 py-0.5 rounded-full"

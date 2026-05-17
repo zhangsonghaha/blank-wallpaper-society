@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     const total = (countResult as any[])[0]?.total || 0;
 
     sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-    params.push(String(limit), String(offset));
+    params.push(limit, offset);
 
     const rows = await query(sql, params);
 

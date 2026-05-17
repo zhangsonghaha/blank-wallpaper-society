@@ -42,10 +42,14 @@ export default function SimilarImages({
   useEffect(() => {
     if (!isOpen) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        e.preventDefault();
+        onClose();
+      }
     };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    window.addEventListener("keydown", handleKey, true);
+    return () => window.removeEventListener("keydown", handleKey, true);
   }, [isOpen, onClose]);
 
   const getImgSrc = (img: any) => {
@@ -88,7 +92,7 @@ export default function SimilarImages({
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="fixed inset-y-0 right-0 w-[400px] max-w-[90vw] bg-white shadow-2xl z-[102] flex flex-col"
+            className="fixed inset-y-0 right-0 w-[400px] max-w-[90vw] bg-white shadow-2xl z-[101] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}

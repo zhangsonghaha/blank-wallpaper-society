@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import MasonryGrid from "@/components/MasonryGrid";
 import DailyWallpaperCard from "@/components/DailyWallpaperCard";
 
@@ -35,7 +36,9 @@ export default function Home() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <DailyWallpaperCard />
-      <MasonryGrid />
+      <Suspense>
+        <MasonryGrid />
+      </Suspense>
     </>
   );
 }

@@ -35,7 +35,7 @@ export async function GET(
        WHERE c.image_id = ? AND c.parent_id IS NULL
        ORDER BY c.created_at DESC
        LIMIT ? OFFSET ?`,
-      [id, String(limit), String(offset)]
+      [id, limit, offset]
     )) as any[];
 
     // 获取每条顶级评论的回复
