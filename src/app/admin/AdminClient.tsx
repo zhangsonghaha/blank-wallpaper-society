@@ -96,7 +96,8 @@ export default function AdminClient() {
           if (data.success && data.flat) {
             const map: Record<string, { is_visible: number; is_enabled: number }> = {};
             for (const menu of data.flat) {
-              map[menu.component || menu.path] = { is_visible: menu.is_visible, is_enabled: menu.is_enabled };
+              // 使用 path 作为 key，与 menuGroups 中 child.id 对应
+              map[menu.path] = { is_visible: menu.is_visible, is_enabled: menu.is_enabled };
             }
             setMenuVisibility(map);
           }

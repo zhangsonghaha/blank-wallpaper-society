@@ -10,6 +10,7 @@ import OnboardingGuide from "@/components/OnboardingGuide";
 import CookieConsent from "@/components/CookieConsent";
 import AnnouncementBar from "@/components/AnnouncementBar";
 import { Toaster } from "sonner";
+import { auth } from "@/lib/auth";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -47,11 +48,12 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await auth();
   return (
     <html lang="zh-CN" className={`${inter.variable} h-full`} suppressHydrationWarning>
       <head>
@@ -63,10 +65,12 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <SearchProvider>
-            <AuthProvider>
+            <AuthProvider session={session}>
               <Navbar />
-              <AnnouncementBar />
-              <div className="flex-1 pt-16 min-h-0">{children}</div>
+              <div className="flex-1 pt-16 min-h-0">
+                <AnnouncementBar />
+                {children}
+              </div>
               <Footer />
               <OnboardingGuide />
               <CookieConsent />
