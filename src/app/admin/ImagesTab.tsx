@@ -173,7 +173,8 @@ export default function ImagesTab() {
     totalCategories: 0,
   });
 
-  const limit = 12;
+  const [pageSize, setPageSize] = useState(12);
+  const [jumpPage, setJumpPage] = useState("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -181,7 +182,7 @@ export default function ImagesTab() {
     try {
       const params = new URLSearchParams();
       params.set("page", String(page));
-      params.set("limit", String(limit));
+      params.set("limit", String(pageSize));
       if (searchQuery) params.set("search", searchQuery);
       if (categoryFilter !== "all") params.set("category", categoryFilter);
 
@@ -213,7 +214,7 @@ export default function ImagesTab() {
       console.error("加载失败:", err);
     }
     setLoading(false);
-  }, [page, searchQuery, categoryFilter]);
+  }, [page, searchQuery, categoryFilter, pageSize]);
 
   useEffect(() => {
     loadData();
@@ -1022,10 +1023,32 @@ export default function ImagesTab() {
                 </Table>
               </div>
 
-              <div className="flex items-center justify-between mt-4">
-                <p className="text-sm text-[var(--color-mute)]">
-                  共 {total} 张图片，第 {page}/{totalPages} 页
-                </p>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mt-4">
+                <div className="flex items-center gap-3 text-sm text-[var(--color-mute)]">
+                  <span>共 {total} 张图片</span>
+                  <Separator orientation="vertical" className="h-4" />
+                  <div className="flex items-center gap-1.5">
+                    <span>每页</span>
+                    <Select
+                      value={String(pageSize)}
+                      onValueChange={(v) => {
+                        setPageSize(Number(v));
+                        setPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-7 w-[70px] rounded-full text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="12">12</SelectItem>
+                        <SelectItem value="20">20</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                        <SelectItem value="100">100</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span>条</span>
+                  </div>
+                </div>
                 <div className="flex items-center gap-1.5">
                   <Button
                     variant="outline"
@@ -1075,6 +1098,30 @@ export default function ImagesTab() {
                   >
                     <ChevronRight className="w-4 h-4" />
                   </Button>
+                  <Separator orientation="vertical" className="h-4 mx-1" />
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-[var(--color-mute)]">跳至</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={totalPages}
+                      className="h-7 w-[52px] rounded-full text-xs text-center px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={jumpPage}
+                      onChange={(e) => setJumpPage(e.target.value)}
+                      placeholder={`${page}`}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const val = Number(jumpPage);
+                          if (val >= 1 && val <= totalPages) {
+                            setPage(val);
+                            setJumpPage("");
+                          }
+                        }
+                      }}
+                    />
+                    <span className="text-xs text-[var(--color-mute)]">页</span>
+                  </div>
                 </div>
               </div>
             </>

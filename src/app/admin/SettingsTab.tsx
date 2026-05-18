@@ -154,10 +154,10 @@ const settingGroups: SettingGroup[] = [
     fields: [
       { key: "google_login_enabled", label: "启用 Google 登录", type: "toggle", description: "开启前需配置 Google Client ID 和 Secret" },
       { key: "google_client_id", label: "Google Client ID", type: "text", placeholder: "xxx.apps.googleusercontent.com" },
-      { key: "google_client_secret", label: "Google Client Secret", type: "text", placeholder: "GOCSPX-xxxx", description: "从 Google Cloud Console 获取" },
+      { key: "google_client_secret", label: "Google Client Secret", type: "text", placeholder: "GOCSPX-xxxx", description: "从 Google Cloud Console 获取，回调地址：{网站域名}/api/auth/callback/google" },
       { key: "github_login_enabled", label: "启用 GitHub 登录", type: "toggle", description: "开启前需配置 GitHub Client ID 和 Secret" },
       { key: "github_client_id", label: "GitHub Client ID", type: "text", placeholder: "如 Ov23lixxxxx" },
-      { key: "github_client_secret", label: "GitHub Client Secret", type: "text", placeholder: "如 abc123xxxxx", description: "从 GitHub Developer Settings 获取" },
+      { key: "github_client_secret", label: "GitHub Client Secret", type: "text", placeholder: "如 abc123xxxxx", description: "从 GitHub Developer Settings 获取，回调地址：{网站域名}/api/auth/callback/github" },
     ],
   },
   {

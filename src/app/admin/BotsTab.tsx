@@ -393,6 +393,15 @@ export default function BotsTab() {
     setMessages([]);
   };
 
+  // 消息面板打开时自动刷新
+  useEffect(() => {
+    if (messageBotId === null) return;
+    const timer = setInterval(() => {
+      fetchMessages(messageBotId, msgPagination.page);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [messageBotId, msgPagination.page, fetchMessages]);
+
   const renderMessagePanel = () => {
     const bot = messageBotId !== null ? bots.find((b) => b.id === messageBotId) : null;
 

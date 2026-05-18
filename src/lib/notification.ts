@@ -129,12 +129,10 @@ export async function pushNotification(params: {
     }
 
     // 机器人通知推送（飞书/QQ/钉钉等）
-    pushBotNotification({
+    await pushBotNotification({
       type: params.type,
       title: params.title,
       content: params.content,
-    }).catch((err) => {
-      console.error("[Notification] 机器人推送失败:", err);
     });
 
     return insertId;
