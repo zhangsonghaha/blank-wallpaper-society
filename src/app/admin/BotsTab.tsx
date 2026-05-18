@@ -17,6 +17,7 @@ import {
   CheckCircle,
   XCircle,
   Wifi,
+  Cable,
 } from "lucide-react";
 import { toast } from "sonner";
 import { withCsrfHeader } from "@/lib/csrf-client";
@@ -113,8 +114,20 @@ const EMPTY_BOT: Omit<BotConfig, "id" | "last_sent_at" | "send_count" | "fail_co
   default_image_model_id: null,
 };
 
+/* ==================== 长连接状态类型 ==================== */
+
+interface WsClientStatus {
+  status: "disconnected" | "connecting" | "connected" | "error";
+  appId: string;
+  connectedAt: string | null;
+  lastEventAt: string | null;
+  error: string | null;
+  eventCount: number;
+}
+
 export default function BotsTab() {
   const [bots, setBots] = useState<BotConfig[]>([]);
+  const [wsStatuses, setWsStatuses] = useState<WsClientStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingBot, setEditingBot] = useState<Partial<BotConfig> & { isNew?: boolean } | null>(null);
   const [testingId, setTestingId] = useState<number | null>(null);
@@ -134,6 +147,16 @@ export default function BotsTab() {
       }
     } catch {
       toast.error("加载机器人配置失败");
+    }
+    // 获取飞书长连接状态
+    try {
+      const wsRes = await fetch("/api/admin/bots/feishu-ws-status");
+      const wsData = await wsRes.json();
+      if (wsData.clients) {
+        setWsStatuses(wsData.clients);
+      }
+    } catch {
+      // 长连接状态获取失败不影响主流程
     }
     setLoading(false);
   }, []);
@@ -156,9 +179,9 @@ export default function BotsTab() {
       toast.error("App API 模式下 App ID 和 App Secret 为必填项");
       return;
     }
-    // 仅飞书和QQ的App模式需要chat_id
-    if (needsChatId && !editingBot.chat_id) {
-      toast.error(`${editingBot.type === "feishu" ? "飞书" : "QQ"} App 模式下 Chat ID 为必填项`);
+    // 仅QQ的App模式需要chat_id（飞书长连接模式自动获取）
+    if (needsChatId && editingBot.type === "qq" && !editingBot.chat_id) {
+      toast.error("QQ App 模式下 Chat ID 为必填项");
       return;
     }
 
@@ -389,13 +412,13 @@ export default function BotsTab() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Chat ID{needsChatId ? " *" : ""}</Label>
+                  <Label>Chat ID</Label>
                   <Input
                     value={editingBot.chat_id || ""}
                     onChange={(e) => setEditingBot({ ...editingBot, chat_id: e.target.value || null })}
                     placeholder={
                       editingBot.type === "feishu"
-                        ? "oc_a0553eee9024c1e8f2d5040dc5cddddg"
+                        ? "oc_a0553eee9024c1e8f2d5040dc5cddddg（可选，长连接模式自动获取）"
                         : editingBot.type === "qq"
                         ? "频道/群 channel_id"
                         : "会话ID（可选）"
@@ -403,7 +426,7 @@ export default function BotsTab() {
                   />
                   <p className="text-xs text-muted-foreground">
                     {editingBot.type === "feishu"
-                      ? "飞书群的 chat_id，可在群设置 → 更多信息中获取"
+                      ? "飞书群的 chat_id，可在群设置 → 更多信息中获取。长连接模式下可选，消息事件会自动携带 chat_id"
                       : editingBot.type === "qq"
                       ? "QQ 频道/群的 channel_id"
                       : "目标会话的唯一标识（部分平台可选）"}
@@ -661,9 +684,48 @@ export default function BotsTab() {
                     </div>
 
                     <div className="text-sm text-muted-foreground space-y-1">
-                      <p className="truncate">
-                        Webhook: {bot.webhook_url.replace(/key=[^&]+/, "key=***").replace(/access_token=[^&]+/, "access_token=***")}
-                      </p>
+                      {bot.auth_mode === "app" && bot.type === "feishu" ? (() => {
+                        const wsStatus = wsStatuses.find((s) => s.appId === bot.app_id);
+                        return (
+                          <div className="flex items-center gap-2">
+                            <Cable className="w-3.5 h-3.5" />
+                            <span>长连接:</span>
+                            <Badge
+                              variant={
+                                wsStatus?.status === "connected" ? "default" :
+                                wsStatus?.status === "error" ? "destructive" :
+                                wsStatus?.status === "connecting" ? "secondary" :
+                                "outline"
+                              }
+                              className="text-xs"
+                            >
+                              {wsStatus?.status === "connected" ? "已连接" :
+                               wsStatus?.status === "connecting" ? "连接中..." :
+                               wsStatus?.status === "error" ? "连接错误" :
+                               "未连接"}
+                            </Badge>
+                            {wsStatus?.connectedAt && (
+                              <span className="text-xs">
+                                自 {new Date(wsStatus.connectedAt).toLocaleString("zh-CN")}
+                              </span>
+                            )}
+                            {wsStatus?.eventCount != null && wsStatus.eventCount > 0 && (
+                              <span className="text-xs">
+                                事件: {wsStatus.eventCount}
+                              </span>
+                            )}
+                            {wsStatus?.error && (
+                              <span className="text-xs text-red-500 truncate max-w-[200px]" title={wsStatus.error}>
+                                {wsStatus.error}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })() : (
+                        <p className="truncate">
+                          Webhook: {bot.webhook_url.replace(/key=[^&]+/, "key=***").replace(/access_token=[^&]+/, "access_token=***")}
+                        </p>
+                      )}
 
                       {bot.subscribe_events && bot.subscribe_events.length > 0 && (
                         <div className="flex items-center gap-1 flex-wrap">
@@ -772,7 +834,8 @@ export default function BotsTab() {
           <div>
             <p className="font-medium text-foreground">飞书机器人</p>
             <p>Webhook：群设置 → 添加自定义机器人 → 复制 Webhook 地址</p>
-            <p>App API：飞书开放平台 → 创建企业自建应用 → 添加机器人能力 → 获取 App ID 和 App Secret → 将机器人添加到目标群 → 获取 chat_id</p>
+            <p>App API（长连接模式）：飞书开放平台 → 创建企业自建应用 → 添加机器人能力 → 获取 App ID 和 App Secret → 事件订阅选择「使用长连接接收」→ 将机器人添加到目标群</p>
+            <p className="text-xs mt-1">App 模式使用长连接（WebSocket）接收事件，无需公网 IP 或域名，本地开发也无需内网穿透</p>
           </div>
           <div>
             <p className="font-medium text-foreground">QQ 群机器人</p>

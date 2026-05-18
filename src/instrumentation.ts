@@ -26,6 +26,15 @@ export async function register() {
 
       logger(`收到 ${signal} 信号，开始优雅关闭...`);
 
+      // 0. 关闭飞书长连接
+      try {
+        const { stopFeishuWsClients } = await import("@/lib/feishu-ws-client");
+        await stopFeishuWsClients();
+        logger("飞书长连接已关闭");
+      } catch (err) {
+        logger(`飞书长连接关闭异常（可忽略）: ${(err as Error).message}`);
+      }
+
       // 1. 关闭 Redis 连接
       try {
         const redis = (await import("@/lib/redis")).default;
@@ -55,5 +64,16 @@ export async function register() {
     process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
     logger("优雅关闭处理器已注册（SIGTERM/SIGINT）");
+
+    // 启动飞书长连接（异步，不阻塞服务启动）
+    import("@/lib/feishu-ws-client").then(({ startFeishuWsClients }) => {
+      startFeishuWsClients().then(() => {
+        logger("飞书长连接客户端已启动");
+      }).catch((err) => {
+        logger(`飞书长连接启动异常（非致命）: ${(err as Error).message}`);
+      });
+    }).catch((err) => {
+      logger(`飞书长连接模块加载异常（非致命）: ${(err as Error).message}`);
+    });
   }
 }
