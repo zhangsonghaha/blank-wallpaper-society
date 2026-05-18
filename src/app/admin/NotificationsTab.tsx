@@ -115,6 +115,7 @@ export default function NotificationsTab() {
     target: "all", // all | specific
     userIds: [] as number[],
     userEmail: "",
+    sendMode: "both", // notification | email | both
   });
 
   // 用户搜索
@@ -195,6 +196,7 @@ export default function NotificationsTab() {
           title: sendForm.title.trim(),
           content: sendForm.content.trim() || null,
           type: sendForm.type,
+          sendMode: sendForm.sendMode,
         }),
       });
 
@@ -209,6 +211,7 @@ export default function NotificationsTab() {
           target: "all",
           userIds: [],
           userEmail: "",
+          sendMode: "both",
         });
         loadData();
       } else {
@@ -543,6 +546,20 @@ export default function NotificationsTab() {
             </div>
 
             <Separator />
+
+            <div className="space-y-2">
+              <Label>发送方式</Label>
+              <Select value={sendForm.sendMode} onValueChange={(v) => { if (v) setSendForm((p) => ({ ...p, sendMode: v })); }}>
+                <SelectTrigger className="rounded-lg">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="notification">仅站内通知</SelectItem>
+                  <SelectItem value="email">仅邮件通知</SelectItem>
+                  <SelectItem value="both">站内通知 + 邮件</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
             <div className="space-y-2">
               <Label>发送对象</Label>
