@@ -365,3 +365,157 @@ export async function testBotNotification(configId: number): Promise<{ success: 
   const config: BotConfig = { ...row, subscribe_events: parseJsonField(row.subscribe_events), custom_headers: parseJsonField(row.custom_headers) };
   return sendToBot(config, "🔔 测试通知", `这是一条测试消息，来自「${config.name}」机器人。\n认证模式: ${config.auth_mode === "app" ? "App API" : "Webhook"}\n⏰ ${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`, "system");
 }
+
+// === 测试连通性（不发送消息，仅验证连接/认证） ===
+
+export async function testBotConnection(configId: number): Promise<{ success: boolean; error?: string; latency?: number }> {
+  const rows = (await query("SELECT * FROM bot_configs WHERE id = ?", [configId])) as any[];
+  if (rows.length === 0) return { success: false, error: "机器人配置不存在" };
+  const row = rows[0];
+  const config: BotConfig = { ...row, subscribe_events: parseJsonField(row.subscribe_events), custom_headers: parseJsonField(row.custom_headers) };
+
+  const startTime = Date.now();
+
+  try {
+    // App API 模式：验证能否获取 access_token
+    if (config.auth_mode === "app") {
+      switch (config.type) {
+        case "feishu": {
+          if (!config.app_id || !config.app_secret) return { success: false, error: "缺少 App ID 或 App Secret" };
+          const token = await getFeishuTenantAccessToken(config.app_id, config.app_secret, config.id);
+          const latency = Date.now() - startTime;
+          if (!token) return { success: false, error: "获取飞书 tenant_access_token 失败，请检查 App ID 和 App Secret", latency };
+          if (!config.chat_id) return { success: false, error: "缺少 Chat ID", latency };
+          return { success: true, latency };
+        }
+        case "qq": {
+          if (!config.app_id || !config.app_secret) return { success: false, error: "缺少 App ID 或 App Secret" };
+          const token = await getQQAccessToken(config.app_id, config.app_secret, config.id);
+          const latency = Date.now() - startTime;
+          if (!token) return { success: false, error: "获取 QQ access_token 失败，请检查 App ID 和 App Secret", latency };
+          if (!config.chat_id) return { success: false, error: "缺少 Channel ID", latency };
+          return { success: true, latency };
+        }
+        default:
+          return { success: false, error: `App API 模式暂不支持 ${config.type} 的连通性测试` };
+      }
+    }
+
+    // Webhook 模式：发送轻量级请求验证连通性
+    if (!config.webhook_url) return { success: false, error: "缺少 Webhook 地址" };
+
+    switch (config.type) {
+      case "feishu": {
+        // 飞书 Webhook 没有独立的连通性检测接口，发送一条测试文本消息
+        const ts = Math.floor(Date.now() / 1000);
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        const msg: Record<string, unknown> = {
+          msg_type: "text",
+          timestamp: String(ts),
+          content: { text: "🔗 连通性测试" },
+        };
+        if (config.secret) msg.sign = signFeishu(config.secret, ts);
+
+        const res = await fetch(config.webhook_url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(msg),
+          signal: AbortSignal.timeout(10000),
+        });
+        const latency = Date.now() - startTime;
+        const data = await res.json();
+        if (data.code === 0 || data.StatusCode === 0) return { success: true, latency };
+        return { success: false, error: `飞书 Webhook 返回错误: ${data.msg || data.StatusMessage || JSON.stringify(data)}`, latency };
+      }
+      case "dingtalk": {
+        // 钉钉 Webhook：发送一条轻量消息验证
+        const msg: Record<string, unknown> = { msgtype: "text", text: { content: "🔗 连通性测试" } };
+        const ts = Date.now();
+        if (config.secret) {
+          msg.timestamp = String(ts);
+          msg.sign = crypto.createHmac("sha256", config.secret).update(`${ts}\n${config.secret}`).digest("base64");
+        }
+        const res = await fetch(config.webhook_url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(msg),
+          signal: AbortSignal.timeout(10000),
+        });
+        const latency = Date.now() - startTime;
+        const data = await res.json();
+        if (data.errcode === 0) return { success: true, latency };
+        return { success: false, error: `钉钉 Webhook 返回错误: ${data.errmsg || JSON.stringify(data)}`, latency };
+      }
+      case "wechat_work": {
+        // 企业微信：发送一条轻量消息验证
+        const msg = { msgtype: "text", text: { content: "🔗 连通性测试" } };
+        const res = await fetch(config.webhook_url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(msg),
+          signal: AbortSignal.timeout(10000),
+        });
+        const latency = Date.now() - startTime;
+        const data = await res.json();
+        if (data.errcode === 0) return { success: true, latency };
+        return { success: false, error: `企业微信返回错误: ${data.errmsg || JSON.stringify(data)}`, latency };
+      }
+      case "qq": {
+        // QQ Webhook
+        const msg: Record<string, unknown> = { markdown: { content: "🔗 连通性测试" } };
+        if (config.qq_group_id) msg.group_id = config.qq_group_id;
+        const res = await fetch(config.webhook_url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(msg),
+          signal: AbortSignal.timeout(10000),
+        });
+        const latency = Date.now() - startTime;
+        if (res.ok) return { success: true, latency };
+        const errText = await res.text().catch(() => "");
+        return { success: false, error: `QQ Webhook 返回 HTTP ${res.status}: ${errText.slice(0, 200)}`, latency };
+      }
+      case "slack": {
+        // Slack：发送轻量验证
+        const msg = { text: "🔗 连通性测试" };
+        const res = await fetch(config.webhook_url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(msg),
+          signal: AbortSignal.timeout(10000),
+        });
+        const latency = Date.now() - startTime;
+        if (res.ok) return { success: true, latency };
+        const errText = await res.text().catch(() => "");
+        return { success: false, error: `Slack 返回 HTTP ${res.status}: ${errText.slice(0, 200)}`, latency };
+      }
+      case "custom": {
+        // 自定义 Webhook：发送 OPTIONS/HEAD 或轻量 POST
+        const method = config.custom_method || "POST";
+        const headers: Record<string, string> = { "Content-Type": "application/json", ...(config.custom_headers || {}) };
+        let body: string;
+        if (config.custom_body_template) {
+          body = config.custom_body_template
+            .replace(/\{\{title\}\}/g, "连通性测试")
+            .replace(/\{\{content\}\}/g, "连通性测试")
+            .replace(/\{\{type\}\}/g, "system")
+            .replace(/\{\{timestamp\}\}/g, new Date().toISOString());
+        } else {
+          body = JSON.stringify({ title: "连通性测试", content: "连通性测试", type: "system", timestamp: new Date().toISOString() });
+        }
+        if (config.secret) headers["X-Signature"] = crypto.createHmac("sha256", config.secret).update(body).digest("hex");
+
+        const res = await fetch(config.webhook_url, { method, headers, body, signal: AbortSignal.timeout(10000) });
+        const latency = Date.now() - startTime;
+        if (res.ok) return { success: true, latency };
+        const errText = await res.text().catch(() => "");
+        return { success: false, error: `自定义 Webhook 返回 HTTP ${res.status}: ${errText.slice(0, 200)}`, latency };
+      }
+      default:
+        return { success: false, error: `不支持的机器人类型: ${config.type}` };
+    }
+  } catch (error: any) {
+    const latency = Date.now() - startTime;
+    return { success: false, error: error.message || "连通性测试失败", latency };
+  }
+}

@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   CheckCircle,
   XCircle,
+  Wifi,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -112,6 +113,7 @@ export default function BotsTab() {
   const [loading, setLoading] = useState(true);
   const [editingBot, setEditingBot] = useState<Partial<BotConfig> & { isNew?: boolean } | null>(null);
   const [testingId, setTestingId] = useState<number | null>(null);
+  const [connectingId, setConnectingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
   const fetchBots = useCallback(async () => {
@@ -134,8 +136,16 @@ export default function BotsTab() {
 
   const handleSave = async () => {
     if (!editingBot) return;
-    if (!editingBot.name || !editingBot.type || !editingBot.webhook_url) {
-      toast.error("名称、类型和 Webhook 地址为必填项");
+    if (!editingBot.name || !editingBot.type) {
+      toast.error("名称和类型为必填项");
+      return;
+    }
+    if (editingBot.auth_mode === "webhook" && !editingBot.webhook_url) {
+      toast.error("Webhook 模式下 Webhook 地址为必填项");
+      return;
+    }
+    if (editingBot.auth_mode === "app" && (!editingBot.app_id || !editingBot.app_secret || !editingBot.chat_id)) {
+      toast.error("App API 模式下 App ID、App Secret 和 Chat ID 为必填项");
       return;
     }
 
@@ -207,6 +217,26 @@ export default function BotsTab() {
     }
     setTestingId(null);
     fetchBots();
+  };
+
+  const handleConnectivity = async (id: number) => {
+    setConnectingId(id);
+    try {
+      const res = await fetch("/api/admin/bots/connectivity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`连通性测试成功${data.latency ? `（延迟 ${data.latency}ms）` : ""}`);
+      } else {
+        toast.error(data.error || "连通性测试失败");
+      }
+    } catch {
+      toast.error("连通性测试请求失败");
+    }
+    setConnectingId(null);
   };
 
   const handleToggleEnabled = async (bot: BotConfig) => {
@@ -662,9 +692,22 @@ export default function BotsTab() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      onClick={() => handleConnectivity(bot.id)}
+                      disabled={connectingId === bot.id}
+                      title="测试连通性"
+                    >
+                      {connectingId === bot.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Wifi className="w-4 h-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => handleTest(bot.id)}
                       disabled={testingId === bot.id || !bot.enabled}
-                      title="测试发送"
+                      title="发送测试消息"
                     >
                       {testingId === bot.id ? (
                         <Loader2 className="w-4 h-4 animate-spin" />

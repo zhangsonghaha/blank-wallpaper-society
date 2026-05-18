@@ -1,9 +1,9 @@
 import Redis from "ioredis";
 
 const redis = new Redis({
-  host: "127.0.0.1",
+  host: "124.225.88.94",
   port: 6379,
-  // password: "2b6a4d28a9f4619d3d63",
+  password: "1234567",
   db: 3,
   retryStrategy: (times) => {
     const delay = Math.min(times * 50, 2000);
