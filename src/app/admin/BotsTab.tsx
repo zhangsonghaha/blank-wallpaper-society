@@ -18,6 +18,12 @@ import {
   XCircle,
   Wifi,
   Cable,
+  MessageSquare,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Filter,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { withCsrfHeader } from "@/lib/csrf-client";
@@ -34,6 +40,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -125,6 +139,35 @@ interface WsClientStatus {
   eventCount: number;
 }
 
+/* ==================== 消息留痕类型 ==================== */
+
+interface BotMessage {
+  id: number;
+  bot_config_id: number;
+  direction: "outbound" | "inbound";
+  platform: string;
+  chat_id: string | null;
+  sender_id: string | null;
+  sender_name: string | null;
+  message_type: string;
+  title: string | null;
+  content: string | null;
+  event_type: string | null;
+  status: "success" | "failed" | "pending";
+  error_message: string | null;
+  created_at: string;
+  bot_name: string | null;
+}
+
+const EVENT_TYPE_LABELS_MSG: Record<string, string> = {
+  system: "系统通知", like: "点赞", comment: "评论", review: "审核",
+  follow: "关注", achievement: "成就", favorite: "收藏", crawl: "爬取", upload: "上传", chat: "对话",
+};
+
+const PLATFORM_ICONS: Record<string, string> = {
+  feishu: "🐦", qq: "🐧", dingtalk: "🔵", wechat_work: "💬", slack: "📱", custom: "🔗",
+};
+
 export default function BotsTab() {
   const [bots, setBots] = useState<BotConfig[]>([]);
   const [wsStatuses, setWsStatuses] = useState<WsClientStatus[]>([]);
@@ -133,6 +176,12 @@ export default function BotsTab() {
   const [testingId, setTestingId] = useState<number | null>(null);
   const [connectingId, setConnectingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  // 消息留痕面板
+  const [messageBotId, setMessageBotId] = useState<number | null>(null);
+  const [messages, setMessages] = useState<BotMessage[]>([]);
+  const [msgPagination, setMsgPagination] = useState({ page: 1, total_pages: 0, total: 0 });
+  const [msgFilter, setMsgFilter] = useState<{ direction?: string; event_type?: string }>({});
+  const [msgLoading, setMsgLoading] = useState(false);
 
   // 判断当前编辑的机器人是否需要 chat_id（仅飞书和QQ的App模式需要）
   const needsChatId = editingBot?.auth_mode === "app" && (editingBot.type === "feishu" || editingBot.type === "qq");
@@ -310,6 +359,242 @@ export default function BotsTab() {
 
   const getBotTypeIcon = (type: BotType) => {
     return BOT_TYPE_OPTIONS.find((o) => o.value === type)?.icon || "🤖";
+  };
+
+  /* ==================== 消息留痕 ==================== */
+
+  const fetchMessages = useCallback(async (botId: number, page = 1) => {
+    setMsgLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), page_size: "20" });
+      params.set("bot_config_id", String(botId));
+      if (msgFilter.direction) params.set("direction", msgFilter.direction);
+      if (msgFilter.event_type) params.set("event_type", msgFilter.event_type);
+      const res = await fetch(`/api/admin/bot-messages?${params}`);
+      const data = await res.json();
+      if (res.ok) {
+        setMessages(data.messages || []);
+        setMsgPagination(data.pagination || { page: 1, total_pages: 0, total: 0 });
+      }
+    } catch {
+      toast.error("加载消息记录失败");
+    }
+    setMsgLoading(false);
+  }, [msgFilter]);
+
+  const openMessagePanel = (botId: number) => {
+    setMessageBotId(botId);
+    setMsgFilter({});
+    fetchMessages(botId, 1);
+  };
+
+  const closeMessagePanel = () => {
+    setMessageBotId(null);
+    setMessages([]);
+  };
+
+  const renderMessagePanel = () => {
+    const bot = messageBotId !== null ? bots.find((b) => b.id === messageBotId) : null;
+
+    return (
+      <Dialog open={messageBotId !== null} onOpenChange={(open) => { if (!open) closeMessagePanel(); }}>
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-6 pt-6 pb-2">
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5" />
+              消息留痕 — {bot ? `${getBotTypeIcon(bot.type)} ${bot.name}` : `Bot #${messageBotId}`}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              查看机器人发送和接收的消息记录
+            </DialogDescription>
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              {/* 方向筛选 */}
+              <Select
+                value={msgFilter.direction || "all"}
+                onValueChange={(v) => {
+                  const dir = v === "all" ? undefined : v;
+                  const newFilter = { direction: dir, event_type: msgFilter.event_type } as typeof msgFilter;
+                  setMsgFilter(newFilter);
+                  if (messageBotId !== null) {
+                    (async () => {
+                      setMsgLoading(true);
+                      try {
+                        const params = new URLSearchParams({ page: "1", page_size: "20" });
+                        params.set("bot_config_id", String(messageBotId));
+                        if (newFilter.direction) params.set("direction", newFilter.direction);
+                        if (newFilter.event_type) params.set("event_type", newFilter.event_type);
+                        const res = await fetch(`/api/admin/bot-messages?${params}`);
+                        const data = await res.json();
+                        if (res.ok) {
+                          setMessages(data.messages || []);
+                          setMsgPagination(data.pagination || { page: 1, total_pages: 0, total: 0 });
+                        }
+                      } catch { /* ignore */ }
+                      setMsgLoading(false);
+                    })();
+                  }
+                }}
+              >
+                <SelectTrigger className="w-[130px] h-8 text-xs">
+                  <Filter className="w-3 h-3 mr-1" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部方向</SelectItem>
+                  <SelectItem value="outbound">发送 (outbound)</SelectItem>
+                  <SelectItem value="inbound">接收 (inbound)</SelectItem>
+                </SelectContent>
+              </Select>
+              {/* 事件类型筛选 */}
+              <Select
+                value={msgFilter.event_type || "all"}
+                onValueChange={(v) => {
+                  const et = v === "all" ? undefined : v;
+                  const newFilter = { direction: msgFilter.direction, event_type: et } as typeof msgFilter;
+                  setMsgFilter(newFilter);
+                  if (messageBotId !== null) {
+                    (async () => {
+                      setMsgLoading(true);
+                      try {
+                        const params = new URLSearchParams({ page: "1", page_size: "20" });
+                        params.set("bot_config_id", String(messageBotId));
+                        if (newFilter.direction) params.set("direction", newFilter.direction);
+                        if (newFilter.event_type) params.set("event_type", newFilter.event_type);
+                        const res = await fetch(`/api/admin/bot-messages?${params}`);
+                        const data = await res.json();
+                        if (res.ok) {
+                          setMessages(data.messages || []);
+                          setMsgPagination(data.pagination || { page: 1, total_pages: 0, total: 0 });
+                        }
+                      } catch { /* ignore */ }
+                      setMsgLoading(false);
+                    })();
+                  }
+                }}
+              >
+                <SelectTrigger className="w-[130px] h-8 text-xs">
+                  <SelectValue placeholder="事件类型" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部事件</SelectItem>
+                  {Object.entries(EVENT_TYPE_LABELS_MSG).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground ml-auto">
+                共 {msgPagination.total} 条记录
+              </span>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden px-6 pb-2">
+            {msgLoading ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <MessageSquare className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                <p>暂无消息记录</p>
+              </div>
+            ) : (
+              <ScrollArea className="h-[55vh]">
+                <div className="space-y-3 pr-3">
+                  {messages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`p-3 rounded-lg border ${
+                        msg.direction === "outbound"
+                          ? "bg-blue-50/50 border-blue-200/50 dark:bg-blue-950/20 dark:border-blue-800/30"
+                          : "bg-green-50/50 border-green-200/50 dark:bg-green-950/20 dark:border-green-800/30"
+                      }`}
+                    >
+                      {/* 消息头部 */}
+                      <div className="flex items-center gap-2 mb-1.5">
+                        {msg.direction === "outbound" ? (
+                          <ArrowUpRight className="w-4 h-4 text-blue-500" />
+                        ) : (
+                          <ArrowDownLeft className="w-4 h-4 text-green-500" />
+                        )}
+                        <span className="text-xs font-medium">
+                          {msg.direction === "outbound" ? "发送" : "接收"}
+                        </span>
+                        <Badge variant="outline" className="text-xs">
+                          {PLATFORM_ICONS[msg.platform] || "🤖"} {msg.platform}
+                        </Badge>
+                        {msg.event_type && (
+                          <Badge variant="secondary" className="text-xs">
+                            {EVENT_TYPE_LABELS_MSG[msg.event_type] || msg.event_type}
+                          </Badge>
+                        )}
+                        {msg.status === "failed" && (
+                          <Badge variant="destructive" className="text-xs">失败</Badge>
+                        )}
+                        <span className="text-xs text-muted-foreground ml-auto">
+                          {new Date(msg.created_at).toLocaleString("zh-CN")}
+                        </span>
+                      </div>
+                      {/* 发送者信息 */}
+                      {(msg.sender_name || msg.sender_id) && (
+                        <div className="text-xs text-muted-foreground mb-1">
+                          发送者: {msg.sender_name || msg.sender_id}
+                        </div>
+                      )}
+                      {/* 消息标题 */}
+                      {msg.title && (
+                        <div className="font-medium text-sm mb-0.5">{msg.title}</div>
+                      )}
+                      {/* 消息内容 */}
+                      {msg.content && (
+                        <div className="text-sm text-foreground/80 whitespace-pre-wrap break-words line-clamp-4">
+                          {msg.content}
+                        </div>
+                      )}
+                      {/* 错误信息 */}
+                      {msg.error_message && (
+                        <div className="text-xs text-red-500 mt-1">
+                          错误: {msg.error_message}
+                        </div>
+                      )}
+                      {/* 群聊ID */}
+                      {msg.chat_id && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Chat: {msg.chat_id}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+          {/* 分页 */}
+          {msgPagination.total_pages > 1 && (
+            <div className="flex items-center justify-center gap-2 px-6 py-3 border-t">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={msgPagination.page <= 1 || msgLoading}
+                onClick={() => messageBotId && fetchMessages(messageBotId, msgPagination.page - 1)}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                {msgPagination.page} / {msgPagination.total_pages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={msgPagination.page >= msgPagination.total_pages || msgLoading}
+                onClick={() => messageBotId && fetchMessages(messageBotId, msgPagination.page + 1)}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    );
   };
 
   /* ==================== 编辑表单 ==================== */
@@ -798,6 +1083,14 @@ export default function BotsTab() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      onClick={() => openMessagePanel(bot.id)}
+                      title="消息留痕"
+                    >
+                      <MessageSquare className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => setEditingBot({ ...bot, isNew: false })}
                       title="编辑"
                     >
@@ -850,6 +1143,7 @@ export default function BotsTab() {
       </Card>
 
       {renderEditForm()}
+      {renderMessagePanel()}
     </div>
   );
 }

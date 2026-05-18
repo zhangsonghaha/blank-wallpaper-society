@@ -13,6 +13,7 @@
 import * as Lark from "@larksuiteoapi/node-sdk";
 import { query } from "@/lib/db";
 import { chatWithBot } from "@/lib/ai-chat";
+import { logBotMessage } from "@/lib/bot-notification";
 
 // === 类型定义 ===
 
@@ -75,7 +76,8 @@ export function getFeishuWsStatusByAppId(appId: string): WsClientState | undefin
 async function replyMessage(
   appId: string,
   chatId: string,
-  replyText: string
+  replyText: string,
+  botConfigId?: number
 ): Promise<boolean> {
   const client = larkClients.get(appId);
   if (!client) {
@@ -95,12 +97,53 @@ async function replyMessage(
       },
     });
     if (res.code === 0) {
+      // 记录回复消息留痕
+      if (botConfigId) {
+        await logBotMessage({
+          bot_config_id: botConfigId,
+          direction: "outbound",
+          platform: "feishu",
+          chat_id: chatId,
+          message_type: "text",
+          content: replyText,
+          event_type: "chat",
+          status: "success",
+        });
+      }
       return true;
     }
     console.error("[FeishuWs] 回复消息失败:", res.code, res.msg);
+    // 记录回复失败留痕
+    if (botConfigId) {
+      await logBotMessage({
+        bot_config_id: botConfigId,
+        direction: "outbound",
+        platform: "feishu",
+        chat_id: chatId,
+        message_type: "text",
+        content: replyText,
+        event_type: "chat",
+        status: "failed",
+        error_message: `飞书API错误 ${res.code}: ${res.msg}`,
+      });
+    }
     return false;
   } catch (error) {
     console.error("[FeishuWs] 回复消息异常:", error);
+    // 记录回复异常留痕
+    if (botConfigId) {
+      await logBotMessage({
+        bot_config_id: botConfigId,
+        direction: "outbound",
+        platform: "feishu",
+        chat_id: chatId,
+        message_type: "text",
+        content: replyText,
+        event_type: "chat",
+        status: "failed",
+        error_message: error instanceof Error ? error.message : "回复消息异常",
+      });
+    }
     return false;
   }
 }
@@ -123,7 +166,7 @@ async function handleAiReply(
 ): Promise<void> {
   try {
     // 先发送"正在思考"提示
-    await replyMessage(appId, chatId, "🤔 思考中...");
+    await replyMessage(appId, chatId, "🤔 思考中...", botConfig.id);
 
     // 调用AI获取回复
     const aiReply = await chatWithBot(userText, {
@@ -136,7 +179,7 @@ async function handleAiReply(
       ? aiReply.slice(0, maxLen) + "\n\n...(回复过长已截断)"
       : aiReply;
 
-    await replyMessage(appId, chatId, replyText);
+    await replyMessage(appId, chatId, replyText, botConfig.id);
 
     // 更新发送计数
     await query(
@@ -147,7 +190,8 @@ async function handleAiReply(
     console.log(`[FeishuWs] AI回复成功: chat=${chatId}, len=${replyText.length}`);
   } catch (error: unknown) {
     console.error("[FeishuWs] AI回复处理失败:", error);
-    await replyMessage(appId, chatId, "抱歉，AI服务暂时不可用，请稍后再试。");
+    await replyMessage(appId, chatId, "抱歉，AI服务暂时不可用，请稍后再试。", botConfig.id);
+
     await query(
       "UPDATE bot_configs SET fail_count = fail_count + 1 WHERE id = ?",
       [botConfig.id]
@@ -241,7 +285,7 @@ export async function startFeishuWsClients(): Promise<void> {
 
           // 只处理文本消息
           if (msgType !== "text") {
-            await replyMessage(app_id, chatId, "目前只支持文本消息对话，请发送文字与我交流~");
+            await replyMessage(app_id, chatId, "目前只支持文本消息对话，请发送文字与我交流~", config.id);
             return;
           }
 
@@ -258,9 +302,23 @@ export async function startFeishuWsClients(): Promise<void> {
           userText = userText.replace(/@_user_\d+/g, "").trim();
 
           if (!userText) {
-            await replyMessage(app_id, chatId, "你好！有什么可以帮你的吗？");
+            await replyMessage(app_id, chatId, "你好！有什么可以帮你的吗？", config.id);
             return;
           }
+
+          // 记录接收消息留痕
+          await logBotMessage({
+            bot_config_id: config.id,
+            direction: "inbound",
+            platform: "feishu",
+            chat_id: chatId,
+            sender_id: sender.sender_id?.user_id || sender.sender_id?.open_id || null,
+            sender_name: null,
+            message_type: msgType,
+            content: userText,
+            event_type: "chat",
+            status: "success",
+          });
 
           console.log(
             `[FeishuWs] 收到消息: chat=${chatId}, sender=${sender.sender_id?.user_id}, text=${userText.slice(0, 100)}`

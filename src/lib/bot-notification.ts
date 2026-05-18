@@ -295,17 +295,74 @@ function buildCustomMessage(title: string, content: string, type: string, config
   return { body, headers };
 }
 
+// === 消息留痕 ===
+
+export async function logBotMessage(params: {
+  bot_config_id: number;
+  direction: "outbound" | "inbound";
+  platform: string;
+  chat_id?: string | null;
+  sender_id?: string | null;
+  sender_name?: string | null;
+  message_type?: string;
+  title?: string | null;
+  content?: string | null;
+  event_type?: string | null;
+  status?: "success" | "failed" | "pending";
+  error_message?: string | null;
+}): Promise<void> {
+  try {
+    console.log(`[BotMessage] 记录消息: bot=${params.bot_config_id}, dir=${params.direction}, platform=${params.platform}, event=${params.event_type}, status=${params.status}`);
+    await query(
+      `INSERT INTO bot_messages (bot_config_id, direction, platform, chat_id, sender_id, sender_name, message_type, title, content, event_type, status, error_message)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        params.bot_config_id,
+        params.direction,
+        params.platform,
+        params.chat_id || null,
+        params.sender_id || null,
+        params.sender_name || null,
+        params.message_type || "text",
+        params.title || null,
+        params.content || null,
+        params.event_type || null,
+        params.status || "success",
+        params.error_message || null,
+      ]
+    );
+  } catch (err) {
+    console.error("[BotMessage] 记录消息留痕失败:", err);
+  }
+}
+
 // === 核心发送方法 ===
 
 async function sendToBot(config: BotConfig, title: string, content: string, type: string): Promise<{ success: boolean; error?: string }> {
+  const msgType = config.type === "feishu" ? (config.feishu_msg_type || "interactive") : "markdown";
   try {
     // App API 模式
     if (config.auth_mode === "app") {
+      let result: { success: boolean; error?: string };
       switch (config.type) {
-        case "feishu": return await sendFeishuAppMessage(config, title, content, type);
-        case "qq": return await sendQQAppMessage(config, title, content, type);
-        default: return { success: false, error: `App API 模式暂不支持 ${config.type}` };
+        case "feishu": result = await sendFeishuAppMessage(config, title, content, type); break;
+        case "qq": result = await sendQQAppMessage(config, title, content, type); break;
+        default: result = { success: false, error: `App API 模式暂不支持 ${config.type}` }; break;
       }
+      // 记录发送消息留痕
+      await logBotMessage({
+        bot_config_id: config.id,
+        direction: "outbound",
+        platform: config.type,
+        chat_id: config.chat_id,
+        message_type: msgType,
+        title,
+        content,
+        event_type: type,
+        status: result.success ? "success" : "failed",
+        error_message: result.error || null,
+      });
+      return result;
     }
 
     // Webhook 模式
@@ -330,18 +387,69 @@ async function sendToBot(config: BotConfig, title: string, content: string, type
         requestBody = body; requestHeaders = headers; method = config.custom_method || "POST";
         break;
       }
-      default: return { success: false, error: `不支持的机器人类型: ${config.type}` };
+      default: {
+        const errResult = { success: false, error: `不支持的机器人类型: ${config.type}` };
+        await logBotMessage({
+          bot_config_id: config.id,
+          direction: "outbound",
+          platform: config.type,
+          message_type: msgType,
+          title,
+          content,
+          event_type: type,
+          status: "failed",
+          error_message: errResult.error,
+        });
+        return errResult;
+      }
     }
 
     const response = await fetch(config.webhook_url, { method, headers: requestHeaders, body: requestBody, signal: AbortSignal.timeout(10000) });
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
-      return { success: false, error: `HTTP ${response.status}: ${errorText.slice(0, 200)}` };
+      const errMsg = `HTTP ${response.status}: ${errorText.slice(0, 200)}`;
+      await logBotMessage({
+        bot_config_id: config.id,
+        direction: "outbound",
+        platform: config.type,
+        chat_id: config.chat_id,
+        message_type: msgType,
+        title,
+        content,
+        event_type: type,
+        status: "failed",
+        error_message: errMsg,
+      });
+      return { success: false, error: errMsg };
     }
     await query("UPDATE bot_configs SET last_sent_at = NOW(), send_count = send_count + 1 WHERE id = ?", [config.id]);
+    // 记录发送成功留痕
+    await logBotMessage({
+      bot_config_id: config.id,
+      direction: "outbound",
+      platform: config.type,
+      chat_id: config.chat_id,
+      message_type: msgType,
+      title,
+      content,
+      event_type: type,
+      status: "success",
+    });
     return { success: true };
   } catch (error: any) {
     await query("UPDATE bot_configs SET fail_count = fail_count + 1 WHERE id = ?", [config.id]).catch(() => {});
+    await logBotMessage({
+      bot_config_id: config.id,
+      direction: "outbound",
+      platform: config.type,
+      chat_id: config.chat_id,
+      message_type: msgType,
+      title,
+      content,
+      event_type: type,
+      status: "failed",
+      error_message: error.message || "发送失败",
+    });
     return { success: false, error: error.message || "发送失败" };
   }
 }
@@ -353,9 +461,7 @@ export async function pushBotNotification(params: { type: NotificationEventType;
     const configs = await getEnabledBotConfigs();
     for (const config of configs) {
       if (config.subscribe_events && config.subscribe_events.length > 0 && !config.subscribe_events.includes(params.type)) continue;
-      sendToBot(config, params.title, params.content || "", params.type).catch((err) => {
-        console.error(`[BotNotification] 发送到机器人 ${config.name}(${config.type}) 失败:`, err);
-      });
+      await sendToBot(config, params.title, params.content || "", params.type);
     }
   } catch (error) {
     console.error("[BotNotification] pushBotNotification error:", error);
