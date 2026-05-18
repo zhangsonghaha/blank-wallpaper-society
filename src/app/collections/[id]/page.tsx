@@ -193,11 +193,24 @@ export default function CollectionDetailPage() {
   const isOwner =
     session && collection && String((session.user as any).id) === String(collection.user_id);
 
-  // 瀑布流分列
+  // 瀑布流分列 - 响应式
+  const [colCount, setColCount] = useState(4);
+  useEffect(() => {
+    const updateCols = () => {
+      const w = window.innerWidth;
+      if (w < 640) setColCount(2);
+      else if (w < 1024) setColCount(3);
+      else setColCount(4);
+    };
+    updateCols();
+    window.addEventListener("resize", updateCols);
+    return () => window.removeEventListener("resize", updateCols);
+  }, []);
+
   const columns = (() => {
-    const cols: ImageData[][] = [[], [], [], []];
+    const cols: ImageData[][] = Array.from({ length: colCount }, () => []);
     images.forEach((img, index) => {
-      cols[index % 4].push(img);
+      cols[index % colCount].push(img);
     });
     return cols;
   })();
@@ -375,9 +388,9 @@ export default function CollectionDetailPage() {
             </p>
           </div>
         ) : (
-          <div className="flex gap-4">
+          <div className="flex gap-1.5 sm:gap-4">
             {columns.map((col, colIndex) => (
-              <div key={colIndex} className="flex-1 flex flex-col gap-4">
+              <div key={colIndex} className="flex-1 flex flex-col gap-1.5 sm:gap-4">
                 {col.map((img) => (
                   <motion.div
                     key={img.id}

@@ -197,10 +197,10 @@ export default function FeedClient() {
         </div>
       ) : (
         <>
-          <div className="flex gap-6 max-w-[1200px] mx-auto">
+          <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 max-w-[1200px] mx-auto">
             {/* 左列：帖子流 */}
             {(feedType === "all" || feedType === "posts") && posts.length > 0 && (
-              <div className="flex-1 max-w-[680px] space-y-0">
+              <div className="w-full lg:flex-1 lg:max-w-[680px] space-y-0">
                 {posts.map((item, idx) => (
                   <motion.div
                     key={item.id}
@@ -222,14 +222,14 @@ export default function FeedClient() {
             {(feedType === "all" || feedType === "images" || feedType === "following" || feedType === "recommended" || feedType === "trending") && images.length > 0 && (
               <div className={`${
                 posts.length > 0 && (feedType === "all")
-                  ? "flex-1"
+                  ? "w-full lg:flex-1"
                   : "w-full"
               }`}>
                 <div className={`${
                   posts.length > 0 && (feedType === "all")
                     ? "columns-2 sm:columns-2 lg:columns-3"
                     : "columns-2 sm:columns-3 lg:columns-4 xl:columns-5"
-                } gap-4 space-y-4`}>
+                } gap-2 sm:gap-4 space-y-2 sm:space-y-4`}>
                   {images.map((item, idx) => (
                     <motion.div
                       key={item.id}

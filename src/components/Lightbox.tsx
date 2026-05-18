@@ -483,7 +483,7 @@ export default function Lightbox({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-            className="relative max-w-[90vw] max-h-[85vh] flex flex-col items-center"
+            className="relative max-w-[95vw] sm:max-w-[90vw] max-h-[80vh] sm:max-h-[85vh] flex flex-col items-center"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 设备预览切换按钮 */}
@@ -527,7 +527,7 @@ export default function Lightbox({
               <>
                 {/* Loading Skeleton */}
                 {!isLoaded && (
-                  <div className="w-[500px] h-[600px] rounded-2xl skeleton-pulse bg-white/10" />
+                  <div className="w-[60vw] sm:w-[500px] h-[60vh] sm:h-[600px] rounded-2xl skeleton-pulse bg-white/10" />
                 )}
 
                 {/* 动态壁纸或静态图片 */}
@@ -542,20 +542,18 @@ export default function Lightbox({
                     playsInline
                     controls
                     onLoadedData={() => setIsLoaded(true)}
-                    className={`max-w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl ${
+                    className={`max-w-full max-h-[60vh] sm:max-h-[75vh] object-contain rounded-lg sm:rounded-2xl shadow-2xl ${
                       isLoaded ? "opacity-100" : "opacity-0 absolute"
                     }`}
-                    style={{ maxHeight: "75vh" }}
                   />
                 ) : (
                   <img
                     src={currentImage.src}
                     alt={currentImage.title}
                     onLoad={() => setIsLoaded(true)}
-                    className={`max-w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl ${
+                    className={`max-w-full max-h-[60vh] sm:max-h-[75vh] object-contain rounded-lg sm:rounded-2xl shadow-2xl ${
                       isLoaded ? "opacity-100" : "opacity-0 absolute"
                     }`}
-                    style={{ maxHeight: "75vh" }}
                   />
                 )}
 
@@ -575,11 +573,11 @@ export default function Lightbox({
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="mt-4 text-white text-center max-w-lg"
+              className="mt-2 sm:mt-4 text-white text-center max-w-sm sm:max-w-lg px-4"
             >
-              <h3 className="text-xl font-semibold">{currentImage.title}</h3>
-              <p className="text-sm text-white/70 mt-1">{currentImage.description}</p>
-              <div className="flex items-center justify-center gap-3 mt-3">
+              <h3 className="text-base sm:text-xl font-semibold">{currentImage.title}</h3>
+              <p className="text-xs sm:text-sm text-white/70 mt-1 line-clamp-2">{currentImage.description}</p>
+              <div className="flex items-center justify-center gap-2 sm:gap-3 mt-2 sm:mt-3 flex-wrap">
                 <Link
                   href={currentImage.uploaded_by ? `/creator/${currentImage.uploaded_by}` : "#"}
                   onClick={(e) => e.stopPropagation()}
@@ -671,130 +669,131 @@ export default function Lightbox({
             </motion.div>
           </motion.div>
 
-          {/* Bottom Action Bar */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
-            {/* Favorite Button */}
-            {onToggleFavorite && (
+          {/* Bottom Action Bar - 移动端可滚动 */}
+          <div className="absolute bottom-2 sm:bottom-4 left-0 sm:left-1/2 sm:-translate-x-1/2 z-10 w-full sm:w-auto sm:max-w-[90vw] px-2 sm:px-0 overflow-x-auto scrollbar-none">
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-max sm:min-w-0 sm:flex-wrap sm:justify-center">
+              {/* Favorite Button */}
+              {onToggleFavorite && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleFavorite();
+                  }}
+                  className={`px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full text-xs sm:text-sm font-medium transition-colors backdrop-blur-sm ${
+                    isFavorited
+                      ? "bg-[var(--color-primary)] text-white"
+                      : "bg-white/10 text-white hover:bg-white/20"
+                  }`}
+                >
+                  <svg
+                    className="w-3.5 h-3.5 sm:w-4 sm:h-4"
+                    fill={isFavorited ? "currentColor" : "none"}
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  </svg>
+                  <span className="hidden sm:inline">{isFavorited ? "已收藏" : "收藏"}</span>
+                </button>
+              )}
+
+              {/* Edit Button */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleFavorite();
+                  const params = new URLSearchParams({
+                    src: currentImage.src,
+                    width: String(currentImage.width),
+                    height: String(currentImage.height),
+                    id: String(currentImage.id),
+                  });
+                  window.open(`/editor?${params.toString()}`, "_blank");
                 }}
-                className={`px-4 py-2 flex items-center gap-2 rounded-full text-sm font-medium transition-colors backdrop-blur-sm ${
-                  isFavorited
-                    ? "bg-[var(--color-primary)] text-white"
-                    : "bg-white/10 text-white hover:bg-white/20"
-                }`}
+                className="px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full bg-white/10 text-white text-xs sm:text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
               >
-                <svg
-                  className="w-4 h-4"
-                  fill={isFavorited ? "currentColor" : "none"}
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                </svg>
-                {isFavorited ? "已收藏" : "收藏"}
+                <Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">编辑</span>
               </button>
-            )}
 
-            {/* Edit Button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                const params = new URLSearchParams({
-                  src: currentImage.src,
-                  width: String(currentImage.width),
-                  height: String(currentImage.height),
-                  id: String(currentImage.id),
-                });
-                window.open(`/editor?${params.toString()}`, "_blank");
-              }}
-              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
-            >
-              <Pencil className="w-4 h-4" />
-              编辑
-            </button>
+              {/* Calendar Wallpaper Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const params = new URLSearchParams({
+                    src: currentImage.src,
+                    width: String(currentImage.width),
+                    height: String(currentImage.height),
+                    id: String(currentImage.id),
+                  });
+                  window.open(`/editor/calendar?${params.toString()}`, "_blank");
+                }}
+                className="px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full bg-white/10 text-white text-xs sm:text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
+              >
+                <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">日历</span>
+              </button>
 
-            {/* Calendar Wallpaper Button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                const params = new URLSearchParams({
-                  src: currentImage.src,
-                  width: String(currentImage.width),
-                  height: String(currentImage.height),
-                  id: String(currentImage.id),
-                });
-                window.open(`/editor/calendar?${params.toString()}`, "_blank");
-              }}
-              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
-            >
-              <Calendar className="w-4 h-4" />
-              日历
-            </button>
+              {/* Add to Collection Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAddToCollectionOpen(true);
+                }}
+                className="px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full bg-white/10 text-white text-xs sm:text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
+              >
+                <FolderPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">合集</span>
+              </button>
 
-            {/* Add to Collection Button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setAddToCollectionOpen(true);
-              }}
-              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
-            >
-              <FolderPlus className="w-4 h-4" />
-              合集
-            </button>
+              {/* Share Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleShare();
+                }}
+                className="px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full bg-white/10 text-white text-xs sm:text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
+              >
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                </svg>
+                <span className="hidden sm:inline">分享</span>
+              </button>
 
-            {/* Share Button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleShare();
-              }}
-              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-              </svg>
-              分享
-            </button>
+              {/* Comment Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCommentOpen(true);
+                }}
+                className="px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full bg-white/10 text-white text-xs sm:text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
+              >
+                <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">评论</span>
+              </button>
 
-            {/* Comment Button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setCommentOpen(true);
-              }}
-              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
-            >
-              <MessageCircle className="w-4 h-4" />
-              评论
-            </button>
+              {/* Similar Images Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSimilarOpen(true);
+                }}
+                className="px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full bg-white/10 text-white text-xs sm:text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
+              >
+                <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">相似</span>
+              </button>
 
-            {/* Similar Images Button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setSimilarOpen(true);
-              }}
-              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
-            >
-              <Sparkles className="w-4 h-4" />
-              相似
-            </button>
-
-            {/* Download Button with Panel */}
-            <div className="relative">
+              {/* Download Button with Panel */}
+              <div className="relative">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setDownloadPanelOpen(!downloadPanelOpen);
                 }}
-                className="px-4 py-2 flex items-center gap-2 rounded-full bg-[var(--color-primary)] text-white text-sm font-medium hover:bg-[var(--color-primary-pressed,#c5001d)] transition-colors backdrop-blur-sm"
+                className="px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full bg-[var(--color-primary)] text-white text-xs sm:text-sm font-medium hover:bg-[var(--color-primary-pressed,#c5001d)] transition-colors backdrop-blur-sm"
               >
-                <Download className="w-4 h-4" />
-                下载
+                <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">下载</span>
                 <ChevronDown className={`w-3 h-3 transition-transform ${downloadPanelOpen ? "rotate-180" : ""}`} />
               </button>
 
@@ -931,20 +930,20 @@ export default function Lightbox({
                   handleToggleFollow();
                 }}
                 disabled={loadingFollowStatus}
-                className={`px-4 py-2 flex items-center gap-2 rounded-full text-sm font-medium transition-colors backdrop-blur-sm ${
+                className={`px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full text-xs sm:text-sm font-medium transition-colors backdrop-blur-sm ${
                   isFollowing
                     ? "bg-[var(--color-primary)] text-white"
                     : "bg-white/10 text-white hover:bg-white/20"
                 }`}
               >
                 {loadingFollowStatus ? (
-                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : isFollowing ? (
-                  <UserCheck className="w-4 h-4" />
+                  <UserCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 ) : (
-                  <UserPlus className="w-4 h-4" />
+                  <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 )}
-                {isFollowing ? "已关注" : "关注"}
+                <span className="hidden sm:inline">{isFollowing ? "已关注" : "关注"}</span>
               </button>
             )}
 
@@ -954,11 +953,12 @@ export default function Lightbox({
                 e.stopPropagation();
                 setReportOpen(true);
               }}
-              className="px-4 py-2 flex items-center gap-2 rounded-full bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full bg-white/10 text-white text-xs sm:text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
             >
-              <Flag className="w-4 h-4" />
-              举报
+              <Flag className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">举报</span>
             </button>
+            </div>
           </div>
 
           {/* Report Dialog */}

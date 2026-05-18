@@ -145,7 +145,23 @@ export default function PinCard({
             </div>
           )}
 
-          {/* Hover Overlay */}
+          {/* Mobile: Always visible favorite button */}
+          <div className="sm:hidden absolute top-2 right-2 z-10">
+            <button
+              onClick={handleFavorite}
+              className={`w-8 h-8 rounded-full flex items-center justify-center shadow-md active:scale-95 transition-transform ${
+                isFavorited
+                  ? "bg-[var(--color-primary)] text-white"
+                  : "bg-white/90 backdrop-blur-sm text-[var(--color-ink)]"
+              }`}
+            >
+              <svg className="w-4 h-4" fill={isFavorited ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Desktop: Hover Overlay */}
           <AnimatePresence>
             {isHovered && (
               <motion.div
@@ -255,11 +271,11 @@ export default function PinCard({
         </div>
 
         {/* Pin Info (always visible below image) */}
-        <div className="p-3">
-          <h3 className="text-sm font-semibold text-[var(--color-ink)] truncate">{image.title}</h3>
+        <div className="p-2 sm:p-3">
+          <h3 className="text-xs sm:text-sm font-semibold text-[var(--color-ink)] truncate">{image.title}</h3>
           <Link
             href={image.uploaded_by ? `/creator/${image.uploaded_by}` : "#"}
-            className="text-xs text-[var(--color-mute)] mt-0.5 truncate hover:text-[var(--color-primary)] transition-colors inline-flex items-center gap-1"
+            className="text-[10px] sm:text-xs text-[var(--color-mute)] mt-0.5 truncate hover:text-[var(--color-primary)] transition-colors inline-flex items-center gap-1"
           >
             {image.author}
             {image.author_level != null && (

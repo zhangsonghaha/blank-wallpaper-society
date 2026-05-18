@@ -357,14 +357,27 @@ export default function MasonryGrid() {
     return () => observer.disconnect();
   }, [hasMore, isLoadingMore, loadMore]);
 
-  // 分列
+  // 分列 - 响应式列数
+  const [colCount, setColCount] = useState(4);
+  useEffect(() => {
+    const updateCols = () => {
+      const w = window.innerWidth;
+      if (w < 640) setColCount(2);
+      else if (w < 1024) setColCount(3);
+      else setColCount(4);
+    };
+    updateCols();
+    window.addEventListener("resize", updateCols);
+    return () => window.removeEventListener("resize", updateCols);
+  }, []);
+
   const columns = useMemo(() => {
-    const cols: ImageRecord[][] = [[], [], [], []];
+    const cols: ImageRecord[][] = Array.from({ length: colCount }, () => []);
     displayedImages.forEach((img, index) => {
-      cols[index % 4].push(img);
+      cols[index % colCount].push(img);
     });
     return cols;
-  }, [displayedImages]);
+  }, [displayedImages, colCount]);
 
   // 转换为 GalleryImage 格式供 Lightbox 使用
   const lightboxImages = useMemo(
@@ -448,7 +461,7 @@ export default function MasonryGrid() {
       <main className="max-w-[1440px] mx-auto px-4 lg:px-8 py-6">
         {/* Hero Section */}
         <div className="text-center mb-8">
-          <h1 className="text-[44px] md:text-[70px] font-semibold leading-[1.1] tracking-[-1.2px] text-[var(--color-ink)]">
+          <h1 className="text-3xl sm:text-[44px] md:text-[70px] font-semibold leading-[1.1] tracking-[-1.2px] text-[var(--color-ink)]">
             发现视觉灵感
           </h1>
           <p className="mt-4 text-base md:text-lg text-[var(--color-mute)] max-w-2xl mx-auto leading-relaxed">
@@ -512,7 +525,7 @@ export default function MasonryGrid() {
           )}
 
           {/* 筛选栏: 收藏筛选 + 颜色筛选 + 排序 */}
-          <div className="mt-4 flex items-center justify-center gap-3 flex-wrap">
+          <div className="mt-4 flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
             {/* 颜色筛选 */}
             <ColorSearch
               activeColor={activeColor}
@@ -595,7 +608,7 @@ export default function MasonryGrid() {
                 <Link
                   key={col.id}
                   href={`/collections/${col.id}`}
-                  className="shrink-0 w-52 group"
+                  className="shrink-0 w-40 sm:w-52 group"
                 >
                   <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-[var(--color-surface-card)]">
                     {col.cover_thumbnail_url || col.cover_url ? (
@@ -638,8 +651,8 @@ export default function MasonryGrid() {
 
         {/* Loading State */}
         {loading ? (
-          <div className="flex gap-4">
-            {[0, 1, 2, 3].map((col) => (
+          <div className="flex gap-1.5 sm:gap-4">
+            {[0, 1, 2, 3].slice(0, colCount).map((col) => (
               <div key={col} className="flex-1 flex flex-col gap-4">
                 {[0, 1, 2].map((row) => (
                   <div
@@ -653,9 +666,9 @@ export default function MasonryGrid() {
           </div>
         ) : displayedImages.length > 0 ? (
           <div>
-            <div className="flex gap-2 sm:gap-3 md:gap-4">
+            <div className="flex gap-1.5 sm:gap-3 md:gap-4">
               {columns.map((col, colIndex) => (
-                <div key={colIndex} className="flex-1 flex flex-col gap-4">
+                <div key={colIndex} className="flex-1 flex flex-col gap-1.5 sm:gap-4">
                   {col.map((image, index) => {
                     const globalIdx = displayedImages.findIndex(
                       (img) => img.id === image.id
