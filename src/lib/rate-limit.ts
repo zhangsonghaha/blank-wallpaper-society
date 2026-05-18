@@ -40,6 +40,31 @@ const memoryRateLimitStore = new Map<string, RateLimitEntry>();
 // 匿名IP每日请求上限
 const ANONYMOUS_DAILY_LIMIT = 100;
 
+// ========== 端点级别细粒度限流配置 ==========
+export const ENDPOINT_RATE_LIMITS: Record<string, { window: "minute" | "hour" | "day"; limit: number; description: string }> = {
+  // 下载端点：免费用户10次/小时
+  "GET:/api/images/[id]/download": { window: "hour", limit: 10, description: "下载限流" },
+  // 搜索端点：30次/分钟
+  "GET:/api/images": { window: "minute", limit: 30, description: "搜索限流" },
+  "GET:/api/images/search/facets": { window: "minute", limit: 15, description: "搜索分面限流" },
+  // AI生成端点：已在 ai-generate route 中实现每日配额
+  "POST:/api/ai-generate": { window: "day", limit: 3, description: "AI生成限流" },
+  // 上传端点：10次/小时
+  "POST:/api/upload": { window: "hour", limit: 10, description: "上传限流" },
+  "POST:/api/upload/batch": { window: "hour", limit: 5, description: "批量上传限流" },
+  // 评论端点：5次/分钟
+  "POST:/api/images/[id]/comments": { window: "minute", limit: 5, description: "评论限流" },
+  // 收藏端点：30次/分钟
+  "PATCH:/api/images/[id]": { window: "minute", limit: 30, description: "收藏/更新限流" },
+};
+
+// 会员等级对应限流倍数
+const TIER_MULTIPLIERS: Record<string, number> = {
+  free: 1,
+  pro: 10,
+  enterprise: -1, // 无限
+};
+
 // 每10分钟清理过期条目
 if (typeof globalThis !== "undefined") {
   const cleanInterval = setInterval(() => {
@@ -338,5 +363,111 @@ export function buildRateLimitHeaders(
     "X-RateLimit-Limit": String(limit),
     "X-RateLimit-Remaining": String(remaining),
     "X-RateLimit-Reset": String(reset),
+  };
+}
+
+// ========== 端点级别细粒度限流 ==========
+
+/**
+ * 获取窗口对应的秒数
+ */
+function getWindowSeconds(window: "minute" | "hour" | "day"): number {
+  switch (window) {
+    case "minute": return 60;
+    case "hour": return 3600;
+    case "day": return 86400;
+  }
+}
+
+/**
+ * 匹配端点模式（支持通配符如 [id]）
+ */
+function matchEndpoint(pattern: string, method: string, path: string): boolean {
+  const patternParts = pattern.split(":");
+  if (patternParts[0] !== method) return false;
+  const patternPath = patternParts[1];
+  const pathParts = patternPath.split("/");
+  const urlParts = path.split("/");
+  if (pathParts.length !== urlParts.length) return false;
+  return pathParts.every((p, i) => p.startsWith("[") || p === urlParts[i]);
+}
+
+/**
+ * 端点级别限流检查（基于IP，Redis优先，内存降级）
+ * @returns 允许/限制信息，null表示该端点无限流配置
+ */
+export async function checkEndpointRateLimit(
+  method: string,
+  path: string,
+  ipAddress: string,
+  userTier: string = "free"
+): Promise<{
+  allowed: boolean;
+  limit: number;
+  remaining: number;
+  reset: number;
+  endpoint: string;
+} | null> {
+  // 查找匹配的端点配置
+  let matchedPattern: string | null = null;
+  let config: { window: "minute" | "hour" | "day"; limit: number; description: string } | null = null;
+
+  for (const [pattern, cfg] of Object.entries(ENDPOINT_RATE_LIMITS)) {
+    if (matchEndpoint(pattern, method, path)) {
+      matchedPattern = pattern;
+      config = cfg;
+      break;
+    }
+  }
+
+  if (!config || !matchedPattern) return null;
+
+  // 企业用户无限流
+  const tierMultiplier = TIER_MULTIPLIERS[userTier] || 1;
+  if (tierMultiplier === -1) {
+    return { allowed: true, limit: -1, remaining: -1, reset: 0, endpoint: matchedPattern };
+  }
+
+  const effectiveLimit = config.limit * tierMultiplier;
+  const windowSeconds = getWindowSeconds(config.window);
+  const key = `ratelimit:endpoint:${method}:${path}:${ipAddress}`;
+  const now = Date.now();
+  const resetAt = now + windowSeconds * 1000;
+
+  // Redis 优先
+  if (await isRedisAvailable()) {
+    try {
+      const redisKey = `ep:${method}:${matchedPattern}:${ipAddress}`;
+      const count = await redis.incr(redisKey);
+      if (count === 1) {
+        await redis.expire(redisKey, windowSeconds);
+      }
+      const allowed = count <= effectiveLimit;
+      return {
+        allowed,
+        limit: effectiveLimit,
+        remaining: allowed ? Math.max(0, effectiveLimit - count) : 0,
+        reset: windowSeconds,
+        endpoint: matchedPattern,
+      };
+    } catch {}
+  }
+
+  // 内存降级
+  let entry = memoryRateLimitStore.get(key);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt };
+    memoryRateLimitStore.set(key, entry);
+  }
+
+  const allowed = entry.count < effectiveLimit;
+  if (allowed) entry.count++;
+
+  return {
+    allowed,
+    limit: effectiveLimit,
+    remaining: allowed ? Math.max(0, effectiveLimit - entry.count) : 0,
+    reset: Math.ceil((resetAt - now) / 1000),
+    endpoint: matchedPattern,
   };
 }

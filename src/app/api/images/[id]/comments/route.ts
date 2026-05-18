@@ -20,6 +20,7 @@ export async function GET(
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
     const offset = (page - 1) * limit;
+    const sort = searchParams.get("sort") || "latest"; // latest | hot
 
     // 获取评论总数
     const countResult = (await query(
@@ -29,12 +30,13 @@ export async function GET(
     const total = countResult[0]?.total || 0;
 
     // 获取顶级评论（parent_id IS NULL）
+    const orderBy = sort === "hot" ? "c.like_count DESC, c.created_at DESC" : "c.created_at DESC";
     const comments = (await query(
       `SELECT c.*, u.name as user_name, u.avatar as user_avatar
        FROM comments c
        LEFT JOIN users u ON c.user_id = u.id
        WHERE c.image_id = ? AND c.parent_id IS NULL
-       ORDER BY c.created_at DESC
+       ORDER BY ${orderBy}
        LIMIT ? OFFSET ?`,
       [id, limit, offset]
     )) as any[];

@@ -9,6 +9,7 @@ import { ThemeProvider } from "next-themes";
 import OnboardingGuide from "@/components/OnboardingGuide";
 import CookieConsent from "@/components/CookieConsent";
 import AnnouncementBar from "@/components/AnnouncementBar";
+import FeedbackButton from "@/components/FeedbackButton";
 import { Toaster } from "sonner";
 import { auth } from "@/lib/auth";
 
@@ -75,6 +76,7 @@ export default async function RootLayout({
               <Footer />
               <OnboardingGuide />
               <CookieConsent />
+              <FeedbackButton />
               <Toaster position="top-right" richColors closeButton />
             </AuthProvider>
           </SearchProvider>
