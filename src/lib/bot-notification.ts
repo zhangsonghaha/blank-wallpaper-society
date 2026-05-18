@@ -385,7 +385,7 @@ export async function testBotConnection(configId: number): Promise<{ success: bo
           const token = await getFeishuTenantAccessToken(config.app_id, config.app_secret, config.id);
           const latency = Date.now() - startTime;
           if (!token) return { success: false, error: "获取飞书 tenant_access_token 失败，请检查 App ID 和 App Secret", latency };
-          if (!config.chat_id) return { success: false, error: "缺少 Chat ID", latency };
+          if (!config.chat_id) return { success: false, error: "飞书 App 模式下缺少 Chat ID", latency };
           return { success: true, latency };
         }
         case "qq": {
@@ -393,7 +393,7 @@ export async function testBotConnection(configId: number): Promise<{ success: bo
           const token = await getQQAccessToken(config.app_id, config.app_secret, config.id);
           const latency = Date.now() - startTime;
           if (!token) return { success: false, error: "获取 QQ access_token 失败，请检查 App ID 和 App Secret", latency };
-          if (!config.chat_id) return { success: false, error: "缺少 Channel ID", latency };
+          if (!config.chat_id) return { success: false, error: "QQ App 模式下缺少 Channel ID", latency };
           return { success: true, latency };
         }
         default:

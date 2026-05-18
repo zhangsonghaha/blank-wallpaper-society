@@ -19,6 +19,7 @@ import {
   Wifi,
 } from "lucide-react";
 import { toast } from "sonner";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -116,6 +117,9 @@ export default function BotsTab() {
   const [connectingId, setConnectingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // 判断当前编辑的机器人是否需要 chat_id（仅飞书和QQ的App模式需要）
+  const needsChatId = editingBot?.auth_mode === "app" && (editingBot.type === "feishu" || editingBot.type === "qq");
+
   const fetchBots = useCallback(async () => {
     setLoading(true);
     try {
@@ -144,8 +148,13 @@ export default function BotsTab() {
       toast.error("Webhook 模式下 Webhook 地址为必填项");
       return;
     }
-    if (editingBot.auth_mode === "app" && (!editingBot.app_id || !editingBot.app_secret || !editingBot.chat_id)) {
-      toast.error("App API 模式下 App ID、App Secret 和 Chat ID 为必填项");
+    if (editingBot.auth_mode === "app" && (!editingBot.app_id || !editingBot.app_secret)) {
+      toast.error("App API 模式下 App ID 和 App Secret 为必填项");
+      return;
+    }
+    // 仅飞书和QQ的App模式需要chat_id
+    if (needsChatId && !editingBot.chat_id) {
+      toast.error(`${editingBot.type === "feishu" ? "飞书" : "QQ"} App 模式下 Chat ID 为必填项`);
       return;
     }
 
@@ -161,9 +170,10 @@ export default function BotsTab() {
       delete (body as any).created_at;
       delete (body as any).updated_at;
 
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify(body),
       });
 
@@ -185,7 +195,8 @@ export default function BotsTab() {
     if (!confirm("确定要删除此机器人配置吗？")) return;
 
     try {
-      const res = await fetch(`/api/admin/bots?id=${id}`, { method: "DELETE" });
+      const csrfHeaders = await withCsrfHeader();
+      const res = await fetch(`/api/admin/bots?id=${id}`, { method: "DELETE", headers: csrfHeaders });
       const data = await res.json();
       if (res.ok) {
         toast.success("已删除");
@@ -201,9 +212,10 @@ export default function BotsTab() {
   const handleTest = async (id: number) => {
     setTestingId(id);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/admin/bots/test", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ id }),
       });
       const data = await res.json();
@@ -222,9 +234,10 @@ export default function BotsTab() {
   const handleConnectivity = async (id: number) => {
     setConnectingId(id);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/admin/bots/connectivity", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ id }),
       });
       const data = await res.json();
@@ -241,9 +254,10 @@ export default function BotsTab() {
 
   const handleToggleEnabled = async (bot: BotConfig) => {
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/admin/bots", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ ...bot, enabled: bot.enabled ? 0 : 1 }),
       });
       if (res.ok) {
@@ -371,7 +385,7 @@ export default function BotsTab() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Chat ID *</Label>
+                  <Label>Chat ID{needsChatId ? " *" : ""}</Label>
                   <Input
                     value={editingBot.chat_id || ""}
                     onChange={(e) => setEditingBot({ ...editingBot, chat_id: e.target.value || null })}
@@ -380,7 +394,7 @@ export default function BotsTab() {
                         ? "oc_a0553eee9024c1e8f2d5040dc5cddddg"
                         : editingBot.type === "qq"
                         ? "频道/群 channel_id"
-                        : "会话ID"
+                        : "会话ID（可选）"
                     }
                   />
                   <p className="text-xs text-muted-foreground">
@@ -388,7 +402,7 @@ export default function BotsTab() {
                       ? "飞书群的 chat_id，可在群设置 → 更多信息中获取"
                       : editingBot.type === "qq"
                       ? "QQ 频道/群的 channel_id"
-                      : "目标会话的唯一标识"}
+                      : "目标会话的唯一标识（部分平台可选）"}
                   </p>
                 </div>
               </div>
