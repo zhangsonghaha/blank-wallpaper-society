@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import {
   Download,
   Eye,
@@ -193,9 +194,10 @@ export default function LogsTab() {
       return;
     }
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/admin/logs", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ type: cleanType, beforeDate: cleanBeforeDate }),
       });
       if (res.ok) {

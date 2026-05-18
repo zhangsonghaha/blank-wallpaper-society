@@ -56,17 +56,16 @@ export async function GET(request: NextRequest) {
     let rows: any[];
 
     if (type === "favorites") {
-      // 收藏排行：用 images 表的 is_favorite 字段
-      // is_favorite 为 1 表示被收藏，按下载/浏览热度排序已收藏的图片
+      // 收藏排行：用 images 表的 favorite_count 字段
       const sql = `
         SELECT 
           i.id, i.title, i.description, i.url, i.thumbnail_url, 
           i.width, i.height, i.author, i.tags, i.category,
           i.download_count, i.view_count,
-          i.is_favorite AS favorite_count
+          i.favorite_count
         FROM images i
-        WHERE i.status = 'approved' AND i.is_favorite = 1
-        ORDER BY i.download_count DESC, i.view_count DESC
+        WHERE i.status = 'approved' AND i.favorite_count > 0
+        ORDER BY i.favorite_count DESC, i.download_count DESC
         LIMIT 50
       `;
       rows = (await query(sql)) as any[];

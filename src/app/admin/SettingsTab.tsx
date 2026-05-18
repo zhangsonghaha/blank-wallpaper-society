@@ -395,7 +395,8 @@ export default function SettingsTab() {
   const handleSyncIndex = async () => {
     setSyncing(true);
     try {
-      const res = await fetch("/api/admin/search-sync", { method: "POST" });
+      const csrfHeaders = await withCsrfHeader();
+      const res = await fetch("/api/admin/search-sync", { method: "POST", headers: { ...csrfHeaders } });
       const data = await res.json();
       if (res.ok) {
         toast.success(`同步完成，已索引 ${data.synced} 张图片`);

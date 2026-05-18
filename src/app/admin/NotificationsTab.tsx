@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import {
   Bell,
   BellOff,
@@ -185,9 +186,10 @@ export default function NotificationsTab() {
         }
       }
 
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/admin/notifications", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({
           userIds,
           title: sendForm.title.trim(),
@@ -263,8 +265,10 @@ export default function NotificationsTab() {
 
   const handleDelete = async (id: number) => {
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/admin/notifications?id=${id}`, {
         method: "DELETE",
+        headers: { ...csrfHeaders },
       });
       const data = await res.json();
       if (res.ok) {

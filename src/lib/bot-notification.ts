@@ -130,30 +130,36 @@ async function sendFeishuAppMessage(config: BotConfig, title: string, content: s
   if (!token) return { success: false, error: "获取飞书 tenant_access_token 失败" };
 
   const typeLabel = EVENT_TYPE_LABELS[type] || type;
-  let body: Record<string, unknown>;
+  let msgType: string;
+  let contentPayload: Record<string, unknown>;
 
   if (config.feishu_msg_type === "interactive") {
-    body = {
-      msg_type: "interactive",
-      card: {
-        header: { title: { tag: "plain_text", content: `【${typeLabel}】${title}` }, template: getFeishuHeaderColor(type) },
-        elements: [
-          { tag: "div", text: { tag: "plain_text", content: content || title } },
-          { tag: "div", text: { tag: "plain_text", content: `⏰ ${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}` } },
-        ],
-      },
+    msgType = "interactive";
+    contentPayload = {
+      config: { wide_screen_mode: true },
+      header: { title: { tag: "plain_text", content: `【${typeLabel}】${title}` }, template: getFeishuHeaderColor(type) },
+      elements: [
+        { tag: "div", text: { tag: "plain_text", content: content || title } },
+        { tag: "div", text: { tag: "plain_text", content: `⏰ ${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}` } },
+      ],
     };
   } else if (config.feishu_msg_type === "post") {
-    body = { msg_type: "post", content: { post: { zh_cn: { title: `【${typeLabel}】${title}`, content: [[{ tag: "text", text: content }]] } } } };
+    msgType = "post";
+    contentPayload = { post: { zh_cn: { title: `【${typeLabel}】${title}`, content: [[{ tag: "text", text: content }]] } } };
   } else {
-    body = { msg_type: "text", content: { text: `【${typeLabel}】${title}\n${content}` } };
+    msgType = "text";
+    contentPayload = { text: `【${typeLabel}】${title}\n${content}` };
   }
 
   try {
     const res = await fetch("https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ receive_id: config.chat_id, ...body }),
+      body: JSON.stringify({
+        receive_id: config.chat_id,
+        msg_type: msgType,
+        content: JSON.stringify(contentPayload),
+      }),
       signal: AbortSignal.timeout(10000),
     });
     const data = await res.json();

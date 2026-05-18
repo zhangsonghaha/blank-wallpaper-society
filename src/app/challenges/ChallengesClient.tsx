@@ -175,9 +175,10 @@ export default function ChallengesClient() {
       return;
     }
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/challenges/${selectedChallenge.id}/vote`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ submissionId }),
       });
       const data = await res.json();

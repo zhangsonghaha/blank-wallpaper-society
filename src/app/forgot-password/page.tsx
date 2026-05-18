@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import AltchaWidget from "@/components/AltchaWidget";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import {
   Card,
   CardContent,
@@ -44,9 +45,10 @@ export default function ForgotPasswordPage() {
 
     setLoading(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ email, altchaPayload }),
       });
       const data = await res.json();

@@ -153,7 +153,7 @@ export default function Lightbox({
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (!isOpen) return;
-      if (downloadPanelOpen || reportOpen || commentOpen || similarOpen) return;
+      if (downloadPanelOpen || reportOpen || addToCollectionOpen || commentOpen || similarOpen || exifOpen || devicePreview) return;
       switch (e.key) {
         case "Escape":
           if (devicePreview) {
@@ -170,7 +170,7 @@ export default function Lightbox({
           break;
       }
     },
-    [isOpen, onClose, onPrev, onNext, downloadPanelOpen, reportOpen, commentOpen, similarOpen, devicePreview]
+    [isOpen, onClose, onPrev, onNext, downloadPanelOpen, reportOpen, addToCollectionOpen, commentOpen, similarOpen, exifOpen, devicePreview]
   );
 
   useEffect(() => {
@@ -196,6 +196,11 @@ export default function Lightbox({
     setDownloadingRes(null);
     setDownloadProgress(0);
     setDevicePreview(false);
+    setReportOpen(false);
+    setAddToCollectionOpen(false);
+    setCommentOpen(false);
+    setSimilarOpen(false);
+    setExifOpen(false);
   }, [currentIndex]);
 
   // 获取作者关注状态
@@ -411,10 +416,20 @@ export default function Lightbox({
           transition={{ duration: 0.2 }}
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-sm"
           onClick={() => {
-            if (commentOpen) {
+            if (downloadPanelOpen) {
+              setDownloadPanelOpen(false);
+            } else if (reportOpen) {
+              setReportOpen(false);
+            } else if (addToCollectionOpen) {
+              setAddToCollectionOpen(false);
+            } else if (commentOpen) {
               setCommentOpen(false);
             } else if (similarOpen) {
               setSimilarOpen(false);
+            } else if (exifOpen) {
+              setExifOpen(false);
+            } else if (devicePreview) {
+              setDevicePreview(false);
             } else {
               onClose();
             }

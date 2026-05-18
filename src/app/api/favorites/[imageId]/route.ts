@@ -59,6 +59,12 @@ export async function POST(
       [userId, id]
     );
 
+    // 更新图片收藏计数
+    query(
+      `UPDATE images SET favorite_count = (SELECT COUNT(*) FROM favorites WHERE image_id = ?) WHERE id = ?`,
+      [id, id]
+    ).catch(() => {});
+
     // 收藏成功 → 图片作者 +5 exp + 检查成就（异步不阻塞）
     query("SELECT uploaded_by, title FROM images WHERE id = ?", [id])
       .then((rows) => {
@@ -115,6 +121,14 @@ export async function DELETE(
       `DELETE FROM favorites WHERE user_id = ? AND image_id = ?`,
       [userId, id]
     ) as any;
+
+    // 更新图片收藏计数
+    if (result.affectedRows > 0) {
+      query(
+        `UPDATE images SET favorite_count = (SELECT COUNT(*) FROM favorites WHERE image_id = ?) WHERE id = ?`,
+        [id, id]
+      ).catch(() => {});
+    }
 
     if (result.affectedRows === 0) {
       return NextResponse.json(

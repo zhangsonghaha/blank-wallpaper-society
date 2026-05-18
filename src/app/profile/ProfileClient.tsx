@@ -602,9 +602,10 @@ export default function ProfileClient({
 
     setSaving(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/auth/profile", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ name }),
       });
 
@@ -632,8 +633,10 @@ export default function ProfileClient({
       const fd = new FormData();
       fd.append("avatar", file);
 
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/auth/profile", {
         method: "PATCH",
+        headers: { ...csrfHeaders },
         body: fd,
       });
 

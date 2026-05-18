@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import {
   ShieldCheck,
   AlertTriangle,
@@ -102,9 +103,10 @@ export default function ReportTab() {
   const handleAction = async (reportId: number, action: "dismiss" | "remove") => {
     setProcessing(true);
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/reports", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify({ reportId, action }),
       });
       const data = await res.json();

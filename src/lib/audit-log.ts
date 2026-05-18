@@ -28,7 +28,11 @@ export type AuditOperation =
   | "bot_config_update"
   | "bot_config_delete"
   | "bot_config_test"
-  | "bot_config_connectivity_test";
+  | "bot_config_connectivity_test"
+  | "ai_provider_create"
+  | "ai_model_create"
+  | "ai_model_auto_discover"
+  | "ai_model_set_default";
 
 // 敏感操作（需要额外关注）
 const SENSITIVE_OPERATIONS: AuditOperation[] = [

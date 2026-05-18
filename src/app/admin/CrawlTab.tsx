@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { withCsrfHeader } from "@/lib/csrf-client";
 import {
   Bug,
   Play,
@@ -265,9 +266,10 @@ export default function CrawlTab() {
     setErrorMessage("");
 
     try {
+      const csrfHeaders = await withCsrfHeader();
       const res = await fetch("/api/admin/crawl", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
         body: JSON.stringify(
           crawlMode === "url"
             ? {

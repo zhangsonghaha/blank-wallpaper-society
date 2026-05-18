@@ -38,10 +38,10 @@ export async function GET(request: NextRequest) {
           i.id, i.title, i.description, i.url, i.thumbnail_url, 
           i.width, i.height, i.author, i.tags, i.category,
           i.download_count, i.view_count,
-          i.is_favorite AS favorite_count
+          i.favorite_count
         FROM images i
-        WHERE i.status = 'approved' AND i.is_favorite = 1
-        ORDER BY i.download_count DESC, i.view_count DESC
+        WHERE i.status = 'approved' AND i.favorite_count > 0
+        ORDER BY i.favorite_count DESC, i.download_count DESC
         LIMIT ?
       `;
       rows = (await query(sql, [limit])) as any[];

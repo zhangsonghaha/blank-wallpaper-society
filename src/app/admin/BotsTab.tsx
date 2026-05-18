@@ -63,6 +63,8 @@ interface BotConfig {
   custom_method: string;
   custom_headers: Record<string, string> | null;
   custom_body_template: string | null;
+  default_chat_model_id: number | null;
+  default_image_model_id: number | null;
   last_sent_at: string | null;
   send_count: number;
   fail_count: number;
@@ -107,6 +109,8 @@ const EMPTY_BOT: Omit<BotConfig, "id" | "last_sent_at" | "send_count" | "fail_co
   custom_method: "POST",
   custom_headers: null,
   custom_body_template: null,
+  default_chat_model_id: null,
+  default_image_model_id: null,
 };
 
 export default function BotsTab() {

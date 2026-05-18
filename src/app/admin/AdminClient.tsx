@@ -27,6 +27,7 @@ import {
   Megaphone,
   ScrollText,
   Bot,
+  Brain,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ import RoleManagementTab from "./RoleManagementTab";
 import AnnouncementsTab from "./AnnouncementsTab";
 import LogsTab from "./LogsTab";
 import BotsTab from "./BotsTab";
+import ModelsTab from "./ModelsTab";
 
 // 标签页接口
 interface TabItem {
@@ -69,13 +71,27 @@ interface MenuGroup {
   }[];
 }
 
+// 数据库菜单项接口
+interface DbMenuItem {
+  id: number;
+  parent_id: number;
+  name: string;
+  path: string;
+  icon: string;
+  sort_order: number;
+  is_visible: number;
+  is_enabled: number;
+  type: string;
+  children?: DbMenuItem[];
+}
+
 export default function AdminClient() {
   
   // 布局状态
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [expandedGroups, setExpandedGroups] = useState<string[]>(["ops", "content", "system"]);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [tabs, setTabs] = useState<TabItem[]>([
     {
       id: "dashboard",
@@ -88,83 +104,68 @@ export default function AdminClient() {
 
   const [isDragging, setIsDragging] = useState(false);
 
-  // 菜单可见性/启用状态映射 (path -> { is_visible, is_enabled })
-  const [menuVisibility, setMenuVisibility] = useState<Record<string, { is_visible: number; is_enabled: number }>>({});
+  // === 图标名称映射 ===
+  const iconMap: Record<string, React.ReactNode> = {
+    LayoutDashboard: <LayoutDashboard className="w-4 h-4" />,
+    ImageIcon: <ImageIcon className="w-4 h-4" />,
+    ShieldCheck: <ShieldCheck className="w-4 h-4" />,
+    Users: <Users className="w-4 h-4" />,
+    FolderTree: <FolderTree className="w-4 h-4" />,
+    Bell: <Bell className="w-4 h-4" />,
+    FileText: <FileText className="w-4 h-4" />,
+    Settings: <Settings className="w-4 h-4" />,
+    Bug: <Bug className="w-4 h-4" />,
+    BarChart3: <BarChart3 className="w-4 h-4" />,
+    Trophy: <Trophy className="w-4 h-4" />,
+    Mail: <Mail className="w-4 h-4" />,
+    Menu: <MenuIcon className="w-4 h-4" />,
+    UserCog: <UserCog className="w-4 h-4" />,
+    Megaphone: <Megaphone className="w-4 h-4" />,
+    ScrollText: <ScrollText className="w-4 h-4" />,
+    Bot: <Bot className="w-4 h-4" />,
+    Brain: <Brain className="w-4 h-4" />,
+  };
 
-  // 从数据库加载菜单可见性状态
-  useEffect(() => {
-    const loadMenuVisibility = () => {
-      fetch("/api/admin/menus")
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.flat) {
-            const map: Record<string, { is_visible: number; is_enabled: number }> = {};
-            for (const menu of data.flat) {
-              // 使用 path 作为 key，与 menuGroups 中 child.id 对应
-              map[menu.path] = { is_visible: menu.is_visible, is_enabled: menu.is_enabled };
-            }
-            setMenuVisibility(map);
-          }
-        })
-        .catch(() => {});
-    };
-    loadMenuVisibility();
-    // 监听菜单变更事件（菜单管理页面触发）
-    window.addEventListener("admin:menu-changed", loadMenuVisibility);
-    return () => window.removeEventListener("admin:menu-changed", loadMenuVisibility);
+  // === 从数据库加载菜单 ===
+  const [dbMenuTree, setDbMenuTree] = useState<DbMenuItem[]>([]);
+
+  const loadMenuFromDB = useCallback(() => {
+    fetch("/api/admin/menus")
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data) {
+          setDbMenuTree(data.data);
+          // 默认展开所有分组
+          setExpandedGroups(data.data.map((item: DbMenuItem) => String(item.id)));
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  // 菜单分组配置
-  const menuGroups: MenuGroup[] = [
-    {
-      id: "content",
-      title: "内容管理",
-      icon: <FolderTree className="w-4 h-4" />,
-      children: [
-        { id: "images", title: "图片管理", icon: <ImageIcon className="w-4 h-4" /> },
-        { id: "categories", title: "分类管理", icon: <FolderTree className="w-4 h-4" /> },
-        { id: "review", title: "审核管理", icon: <ShieldCheck className="w-4 h-4" /> },
-        { id: "reports", title: "举报管理", icon: <FileText className="w-4 h-4" /> },
-        { id: "crawl", title: "爬虫管理", icon: <Bug className="w-4 h-4" /> },
-        { id: "challenges", title: "挑战赛管理", icon: <Trophy className="w-4 h-4" /> },
-      ],
-    },
-    {
-      id: "ops",
-      title: "运营管理",
-      icon: <BarChart3 className="w-4 h-4" />,
-      children: [
-        { id: "dashboard", title: "仪表盘", icon: <LayoutDashboard className="w-4 h-4" /> },
-        { id: "api-usage", title: "API用量", icon: <BarChart3 className="w-4 h-4" /> },
-        { id: "email-templates", title: "邮件模板", icon: <Mail className="w-4 h-4" /> },
-        { id: "bots", title: "机器人通知", icon: <Bot className="w-4 h-4" /> },
-      ],
-    },
-    {
-      id: "system",
-      title: "系统管理",
-      icon: <Settings className="w-4 h-4" />,
-      children: [
-        { id: "menu-management", title: "菜单管理", icon: <MenuIcon className="w-4 h-4" /> },
-        { id: "role-management", title: "角色管理", icon: <UserCog className="w-4 h-4" /> },
-        { id: "users", title: "用户管理", icon: <Users className="w-4 h-4" /> },
-        { id: "announcements", title: "通知公告", icon: <Megaphone className="w-4 h-4" /> },
-        { id: "logs", title: "日志管理", icon: <ScrollText className="w-4 h-4" /> },
-        { id: "settings", title: "系统设置", icon: <Settings className="w-4 h-4" /> },
-      ],
-    },
-  ];
+  useEffect(() => {
+    loadMenuFromDB();
+    window.addEventListener("admin:menu-changed", loadMenuFromDB);
+    return () => window.removeEventListener("admin:menu-changed", loadMenuFromDB);
+  }, [loadMenuFromDB]);
 
-  // 根据菜单可见性过滤菜单项
-  const filteredMenuGroups = menuGroups.map(group => ({
-    ...group,
-    children: group.children.filter(child => {
-      const vis = menuVisibility[child.id];
-      // 如果没有数据库记录（菜单管理页面自身），默认显示
-      if (!vis) return true;
-      return vis.is_visible === 1 && vis.is_enabled === 1;
-    }),
-  })).filter(group => group.children.length > 0);
+  // === 从数据库菜单树构建 menuGroups ===
+  const menuGroups: MenuGroup[] = dbMenuTree
+    .filter(item => item.is_visible === 1 && item.is_enabled === 1 && item.children && item.children.length > 0)
+    .map(item => ({
+      id: String(item.id),
+      title: item.name,
+      icon: iconMap[item.icon] || <Settings className="w-4 h-4" />,
+      children: (item.children || [])
+        .filter(child => child.is_visible === 1 && child.is_enabled === 1)
+        .map(child => ({
+          id: child.path,
+          title: child.name,
+          icon: iconMap[child.icon] || <Settings className="w-4 h-4" />,
+        })),
+    }));
+
+  const filteredMenuGroups = menuGroups.filter(group => group.children.length > 0);
+
 
   // 获取所有菜单项的扁平列表（用于标题查找）
   const allMenuItems = filteredMenuGroups.flatMap(g => g.children);
@@ -241,6 +242,9 @@ export default function AdminClient() {
         break;
       case "bots":
         content = <BotsTab />;
+        break;
+      case "models":
+        content = <ModelsTab />;
         break;
       default:
         content = <div className="p-6">功能开发中...</div>;

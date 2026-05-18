@@ -58,6 +58,8 @@ export async function middleware(request: NextRequest) {
       const csrfExcludedPaths = [
         "/api/auth/",
         "/api/upload",
+        "/api/auth/register",
+        "/api/auth/forgot-password",
       ];
       // /api/v1/ 已在上面直接 return NextResponse.next()
       const needsCsrf = !csrfExcludedPaths.some((p) => pathname.startsWith(p));
@@ -65,6 +67,14 @@ export async function middleware(request: NextRequest) {
       if (needsCsrf) {
         const csrfResult = validateCsrfToken(request);
         if (!csrfResult.valid) {
+          console.warn(JSON.stringify({
+            type: "csrf_validation_failed",
+            path: pathname,
+            method: request.method,
+            reason: csrfResult.reason,
+            hasHeader: !!request.headers.get("x-csrf-token"),
+            timestamp: new Date().toISOString(),
+          }));
           return NextResponse.json({ error: "CSRF验证失败" }, { status: 403 });
         }
       }

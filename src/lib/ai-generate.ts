@@ -20,6 +20,27 @@ export async function getAiConfig(): Promise<AiConfig> {
   let enabled = !!apiKey;
 
   try {
+    // 优先从 ai_models + ai_model_providers 表获取默认图片生成模型
+    const imageModelRows = (await query(
+      `SELECT m.model_id, m.is_default, p.type AS provider_type, p.api_key, p.base_url, p.enabled AS provider_enabled
+       FROM ai_models m
+       LEFT JOIN ai_model_providers p ON m.provider_id = p.id
+       WHERE m.model_type = 'image' AND m.enabled = 1 AND p.enabled = 1
+       ORDER BY m.is_default DESC, m.id ASC
+       LIMIT 1`
+    )) as any[];
+
+    if (imageModelRows.length > 0 && imageModelRows[0].api_key) {
+      const row = imageModelRows[0];
+      provider = row.provider_type || "openai";
+      apiKey = row.api_key;
+      baseUrl = row.base_url;
+      model = row.model_id;
+      enabled = true;
+      return { provider, apiKey, baseUrl, model, enabled };
+    }
+
+    // 回退到 system_settings 表
     const settings = (await query(
       "SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN (?, ?, ?, ?, ?)",
       ["ai_provider", "ai_api_key", "ai_api_base_url", "ai_model", "ai_enabled"]
