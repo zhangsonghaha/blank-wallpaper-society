@@ -373,9 +373,22 @@ export default function MasonryGrid() {
 
   const columns = useMemo(() => {
     const cols: ImageRecord[][] = Array.from({ length: colCount }, () => []);
-    displayedImages.forEach((img, index) => {
-      cols[index % colCount].push(img);
+    const colHeights: number[] = Array(colCount).fill(0);
+    
+    displayedImages.forEach((img) => {
+      // 计算图片的宽高比
+      const aspectRatio = (img.width || 600) / (img.height || 800);
+      // 估算图片在列中的高度（假设列宽相同，高度与宽高比成反比）
+      const estimatedHeight = 1 / aspectRatio;
+      
+      // 找到当前高度最小的列
+      const minHeightIndex = colHeights.indexOf(Math.min(...colHeights));
+      // 将图片添加到高度最小的列
+      cols[minHeightIndex].push(img);
+      // 更新该列的高度
+      colHeights[minHeightIndex] += estimatedHeight;
     });
+    
     return cols;
   }, [displayedImages, colCount]);
 
@@ -651,9 +664,9 @@ export default function MasonryGrid() {
 
         {/* Loading State */}
         {loading ? (
-          <div className="flex gap-1.5 sm:gap-4">
+          <div className="flex gap-1.5 sm:gap-4 justify-center">
             {[0, 1, 2, 3].slice(0, colCount).map((col) => (
-              <div key={col} className="flex-1 flex flex-col gap-4">
+              <div key={col} className="flex-1 flex flex-col gap-4 max-w-[360px]">
                 {[0, 1, 2].map((row) => (
                   <div
                     key={row}
@@ -666,9 +679,9 @@ export default function MasonryGrid() {
           </div>
         ) : displayedImages.length > 0 ? (
           <div>
-            <div className="flex gap-1.5 sm:gap-3 md:gap-4">
+            <div className="flex gap-1.5 sm:gap-3 md:gap-4 justify-center">
               {columns.map((col, colIndex) => (
-                <div key={colIndex} className="flex-1 flex flex-col gap-1.5 sm:gap-4">
+                <div key={colIndex} className="flex-1 flex flex-col gap-1.5 sm:gap-4 max-w-[360px]">
                   {col.map((image, index) => {
                     const globalIdx = displayedImages.findIndex(
                       (img) => img.id === image.id
