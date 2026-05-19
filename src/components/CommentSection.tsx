@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, Send, Trash2, Reply, X } from "lucide-react";
+import { MessageCircle, Send, Trash2, Reply, X, ThumbsUp, ArrowUpDown } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { withCsrfHeader } from "@/lib/csrf-client";
@@ -16,6 +16,7 @@ interface Comment {
   created_at: string;
   user_name: string;
   user_avatar: string | null;
+  like_count: number;
   replies?: Comment[];
 }
 
@@ -48,6 +49,8 @@ export default function CommentSection({
   const [submitting, setSubmitting] = useState(false);
   const [replyTo, setReplyTo] = useState<Comment | null>(null);
   const [total, setTotal] = useState(0);
+  const [sortBy, setSortBy] = useState<"latest" | "hot">("latest");
+  const [likedComments, setLikedComments] = useState<Set<number>>(new Set());
 
   const fetchComments = useCallback(async () => {
     if (!imageId) return;
@@ -141,6 +144,57 @@ export default function CommentSection({
 
   const currentUserId = (session?.user as any)?.id;
 
+  // 点赞评论
+  const handleLike = async (commentId: number) => {
+    if (status !== "authenticated") {
+      toast.error("请先登录");
+      return;
+    }
+    if (likedComments.has(commentId)) return; // 已点赞
+    // 乐观更新
+    setLikedComments((prev) => new Set(prev).add(commentId));
+    setComments((prev) =>
+      prev.map((c) =>
+        c.id === commentId ? { ...c, like_count: (c.like_count || 0) + 1 } : c
+      ).map((c) => ({
+        ...c,
+        replies: c.replies?.map((r) =>
+          r.id === commentId ? { ...r, like_count: (r.like_count || 0) + 1 } : r
+        ),
+      }))
+    );
+    try {
+      const csrfHeaders = await withCsrfHeader();
+      const res = await fetch(`/api/comments/${commentId}/like`, {
+        method: "POST",
+        headers: { ...csrfHeaders },
+      });
+      if (!res.ok) {
+        // 回滚
+        setLikedComments((prev) => { const s = new Set(prev); s.delete(commentId); return s; });
+        setComments((prev) =>
+          prev.map((c) =>
+            c.id === commentId ? { ...c, like_count: Math.max(0, (c.like_count || 0) - 1) } : c
+          ).map((c) => ({
+            ...c,
+            replies: c.replies?.map((r) =>
+              r.id === commentId ? { ...r, like_count: Math.max(0, (r.like_count || 0) - 1) } : r
+            ),
+          }))
+        );
+      }
+    } catch {
+      // 回滚
+      setLikedComments((prev) => { const s = new Set(prev); s.delete(commentId); return s; });
+    }
+  };
+
+  // 排序后的评论
+  const sortedComments = [...comments].sort((a, b) => {
+    if (sortBy === "hot") return (b.like_count || 0) - (a.like_count || 0);
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -164,12 +218,39 @@ export default function CommentSection({
                 </span>
               )}
             </div>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[var(--color-surface-card)] transition-colors"
-            >
-              <X className="w-4 h-4 text-[var(--color-mute)]" />
-            </button>
+            <div className="flex items-center gap-2">
+              {/* 排序切换 */}
+              {comments.length > 1 && (
+                <div className="inline-flex items-center bg-[var(--color-surface-card)] rounded-full p-0.5">
+                  <button
+                    onClick={() => setSortBy("latest")}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-full transition-all ${
+                      sortBy === "latest"
+                        ? "bg-[var(--color-ink)] text-white"
+                        : "text-[var(--color-mute)] hover:text-[var(--color-ink)]"
+                    }`}
+                  >
+                    最新
+                  </button>
+                  <button
+                    onClick={() => setSortBy("hot")}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-full transition-all ${
+                      sortBy === "hot"
+                        ? "bg-[var(--color-ink)] text-white"
+                        : "text-[var(--color-mute)] hover:text-[var(--color-ink)]"
+                    }`}
+                  >
+                    最热
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={onClose}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[var(--color-surface-card)] transition-colors"
+              >
+                <X className="w-4 h-4 text-[var(--color-mute)]" />
+              </button>
+            </div>
           </div>
 
           {/* Comments List */}
@@ -184,7 +265,7 @@ export default function CommentSection({
                 <p className="text-sm">暂无评论，来说点什么吧</p>
               </div>
             ) : (
-              comments.map((comment) => (
+              sortedComments.map((comment) => (
                 <div key={comment.id} className="group">
                   <div className="flex items-start gap-3">
                     {/* Avatar */}
@@ -222,6 +303,17 @@ export default function CommentSection({
                         >
                           <Reply className="w-3 h-3" />
                           回复
+                        </button>
+                        <button
+                          onClick={() => handleLike(comment.id)}
+                          className={`text-[11px] transition-colors flex items-center gap-0.5 ${
+                            likedComments.has(comment.id)
+                              ? "text-[var(--color-primary)]"
+                              : "text-[var(--color-mute)] hover:text-[var(--color-primary)]"
+                          }`}
+                        >
+                          <ThumbsUp className="w-3 h-3" />
+                          {(comment.like_count || 0) > 0 && comment.like_count}
                         </button>
                         {comment.user_id === currentUserId && (
                           <button
@@ -266,14 +358,27 @@ export default function CommentSection({
                             <p className="text-xs text-[var(--color-body)] mt-0.5 break-words">
                               {reply.content}
                             </p>
-                            {reply.user_id === currentUserId && (
+                            <div className="flex items-center gap-3 mt-1">
                               <button
-                                onClick={() => handleDelete(reply.id)}
-                                className="text-[10px] text-[var(--color-mute)] hover:text-red-500 transition-colors mt-1"
+                                onClick={() => handleLike(reply.id)}
+                                className={`text-[10px] transition-colors flex items-center gap-0.5 ${
+                                  likedComments.has(reply.id)
+                                    ? "text-[var(--color-primary)]"
+                                    : "text-[var(--color-mute)] hover:text-[var(--color-primary)]"
+                                }`}
                               >
-                                删除
+                                <ThumbsUp className="w-2.5 h-2.5" />
+                                {(reply.like_count || 0) > 0 && reply.like_count}
                               </button>
-                            )}
+                              {reply.user_id === currentUserId && (
+                                <button
+                                  onClick={() => handleDelete(reply.id)}
+                                  className="text-[10px] text-[var(--color-mute)] hover:text-red-500 transition-colors"
+                                >
+                                  删除
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}

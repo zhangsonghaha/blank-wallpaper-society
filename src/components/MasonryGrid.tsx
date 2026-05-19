@@ -98,6 +98,7 @@ export default function MasonryGrid() {
   const [searchEngine, setSearchEngine] = useState<string>("");
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [totalCount, setTotalCount] = useState(0);
+  const [recommendations, setRecommendations] = useState<ImageRecord[]>([]);
   const favoritesRef = useRef<HTMLDivElement>(null);
 
   // 精选合集
@@ -187,6 +188,7 @@ export default function MasonryGrid() {
           setImages(data.data || []);
           setTotalCount(data.total || 0);
           setSearchEngine(data._searchEngine || "");
+          setRecommendations(data.recommendations || []);
           setVisibleCount(ITEMS_PER_PAGE);
           setLoading(false);
         })
@@ -753,6 +755,29 @@ export default function MasonryGrid() {
                   ? "试试其他关键词、更换颜色或清除筛选条件"
                   : "去管理后台上传第一张图片吧"}
             </p>
+            {/* 零结果推荐 */}
+            {recommendations.length > 0 && (searchQuery || activeColor || activeCategory !== "all") && (
+              <div className="mb-8 max-w-3xl mx-auto">
+                <h4 className="text-sm font-medium text-[var(--color-ink)] mb-3">为你推荐</h4>
+                <div className="grid grid-cols-4 gap-2">
+                  {recommendations.slice(0, 8).map((rec) => (
+                    <Link
+                      key={rec.id}
+                      href={`/images/${rec.id}`}
+                      className="relative aspect-[3/4] rounded-lg overflow-hidden group"
+                    >
+                      <img
+                        src={rec.thumbnail_url || rec.url}
+                        alt={rec.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <p className="absolute bottom-1 left-1 right-1 text-[10px] text-white truncate opacity-0 group-hover:opacity-100 transition-opacity">{rec.title}</p>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
             {showFavoritesOnly ? (
               <button
                 onClick={() => setShowFavoritesOnly(false)}

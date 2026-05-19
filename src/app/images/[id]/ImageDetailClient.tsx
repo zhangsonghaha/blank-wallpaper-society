@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import CommentSection from "@/components/CommentSection";
 import SimilarImages from "@/components/SimilarImages";
+import SocialShare from "@/components/SocialShare";
 import { RESOLUTIONS, CATEGORY_LABELS } from "@/lib/resolutions";
 import { withCsrfHeader } from "@/lib/csrf-client";
 
@@ -49,9 +50,10 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
   const [downloadingRes, setDownloadingRes] = useState<string | null>(null);
   const [commentOpen, setCommentOpen] = useState(true);
   const [similarOpen, setSimilarOpen] = useState(true);
-  const [showShareMenu, setShowShareMenu] = useState(false);
+
   const [addToCollectionOpen, setAddToCollectionOpen] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   // 检查收藏状态
   useEffect(() => {
@@ -142,37 +144,7 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
     }
   }, [imageId, imageData.title]);
 
-  // 分享功能
-  const handleShare = useCallback(async (platform: string) => {
-    const url = `${imageData.baseUrl}/images/${imageId}`;
-    const text = `${imageData.title} - ImageGallery`;
-
-    switch (platform) {
-      case "native":
-        if (navigator.share) {
-          await navigator.share({ title: imageData.title, text, url });
-        }
-        break;
-      case "wechat":
-        await navigator.clipboard.writeText(url);
-        toast.success("链接已复制，可粘贴到微信分享");
-        break;
-      case "weibo":
-        window.open(`https://service.weibo.com/share/share.php?url=${encodeURIComponent(url)}&title=${encodeURIComponent(text)}`, "_blank");
-        break;
-      case "qq":
-        window.open(`https://connect.qq.com/widget/shareqq/index.html?url=${encodeURIComponent(url)}&title=${encodeURIComponent(text)}`, "_blank");
-        break;
-      case "twitter":
-        window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, "_blank");
-        break;
-      case "copy":
-        await navigator.clipboard.writeText(url);
-        toast.success("链接已复制");
-        break;
-    }
-    setShowShareMenu(false);
-  }, [imageId, imageData]);
+  // 分享功能 - 使用 SocialShare 组件
 
   const categoryLabel = CATEGORY_LABELS[imageData.category as keyof typeof CATEGORY_LABELS] || imageData.category;
 
@@ -190,39 +162,10 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
               <Heart className={`w-4 h-4 mr-1 ${isFavorited ? "fill-current" : ""}`} />
               {isFavorited ? "已收藏" : "收藏"}
             </Button>
-            <div className="relative">
-              <Button variant="ghost" size="sm" onClick={() => setShowShareMenu(!showShareMenu)}>
-                <Share2 className="w-4 h-4 mr-1" />
-                分享
-              </Button>
-              <AnimatePresence>
-                {showShareMenu && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="absolute right-0 top-full mt-2 bg-[var(--color-surface-elevated)] rounded-lg shadow-lg border border-[var(--color-border)] py-2 min-w-[160px] z-50"
-                  >
-                    {[
-                      { key: "native", label: "系统分享" },
-                      { key: "wechat", label: "微信" },
-                      { key: "weibo", label: "微博" },
-                      { key: "qq", label: "QQ" },
-                      { key: "twitter", label: "Twitter" },
-                      { key: "copy", label: "复制链接" },
-                    ].map((item) => (
-                      <button
-                        key={item.key}
-                        onClick={() => handleShare(item.key)}
-                        className="w-full px-4 py-2 text-left text-sm hover:bg-[var(--color-surface-hover)] transition-colors"
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+            <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)}>
+              <Share2 className="w-4 h-4 mr-1" />
+              分享
+            </Button>
           </div>
         </div>
       </div>
@@ -372,11 +315,11 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
                     <div className="grid grid-cols-2 gap-2 pt-2">
                       {RESOLUTIONS.slice(0, 8).map((res) => (
                         <Button
-                          key={res.id}
+                          key={res.label}
                           variant="outline"
                           size="sm"
                           className="text-xs"
-                          onClick={() => handleDownload(res.value)}
+                          onClick={() => handleDownload(`${res.width}x${res.height}`)}
                           disabled={downloadingRes !== null}
                         >
                           {res.label}
@@ -408,6 +351,15 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
           </div>
         </div>
       </div>
+
+      {/* 社交分享弹窗 */}
+      <SocialShare
+        imageId={parseInt(imageId)}
+        imageTitle={imageData.title}
+        imageUrl={imageData.imageUrl}
+        isOpen={shareOpen}
+        onClose={() => setShareOpen(false)}
+      />
     </div>
   );
 }

@@ -247,12 +247,22 @@ export async function GET(request: NextRequest) {
       total = filteredRows.length;
     }
 
+    // 零结果推荐：搜索无结果时返回随机8张推荐
+    let recommendations: any[] | null = null;
+    if (search && filteredRows.length === 0) {
+      const recRows = (await query(
+        "SELECT * FROM images WHERE status = 'approved' ORDER BY RAND() LIMIT 8"
+      )) as any[];
+      recommendations = recRows;
+    }
+
     return NextResponse.json({
       data: filteredRows,
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+      ...(recommendations ? { recommendations } : {}),
     });
   } catch (error: any) {
     console.error("GET /api/images error:", error);
