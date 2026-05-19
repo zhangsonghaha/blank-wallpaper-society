@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import PinCard from "./PinCard";
 import FilterChips from "./FilterChips";
@@ -67,6 +67,7 @@ const ITEMS_PER_PAGE = 12;
 
 export default function MasonryGrid() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const {
     searchQuery,
     setSearchQuery,
@@ -316,7 +317,13 @@ export default function MasonryGrid() {
     []
   );
 
-  const closeLightbox = useCallback(() => setLightboxOpen(false), []);
+  const closeLightbox = useCallback(() => {
+    setLightboxOpen(false);
+    // 关闭灯箱时清除URL中的?pin=参数，防止重新打开
+    if (searchParams.get("pin")) {
+      router.replace(window.location.pathname, { scroll: false });
+    }
+  }, [searchParams, router]);
   const goToPrev = useCallback(
     () =>
       setLightboxIndex((prev) =>

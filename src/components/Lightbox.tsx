@@ -153,15 +153,46 @@ export default function Lightbox({
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (!isOpen) return;
+      
+      // Escape 键优先处理，逐层关闭弹窗
+      if (e.key === "Escape") {
+        if (downloadPanelOpen) {
+          setDownloadPanelOpen(false);
+          return;
+        }
+        if (reportOpen) {
+          setReportOpen(false);
+          return;
+        }
+        if (addToCollectionOpen) {
+          setAddToCollectionOpen(false);
+          return;
+        }
+        if (commentOpen) {
+          setCommentOpen(false);
+          return;
+        }
+        if (similarOpen) {
+          setSimilarOpen(false);
+          return;
+        }
+        if (exifOpen) {
+          setExifOpen(false);
+          return;
+        }
+        if (devicePreview) {
+          setDevicePreview(false);
+          return;
+        }
+        // 所有弹窗都关闭后再关闭lightbox
+        onClose();
+        return;
+      }
+      
+      // 其他快捷键只有在没有弹窗打开时才生效
       if (downloadPanelOpen || reportOpen || addToCollectionOpen || commentOpen || similarOpen || exifOpen || devicePreview) return;
+      
       switch (e.key) {
-        case "Escape":
-          if (devicePreview) {
-            setDevicePreview(false);
-          } else {
-            onClose();
-          }
-          break;
         case "ArrowLeft":
           if (!devicePreview) onPrev();
           break;
@@ -437,7 +468,10 @@ export default function Lightbox({
         >
           {/* Close Button */}
           <button
-            onClick={onClose}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
             className="absolute top-4 right-4 z-10 w-11 h-11 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 transition-colors"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
