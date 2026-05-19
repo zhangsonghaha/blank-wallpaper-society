@@ -16,10 +16,12 @@ import {
   Infinity,
   Zap,
   ArrowRight,
+  Ticket,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import PaymentDialog from "@/components/PaymentDialog";
+import { getCsrfToken } from "@/lib/csrf-client";
 
 // 会员价格配置（与 src/lib/earnings.ts 保持同步）
 const MEMBERSHIP_PRICES = {
@@ -310,6 +312,9 @@ export default function MembershipClient() {
         </div>
       </div>
 
+      {/* 兑换码入口 */}
+      <RedeemCodeSection />
+
       {/* 支付弹窗 */}
       <PaymentDialog
         isOpen={paymentOpen}
@@ -435,5 +440,82 @@ function QuickLink({ icon, label, href }: { icon: React.ReactNode; label: string
       <span className="text-sm font-medium text-[var(--color-ink)] flex-1">{label}</span>
       <ArrowRight className="w-4 h-4 text-[var(--color-mute)]" />
     </button>
+  );
+}
+
+// === 兑换码区域 ===
+function RedeemCodeSection() {
+  const [code, setCode] = useState("");
+  const [redeeming, setRedeeming] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; plan?: string; expiresAt?: string; daysAdded?: number; error?: string } | null>(null);
+
+  const handleRedeem = async () => {
+    if (!code.trim()) return;
+    setRedeeming(true);
+    setResult(null);
+    try {
+      const csrfToken = await getCsrfToken();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrfToken) headers["x-csrf-token"] = csrfToken;
+
+      const res = await fetch("/api/user/redeem-membership", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ code: code.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setResult({ success: true, plan: data.plan, expiresAt: data.expiresAt, daysAdded: data.daysAdded });
+        setCode("");
+      } else {
+        setResult({ success: false, error: data.error || "兑换失败" });
+      }
+    } catch (err) {
+      setResult({ success: false, error: "网络错误" });
+    }
+    setRedeeming(false);
+  };
+
+  return (
+    <div className="max-w-[900px] mx-auto px-4 pb-16">
+      <div className="bg-[var(--color-surface-soft)] rounded-2xl p-6 border border-[var(--color-hairline)]">
+        <div className="flex items-center gap-2 mb-4">
+          <Ticket className="w-5 h-5 text-amber-500" />
+          <h3 className="text-lg font-bold text-[var(--color-ink)]">兑换码</h3>
+        </div>
+        <p className="text-sm text-[var(--color-mute)] mb-4">
+          如果您有会员兑换码，请在此输入以激活会员权益
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            placeholder="BWS-XXXX-XXXX-XXXX"
+            className="flex-1 px-4 py-2 rounded-lg border border-[var(--color-hairline)] bg-[var(--color-surface-card)] text-[var(--color-ink)] placeholder:text-[var(--color-mute)] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+            maxLength={19}
+          />
+          <button
+            onClick={handleRedeem}
+            disabled={redeeming || !code.trim()}
+            className="px-6 py-2 rounded-lg bg-amber-500 text-white font-medium text-sm hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {redeeming ? "兑换中..." : "兑换"}
+          </button>
+        </div>
+        {result && (
+          <div className={`mt-3 text-sm ${result.success ? "text-green-600" : "text-red-600"}`}>
+            {result.success ? (
+              <span>
+                兑换成功！已获得 {result.plan === "monthly" ? "月度" : "年度"}会员，有效期 {result.daysAdded} 天，
+                到期时间：{new Date(result.expiresAt!).toLocaleDateString("zh-CN")}
+              </span>
+            ) : (
+              <span>{result.error}</span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

@@ -29,6 +29,7 @@ import {
   Bot,
   Brain,
   ShoppingBag,
+  Crown,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ import LogsTab from "./LogsTab";
 import BotsTab from "./BotsTab";
 import ModelsTab from "./ModelsTab";
 import OrdersTab from "./OrdersTab";
+import MembershipTab from "./MembershipTab";
 
 // 标签页接口
 interface TabItem {
@@ -127,6 +129,7 @@ export default function AdminClient() {
     Bot: <Bot className="w-4 h-4" />,
     Brain: <Brain className="w-4 h-4" />,
     ShoppingBag: <ShoppingBag className="w-4 h-4" />,
+    Crown: <Crown className="w-4 h-4" />,
   };
 
   // === 从数据库加载菜单 ===
@@ -251,6 +254,9 @@ export default function AdminClient() {
         break;
       case "orders":
         content = <OrdersTab />;
+        break;
+      case "membership":
+        content = <MembershipTab />;
         break;
       default:
         content = <div className="p-6">功能开发中...</div>;
