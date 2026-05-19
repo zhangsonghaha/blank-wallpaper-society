@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import CommentSection from "@/components/CommentSection";
 import SimilarImages from "@/components/SimilarImages";
 import SocialShare from "@/components/SocialShare";
+import PaymentDialog from "@/components/PaymentDialog";
 import { RESOLUTIONS, CATEGORY_LABELS } from "@/lib/resolutions";
 import { withCsrfHeader } from "@/lib/csrf-client";
 
@@ -55,6 +56,12 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
   const [imageLoaded, setImageLoaded] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
 
+  // 付费壁纸状态
+  const [isPaidWallpaper, setIsPaidWallpaper] = useState(false);
+  const [paidPrice, setPaidPrice] = useState(0);
+  const [hasPurchased, setHasPurchased] = useState(false);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+
   // 检查收藏状态
   useEffect(() => {
     async function checkFavorite() {
@@ -69,6 +76,24 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
       } catch {}
     }
     checkFavorite();
+  }, [imageId]);
+
+  // 检查付费壁纸状态
+  useEffect(() => {
+    async function checkPaidStatus() {
+      try {
+        const res = await fetch(`/api/images/${imageId}/paid-status`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.is_paid_wallpaper) {
+            setIsPaidWallpaper(true);
+            setPaidPrice(data.price);
+            setHasPurchased(data.has_purchased || false);
+          }
+        }
+      } catch {}
+    }
+    checkPaidStatus();
   }, [imageId]);
 
   // 检查关注状态
@@ -125,10 +150,27 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
 
   // 下载图片
   const handleDownload = useCallback(async (resolution?: string) => {
+    // 付费壁纸且未购买 → 打开支付弹窗
+    if (isPaidWallpaper && !hasPurchased) {
+      setPaymentDialogOpen(true);
+      return;
+    }
+
     const url = `/api/images/${imageId}/download${resolution ? `?resolution=${resolution}` : ""}`;
     setDownloadingRes(resolution || "original");
     try {
       const res = await fetch(url);
+
+      // 402 = 付费壁纸未购买
+      if (res.status === 402) {
+        const data = await res.json();
+        setIsPaidWallpaper(true);
+        setPaidPrice(data.price);
+        setPaymentDialogOpen(true);
+        setDownloadingRes(null);
+        return;
+      }
+
       if (!res.ok) throw new Error("下载失败");
       const blob = await res.blob();
       const a = document.createElement("a");
@@ -284,14 +326,33 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
 
             {/* 下载面板 */}
             <div className="space-y-2">
+              {isPaidWallpaper && !hasPurchased && (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800">
+                  <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-400">付费壁纸</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-500">购买后可下载全部分辨率</p>
+                  </div>
+                  <span className="text-lg font-bold text-amber-500">¥{paidPrice.toFixed(2)}</span>
+                </div>
+              )}
               <Button
-                className="w-full"
+                className={`w-full ${isPaidWallpaper && !hasPurchased ? "bg-amber-500 hover:bg-amber-600" : ""}`}
                 size="lg"
                 onClick={() => handleDownload()}
                 disabled={downloadingRes !== null}
               >
-                <Download className="w-4 h-4 mr-2" />
-                {downloadingRes ? "下载中..." : "下载原画"}
+                {isPaidWallpaper && !hasPurchased ? (
+                  <>
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    立即购买 ¥{paidPrice.toFixed(2)}
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 mr-2" />
+                    {downloadingRes ? "下载中..." : "下载原画"}
+                  </>
+                )}
               </Button>
 
               <Button
@@ -359,6 +420,20 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
         imageUrl={imageData.imageUrl}
         isOpen={shareOpen}
         onClose={() => setShareOpen(false)}
+      />
+
+      {/* 付费壁纸支付弹窗 */}
+      <PaymentDialog
+        isOpen={paymentDialogOpen}
+        onClose={() => setPaymentDialogOpen(false)}
+        orderType="paid_wallpaper"
+        description={imageData.title || "付费壁纸"}
+        amount={paidPrice}
+        relatedId={parseInt(imageId)}
+        onSuccess={() => {
+          setHasPurchased(true);
+          setPaymentDialogOpen(false);
+        }}
       />
     </div>
   );

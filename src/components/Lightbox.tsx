@@ -11,6 +11,7 @@ import Link from "next/link";
 import AddToCollectionDialog from "./AddToCollectionDialog";
 import CommentSection from "./CommentSection";
 import SimilarImages from "./SimilarImages";
+import PaymentDialog from "./PaymentDialog";
 import {
   RESOLUTIONS,
   CATEGORY_LABELS,
@@ -69,6 +70,12 @@ export default function Lightbox({
   // 设备预览状态
   const [devicePreview, setDevicePreview] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<DeviceType>("desktop");
+
+  // 付费壁纸状态
+  const [isPaidWallpaper, setIsPaidWallpaper] = useState(false);
+  const [paidPrice, setPaidPrice] = useState(0);
+  const [hasPurchased, setHasPurchased] = useState(false);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
 
   const isFavorited = favoritedIds?.has(currentImage?.id) ?? false;
 
@@ -232,6 +239,24 @@ export default function Lightbox({
     setCommentOpen(false);
     setSimilarOpen(false);
     setExifOpen(false);
+    setIsPaidWallpaper(false);
+    setPaidPrice(0);
+    setHasPurchased(false);
+    setPaymentDialogOpen(false);
+
+    // 检查是否为付费壁纸
+    if (currentImage?.id) {
+      fetch(`/api/images/${currentImage.id}/paid-status`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data?.is_paid_wallpaper) {
+            setIsPaidWallpaper(true);
+            setPaidPrice(data.price);
+            setHasPurchased(data.has_purchased || false);
+          }
+        })
+        .catch(() => {});
+    }
   }, [currentIndex]);
 
   // 获取作者关注状态
@@ -254,6 +279,12 @@ export default function Lightbox({
   const handleDownloadResolution = async (resolution?: string) => {
     if (!currentImage || downloadingRes) return;
 
+    // 付费壁纸且未购买 → 打开支付弹窗
+    if (isPaidWallpaper && !hasPurchased) {
+      setPaymentDialogOpen(true);
+      return;
+    }
+
     const resKey = resolution || "original";
     setDownloadingRes(resKey);
     setDownloadProgress(0);
@@ -264,6 +295,16 @@ export default function Lightbox({
         : `/api/images/${currentImage.id}/download`;
 
       const response = await fetch(url);
+
+      // 402 = 付费壁纸未购买
+      if (response.status === 402) {
+        const data = await response.json();
+        setIsPaidWallpaper(true);
+        setPaidPrice(data.price);
+        setPaymentDialogOpen(true);
+        return;
+      }
+
       if (!response.ok) {
         throw new Error("下载失败");
       }
@@ -822,13 +863,26 @@ export default function Lightbox({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  setDownloadPanelOpen(!downloadPanelOpen);
+                  if (isPaidWallpaper && !hasPurchased) {
+                    setPaymentDialogOpen(true);
+                  } else {
+                    setDownloadPanelOpen(!downloadPanelOpen);
+                  }
                 }}
-                className="px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full bg-[var(--color-primary)] text-white text-xs sm:text-sm font-medium hover:bg-[var(--color-primary-pressed,#c5001d)] transition-colors backdrop-blur-sm"
+                className={`px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full text-white text-xs sm:text-sm font-medium transition-colors backdrop-blur-sm ${isPaidWallpaper && !hasPurchased ? "bg-amber-500 hover:bg-amber-600" : "bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed,#c5001d)]"}`}
               >
-                <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">下载</span>
-                <ChevronDown className={`w-3 h-3 transition-transform ${downloadPanelOpen ? "rotate-180" : ""}`} />
+                {isPaidWallpaper && !hasPurchased ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <span className="hidden sm:inline">¥{paidPrice.toFixed(2)}</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span className="hidden sm:inline">下载</span>
+                    <ChevronDown className={`w-3 h-3 transition-transform ${downloadPanelOpen ? "rotate-180" : ""}`} />
+                  </>
+                )}
               </button>
 
               {/* Download Panel */}
@@ -1135,6 +1189,20 @@ export default function Lightbox({
           }}
         />
       )}
+
+      {/* Payment Dialog for Paid Wallpapers */}
+      <PaymentDialog
+        isOpen={paymentDialogOpen}
+        onClose={() => setPaymentDialogOpen(false)}
+        orderType="paid_wallpaper"
+        description={currentImage?.title || "付费壁纸"}
+        amount={paidPrice}
+        relatedId={currentImage?.id}
+        onSuccess={() => {
+          setHasPurchased(true);
+          setPaymentDialogOpen(false);
+        }}
+      />
     </AnimatePresence>
   );
 }

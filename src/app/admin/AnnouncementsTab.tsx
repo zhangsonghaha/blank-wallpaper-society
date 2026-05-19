@@ -32,6 +32,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogClose,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -119,6 +120,9 @@ export default function AnnouncementsTab() {
   // 详情对话框
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailAnn, setDetailAnn] = useState<Announcement | null>(null);
+
+  // 删除确认对话框
+  const [deleteTarget, setDeleteTarget] = useState<Announcement | null>(null);
 
   // 加载通知公告数据
   const fetchAnnouncements = useCallback(async () => {
@@ -234,13 +238,12 @@ export default function AnnouncementsTab() {
     }
   };
 
-  // 删除
-  const handleDelete = async (ann: Announcement) => {
-    if (!confirm(`确定要删除"${ann.title}"吗？`)) return;
-
+  // 删除（实际执行）
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
     try {
       const csrfHeaders = await withCsrfHeader();
-      const res = await fetch(`/api/admin/announcements?id=${ann.id}`, { method: "DELETE", headers: csrfHeaders });
+      const res = await fetch(`/api/admin/announcements?id=${deleteTarget.id}`, { method: "DELETE", headers: csrfHeaders });
       const data = await res.json();
       if (data.success) {
         toast.success("已删除");
@@ -250,6 +253,8 @@ export default function AnnouncementsTab() {
       }
     } catch (error) {
       toast.error("删除失败");
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -400,7 +405,7 @@ export default function AnnouncementsTab() {
                       <Pencil className="w-4 h-4 text-[var(--color-mute)]" />
                     </button>
                     <button
-                      onClick={() => handleDelete(ann)}
+                      onClick={() => setDeleteTarget(ann)}
                       className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors"
                       title="删除"
                     >
@@ -608,6 +613,29 @@ export default function AnnouncementsTab() {
                 编辑
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 删除确认对话框 */}
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>
+              删除后无法恢复。确定要删除"{deleteTarget?.title}"吗？
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>
+              取消
+            </DialogClose>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={handleDeleteConfirm}
+            >
+              确认删除
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

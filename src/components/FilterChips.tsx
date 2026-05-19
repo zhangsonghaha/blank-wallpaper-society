@@ -43,25 +43,23 @@ export default function FilterChips({ activeCategory, onCategoryChange }: Filter
           >
             全部
           </button>
-          {categories
-            .filter((category) => (category.image_count ?? 0) > 0 || activeCategory === category.slug)
-            .map((category) => (
-              <button
-                key={category.slug}
-                onClick={() => onCategoryChange(category.slug)}
-                className="relative flex-shrink-0 px-4 py-2 text-sm font-bold rounded-full transition-all duration-200 hover:opacity-90"
-                style={
-                  activeCategory === category.slug
-                    ? { backgroundColor: "var(--color-ink)", color: "var(--color-on-dark)", boxShadow: "0 1px 3px rgba(0,0,0,0.15)" }
-                    : { backgroundColor: "var(--color-surface-card)", color: "var(--color-ink)" }
-                }
-              >
-                {category.name}
-                {(category.image_count ?? 0) > 0 && (
-                  <span className="ml-1 text-xs opacity-60">({category.image_count})</span>
-                )}
-              </button>
-            ))}
+          {categories.map((category) => (
+            <button
+              key={category.slug}
+              onClick={() => onCategoryChange(category.slug)}
+              className="relative flex-shrink-0 px-4 py-2 text-sm font-bold rounded-full transition-all duration-200 hover:opacity-90"
+              style={
+                activeCategory === category.slug
+                  ? { backgroundColor: "var(--color-ink)", color: "var(--color-on-dark)", boxShadow: "0 1px 3px rgba(0,0,0,0.15)" }
+                  : { backgroundColor: "var(--color-surface-card)", color: "var(--color-ink)" }
+              }
+            >
+              {category.name}
+              {(category.image_count ?? 0) > 0 && (
+                <span className="ml-1 text-xs opacity-60">({category.image_count})</span>
+              )}
+            </button>
+          ))}
         </div>
       </div>
     </div>

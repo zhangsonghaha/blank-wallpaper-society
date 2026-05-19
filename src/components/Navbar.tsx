@@ -28,6 +28,8 @@ import {
   Sparkles,
   Sun,
   Moon,
+  Crown,
+  Receipt,
 } from "lucide-react";
 import NotificationBell from "./NotificationBell";
 import { useTheme } from "next-themes";
@@ -202,6 +204,15 @@ export default function Navbar() {
               >
                 <Trophy className="w-4 h-4" />
                 挑战赛
+              </Link>
+              <Link
+                href="/pricing"
+                className={`px-4 py-2 text-sm font-semibold rounded-full hover:bg-[var(--color-surface-card)] transition-colors flex items-center gap-1.5 ${
+                  pathname === "/pricing" ? "bg-[var(--color-surface-card)] text-[var(--color-ink)]" : "text-[var(--color-mute)]"
+                }`}
+              >
+                <Crown className="w-4 h-4" />
+                会员
               </Link>
               {isLoggedIn && (
                 <Link
@@ -443,6 +454,31 @@ export default function Navbar() {
               </button>
             )}
 
+            {/* 会员按钮 - 未会员显示升级Pro，已会员显示会员中心 */}
+            {isLoggedIn && (() => {
+              const isMemberOrAdmin = !!((session?.user as any)?.membership) || (session?.user as any)?.role === "admin";
+              if (isMemberOrAdmin) {
+                return (
+                  <Link
+                    href="/membership"
+                    className="hidden sm:flex px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-amber-600 rounded-full hover:from-amber-600 hover:to-amber-700 transition-all items-center gap-1 shadow-sm"
+                  >
+                    <Crown className="w-3.5 h-3.5" />
+                    会员中心
+                  </Link>
+                );
+              }
+              return (
+                <Link
+                  href="/pricing"
+                  className="hidden sm:flex px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-amber-600 rounded-full hover:from-amber-600 hover:to-amber-700 transition-all items-center gap-1 shadow-sm"
+                >
+                  <Crown className="w-3.5 h-3.5" />
+                  升级Pro
+                </Link>
+              );
+            })()}
+
             {/* Notification Bell */}
             {isLoggedIn && <NotificationBell />}
 
@@ -513,6 +549,24 @@ export default function Navbar() {
                   >
                     <Sparkles className="w-4 h-4 mr-2" />
                     AI生成壁纸
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuItem
+                    onClick={() => router.push((session?.user as any)?.membership || (session?.user as any)?.role === "admin" ? "/membership" : "/pricing")}
+                    className="cursor-pointer"
+                  >
+                    <Crown className="w-4 h-4 mr-2 text-amber-500" />
+                    {(session?.user as any)?.membership || (session?.user as any)?.role === "admin" ? "会员中心" : "会员订阅"}
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => router.push("/orders")}
+                    className="cursor-pointer"
+                  >
+                    <Receipt className="w-4 h-4 mr-2" />
+                    我的订单
                   </DropdownMenuItem>
 
                   <DropdownMenuItem

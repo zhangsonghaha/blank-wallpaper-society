@@ -4,6 +4,7 @@ import {
   getEarningsOverview,
   requestWithdrawal,
   setPaidWallpaper,
+  unsetPaidWallpaper,
   createTip,
   subscribeMembership,
   TIP_AMOUNTS,
@@ -54,8 +55,18 @@ export async function POST(request: NextRequest) {
         if (!imageId || !price) {
           return NextResponse.json({ error: "缺少参数" }, { status: 400 });
         }
-        const result = await setPaidWallpaper(imageId, userId, parseFloat(price));
+        const isAdmin = (session.user as any).role === "admin";
+        const result = await setPaidWallpaper(imageId, userId, parseFloat(price), isAdmin);
         return NextResponse.json({ data: result, message: "付费壁纸设置成功" });
+      }
+
+      case "unset_paid_wallpaper": {
+        const { imageId } = body;
+        if (!imageId) {
+          return NextResponse.json({ error: "缺少参数" }, { status: 400 });
+        }
+        const result = await unsetPaidWallpaper(imageId);
+        return NextResponse.json({ data: result, message: "已取消付费" });
       }
 
       case "tip": {

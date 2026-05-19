@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 // GET /api/categories - 获取分类列表（含图片计数）
 export async function GET() {
   try {
+    // 获取所有分类及其图片数量
     const rows = await query(
       `SELECT c.*, COUNT(i.id) as image_count 
        FROM categories c 
@@ -12,7 +13,26 @@ export async function GET() {
        GROUP BY c.id 
        ORDER BY c.sort_order ASC`
     );
-    return NextResponse.json(rows);
+    
+    // 查询未分类的图片数量
+    const uncategorizedCount = await query(
+      `SELECT COUNT(*) as count FROM images 
+       WHERE (category IS NULL OR category = '') 
+       AND status = 'approved'`
+    );
+    
+    // 添加"未分类"选项
+    const categories = Array.isArray(rows) ? rows : [];
+    const uncategorized = {
+      id: 0,
+      name: "未分类",
+      slug: "uncategorized",
+      sort_order: 999,
+      image_count: (uncategorizedCount as any[])[0]?.count || 0,
+      created_at: new Date().toISOString()
+    };
+    
+    return NextResponse.json([...categories, uncategorized]);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -47,6 +47,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
+  DialogClose,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -176,6 +178,7 @@ export default function BotsTab() {
   const [testingId, setTestingId] = useState<number | null>(null);
   const [connectingId, setConnectingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   // 消息留痕面板
   const [messageBotId, setMessageBotId] = useState<number | null>(null);
   const [messages, setMessages] = useState<BotMessage[]>([]);
@@ -268,8 +271,6 @@ export default function BotsTab() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("确定要删除此机器人配置吗？")) return;
-
     try {
       const csrfHeaders = await withCsrfHeader();
       const res = await fetch(`/api/admin/bots?id=${id}`, { method: "DELETE", headers: csrfHeaders });
@@ -282,6 +283,8 @@ export default function BotsTab() {
       }
     } catch {
       toast.error("删除失败");
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -1108,7 +1111,7 @@ export default function BotsTab() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleDelete(bot.id)}
+                      onClick={() => setDeleteTarget(bot.id)}
                       title="删除"
                       className="text-red-500 hover:text-red-600"
                     >
@@ -1153,6 +1156,27 @@ export default function BotsTab() {
 
       {renderEditForm()}
       {renderMessagePanel()}
+
+      {/* 删除确认对话框 */}
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>删除后无法恢复。确定要删除此机器人配置吗？</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>
+              取消
+            </DialogClose>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => handleDelete(deleteTarget!)}
+            >
+              认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

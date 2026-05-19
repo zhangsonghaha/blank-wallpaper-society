@@ -155,6 +155,29 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (session.user) {
         (session.user as any).role = token.role;
         (session.user as any).id = token.id;
+        // 查询会员信息
+        try {
+          const userId = parseInt(token.id as string);
+          if (userId) {
+            const memberRows = (await query(
+              "SELECT plan, started_at, expires_at, status FROM memberships WHERE user_id = ? AND status = 'active' LIMIT 1",
+              [userId]
+            )) as any[];
+            if (memberRows.length > 0) {
+              const m = memberRows[0];
+              (session.user as any).membership = {
+                plan: m.plan,
+                startedAt: m.started_at,
+                expiresAt: m.expires_at,
+                status: m.status,
+              };
+            } else {
+              (session.user as any).membership = null;
+            }
+          }
+        } catch {
+          (session.user as any).membership = null;
+        }
       }
       return session;
     },

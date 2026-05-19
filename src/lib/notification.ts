@@ -11,7 +11,8 @@ export type NotificationType =
   | "review"
   | "follow"
   | "achievement"
-  | "favorite";
+  | "favorite"
+  | "order";
 
 export type RelatedType =
   | "image"
@@ -29,6 +30,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   follow: "关注",
   achievement: "成就",
   favorite: "收藏",
+  order: "订单",
 };
 
 export const NOTIFICATION_TYPE_ICONS: Record<string, string> = {
@@ -39,6 +41,7 @@ export const NOTIFICATION_TYPE_ICONS: Record<string, string> = {
   follow: "👤",
   achievement: "🏆",
   favorite: "⭐",
+  order: "💰",
 };
 
 // === 获取用户通知设置 ===
@@ -255,4 +258,55 @@ export async function notifyCommentReply(
 
   // 触发 Webhook 事件
   triggerWebhookAsync("comment.created", { imageId, imageTitle, commenterName, userId });
+}
+
+// === 新订单通知（通知管理员） ===
+export async function notifyNewOrder(params: {
+  orderId: number;
+  orderNo: string;
+  orderType: "paid_wallpaper" | "tip" | "membership";
+  amount: number;
+  buyerName?: string;
+  description?: string;
+}): Promise<void> {
+  const typeLabels: Record<string, string> = {
+    paid_wallpaper: "付费壁纸",
+    tip: "打赏",
+    membership: "会员订阅",
+  };
+
+  const content = `订单号：${params.orderNo}\n类型：${typeLabels[params.orderType] || params.orderType}\n金额：¥${params.amount.toFixed(2)}${params.buyerName ? `\n买家：${params.buyerName}` : ""}${params.description ? `\n商品：${params.description}` : ""}\n\n请尽快在后台确认支付`;
+
+  // 1. 推送机器人通知（飞书/QQ/钉钉等，订阅了 order 事件的机器人）
+  await pushBotNotification({
+    type: "order",
+    title: `💰 新订单待确认：¥${params.amount.toFixed(2)}`,
+    content,
+  });
+
+  // 2. 通知所有管理员（站内通知 + 邮件）
+  const adminRows = await query(
+    "SELECT id FROM users WHERE role = 'admin'"
+  ) as any[];
+
+  for (const admin of adminRows) {
+    await pushNotification({
+      userId: admin.id,
+      type: "order",
+      title: `💰 新订单待确认：¥${params.amount.toFixed(2)}`,
+      content,
+      relatedId: params.orderId,
+      relatedType: "image", // 暂用 image 类型，订单没有独立 relatedType
+    });
+  }
+
+  // 3. 触发 Webhook 事件
+  triggerWebhookAsync("order.created", {
+    orderId: params.orderId,
+    orderNo: params.orderNo,
+    orderType: params.orderType,
+    amount: params.amount,
+    buyerName: params.buyerName,
+    description: params.description,
+  });
 }

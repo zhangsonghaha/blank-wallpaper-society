@@ -23,6 +23,7 @@ import {
   Copy,
   AlertTriangle,
   Layers,
+  DollarSign,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -166,6 +167,13 @@ export default function ImagesTab() {
     progress: number;
   } | null>(null);
 
+  // 付费壁纸设置相关状态
+  const [paidDialogOpen, setPaidDialogOpen] = useState(false);
+  const [paidTargetImage, setPaidTargetImage] = useState<ImageRecord | null>(null);
+  const [paidPrice, setPaidPrice] = useState("1.99");
+  const [paidSaving, setPaidSaving] = useState(false);
+  const [paidImagesMap, setPaidImagesMap] = useState<Record<number, { price: number; is_paid: boolean }>>({});
+
   const [stats, setStats] = useState({
     totalImages: 0,
     totalViews: 0,
@@ -224,6 +232,79 @@ export default function ImagesTab() {
   useEffect(() => {
     loadVariantStatus();
   }, []);
+
+  // 加载付费壁纸信息
+  const loadPaidInfo = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/paid-wallpapers");
+      if (res.ok) {
+        const data = await res.json();
+        const map: Record<number, { price: number; is_paid: boolean }> = {};
+        for (const item of data.data || []) {
+          map[item.image_id] = { price: parseFloat(item.price), is_paid: !!item.is_paid };
+        }
+        setPaidImagesMap(map);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    loadPaidInfo();
+  }, [loadPaidInfo]);
+
+  // 设置/取消付费壁纸
+  const handleSetPaid = async () => {
+    if (!paidTargetImage) return;
+    setPaidSaving(true);
+    try {
+      const csrfHeaders = await withCsrfHeader();
+      const res = await fetch("/api/earnings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
+        body: JSON.stringify({
+          action: "set_paid_wallpaper",
+          imageId: paidTargetImage.id,
+          price: parseFloat(paidPrice),
+        }),
+      });
+      if (res.ok) {
+        toast.success("付费壁纸设置成功");
+        setPaidDialogOpen(false);
+        loadPaidInfo();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "设置失败");
+      }
+    } catch {
+      toast.error("设置失败");
+    } finally {
+      setPaidSaving(false);
+    }
+  };
+
+  // 取消付费壁纸
+  const handleUnsetPaid = async (imageId: number) => {
+    try {
+      const csrfHeaders = await withCsrfHeader();
+      const res = await fetch("/api/earnings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
+        body: JSON.stringify({
+          action: "unset_paid_wallpaper",
+          imageId,
+        }),
+      });
+      if (res.ok) {
+        toast.success("已取消付费");
+        loadPaidInfo();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "取消失败");
+      }
+    } catch {
+      toast.error("取消失败");
+    }
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -867,6 +948,19 @@ export default function ImagesTab() {
                     <Trash2 className="w-3.5 h-3.5" />
                     批量删除
                   </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full text-xs h-7 gap-1 border-amber-300 text-amber-600 hover:bg-amber-50"
+                    onClick={() => {
+                      setPaidTargetImage(null);
+                      setPaidPrice("1.99");
+                      setPaidDialogOpen(true);
+                    }}
+                  >
+                    <DollarSign className="w-3.5 h-3.5" />
+                    批量设为付费
+                  </Button>
                 </div>
               )}
 
@@ -1014,6 +1108,23 @@ export default function ImagesTab() {
                               onClick={() => handleDelete(image)}
                             >
                               <Trash2 className="w-4 h-4 text-red-400" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="w-8 h-8"
+                              title={paidImagesMap[image.id]?.is_paid ? `付费 ¥${paidImagesMap[image.id].price} - 点击取消` : "设为付费壁纸"}
+                              onClick={() => {
+                                if (paidImagesMap[image.id]?.is_paid) {
+                                  handleUnsetPaid(image.id);
+                                } else {
+                                  setPaidTargetImage(image);
+                                  setPaidPrice("1.99");
+                                  setPaidDialogOpen(true);
+                                }
+                              }}
+                            >
+                              <DollarSign className={`w-4 h-4 ${paidImagesMap[image.id]?.is_paid ? "text-amber-500" : "text-[var(--color-mute)]"}`} />
                             </Button>
                           </div>
                         </TableCell>
@@ -1614,6 +1725,92 @@ export default function ImagesTab() {
                   保存修改
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 付费壁纸设置弹窗 */}
+      <Dialog open={paidDialogOpen} onOpenChange={setPaidDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>设置付费壁纸</DialogTitle>
+            <DialogDescription>
+              {paidTargetImage
+                ? `设置「${paidTargetImage.title}」为付费壁纸`
+                : `批量设置 ${selectedIds.size} 张图片为付费壁纸`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>价格 (元)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.99"
+                max="9.99"
+                value={paidPrice}
+                onChange={(e) => setPaidPrice(e.target.value)}
+                placeholder="0.99 - 9.99"
+              />
+              <p className="text-xs text-[var(--color-mute)]">
+                价格范围：¥0.99 - ¥9.99，平台抽成15%
+              </p>
+            </div>
+            {paidTargetImage && paidImagesMap[paidTargetImage.id]?.is_paid && (
+              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800">
+                <p className="text-sm text-amber-700 dark:text-amber-400">
+                  当前价格：¥{paidImagesMap[paidTargetImage.id].price.toFixed(2)}，修改将覆盖
+                </p>
+              </div>
+            )}
+            {/* 预览 */}
+            {paidTargetImage && (
+              <div className="flex items-center gap-3 p-2 rounded-lg bg-[var(--color-surface-soft)]">
+                <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
+                  <img src={paidTargetImage.thumbnail_url || paidTargetImage.url} alt="" className="w-full h-full object-cover" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{paidTargetImage.title}</p>
+                  <p className="text-xs text-[var(--color-mute)]">{paidTargetImage.width}×{paidTargetImage.height}</p>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaidDialogOpen(false)}>取消</Button>
+            <Button
+              onClick={async () => {
+                setPaidSaving(true);
+                try {
+                  const csrfHeaders = await withCsrfHeader();
+                  const imageIds = paidTargetImage ? [paidTargetImage.id] : Array.from(selectedIds);
+                  let successCount = 0;
+                  for (const imageId of imageIds) {
+                    const res = await fetch("/api/earnings", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", ...csrfHeaders },
+                      body: JSON.stringify({
+                        action: "set_paid_wallpaper",
+                        imageId,
+                        price: parseFloat(paidPrice),
+                      }),
+                    });
+                    if (res.ok) successCount++;
+                  }
+                  toast.success(`已设置 ${successCount} 张付费壁纸`);
+                  setPaidDialogOpen(false);
+                  loadPaidInfo();
+                } catch {
+                  toast.error("设置失败");
+                } finally {
+                  setPaidSaving(false);
+                }
+              }}
+              disabled={paidSaving || !paidPrice || parseFloat(paidPrice) < 0.99 || parseFloat(paidPrice) > 9.99}
+              className="bg-amber-500 hover:bg-amber-600 text-white"
+            >
+              {paidSaving ? "保存中..." : `确认设置 ¥${parseFloat(paidPrice || "0").toFixed(2)}`}
             </Button>
           </DialogFooter>
         </DialogContent>

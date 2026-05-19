@@ -59,8 +59,12 @@ export async function GET(request: NextRequest) {
     }
 
     if (category && category !== "all") {
-      sql += " AND category = ?";
-      params.push(category);
+      if (category === "uncategorized") {
+        sql += " AND (category IS NULL OR category = '')";
+      } else {
+        sql += " AND category = ?";
+        params.push(category);
+      }
     }
 
     // 优先使用 Meilisearch 搜索（仅在有搜索关键词且无高级筛选时）
@@ -189,8 +193,12 @@ export async function GET(request: NextRequest) {
       countParams.push(myUserId);
     }
     if (category && category !== "all") {
-      countWhereClause += " AND category = ?";
-      countParams.push(category);
+      if (category === "uncategorized") {
+        countWhereClause += " AND (category IS NULL OR category = '')";
+      } else {
+        countWhereClause += " AND category = ?";
+        countParams.push(category);
+      }
     }
     if (search) {
       countWhereClause += " AND (title LIKE ? OR description LIKE ? OR tags LIKE ?)";

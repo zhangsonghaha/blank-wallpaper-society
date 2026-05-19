@@ -34,12 +34,23 @@ export async function GET(request: NextRequest) {
     )) as any[];
     const usedToday = usedRows[0]?.count || 0;
 
-    // 获取用户等级确定配额
-    const tierRows = (await query(
-      "SELECT tier FROM api_keys WHERE user_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1",
-      [userId]
-    )) as any[];
-    const tier = tierRows[0]?.tier || "free";
+    // 获取用户等级确定配额（优先使用会员等级，其次 API Key tier）
+    const membership = (session.user as any)?.membership as { plan: string; status: string } | null;
+    let tier: string = "free";
+    if ((session.user as any)?.role === "admin") {
+      tier = "enterprise";
+    } else if (membership?.status === "active" && membership.plan?.includes("enterprise")) {
+      tier = "enterprise";
+    } else if (membership?.status === "active") {
+      tier = "pro";
+    } else {
+      // 回退：检查 API Key tier
+      const tierRows = (await query(
+        "SELECT tier FROM api_keys WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1",
+        [userId]
+      )) as any[];
+      tier = tierRows[0]?.tier || "free";
+    }
     const quota = AI_QUOTA[tier as keyof typeof AI_QUOTA] || AI_QUOTA.free;
 
     return NextResponse.json({
@@ -84,11 +95,22 @@ export async function POST(request: NextRequest) {
     )) as any[];
     const usedToday = usedRows[0]?.count || 0;
 
-    const tierRows = (await query(
-      "SELECT tier FROM api_keys WHERE user_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1",
-      [userId]
-    )) as any[];
-    const tier = tierRows[0]?.tier || "free";
+    // 优先使用会员等级确定配额
+    const membership = (session.user as any)?.membership as { plan: string; status: string } | null;
+    let tier: string = "free";
+    if ((session.user as any)?.role === "admin") {
+      tier = "enterprise";
+    } else if (membership?.status === "active" && membership.plan?.includes("enterprise")) {
+      tier = "enterprise";
+    } else if (membership?.status === "active") {
+      tier = "pro";
+    } else {
+      const tierRows = (await query(
+        "SELECT tier FROM api_keys WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1",
+        [userId]
+      )) as any[];
+      tier = tierRows[0]?.tier || "free";
+    }
     const quota = AI_QUOTA[tier as keyof typeof AI_QUOTA] || AI_QUOTA.free;
 
     if (quota.daily !== -1 && usedToday >= quota.daily) {

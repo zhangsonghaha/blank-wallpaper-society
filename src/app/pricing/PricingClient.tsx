@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
-import { Check, X, Crown, Building, Sparkles } from "lucide-react";
+import { Check, X, Crown, Building, Sparkles, Shield, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import PaymentDialog from "@/components/PaymentDialog";
 
 const PLANS = [
   {
@@ -48,9 +50,194 @@ const PLANS = [
   },
 ];
 
-export default function PricingClient() {
-  const [annual, setAnnual] = useState(false);
+// 会员权益列表
+const MEMBERSHIP_BENEFITS = [
+  { icon: "♾️", title: "无限下载", desc: "每天不限次数下载" },
+  { icon: "🖼️", title: "4K/8K 超清", desc: "最高分辨率壁纸" },
+  { icon: "🔍", title: "高级搜索", desc: "多维度过滤筛选" },
+  { icon: "🤖", title: "AI 生成", desc: "30次/天 AI 创作" },
+  { icon: "🚫", title: "无广告", desc: "纯净浏览体验" },
+  { icon: "📚", title: "专属合集", desc: "会员精选合集" },
+  { icon: "⚡", title: "优先支持", desc: "专属客服通道" },
+];
 
+function getPlanLabel(plan: string) {
+  switch (plan) {
+    case "monthly": return "Pro 月付";
+    case "yearly": return "Pro 年付";
+    case "enterprise_monthly": return "企业版月付";
+    case "enterprise_yearly": return "企业版年付";
+    default: return plan;
+  }
+}
+
+export default function PricingClient() {
+  const { data: session } = useSession();
+  const [annual, setAnnual] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<"monthly" | "yearly" | "enterprise_monthly" | "enterprise_yearly">("monthly");
+  const [selectedAmount, setSelectedAmount] = useState(19.9);
+
+  const isAdmin = (session?.user as any)?.role === "admin";
+  const membership = (session?.user as any)?.membership as { plan: string; startedAt: string; expiresAt: string; status: string } | null | undefined;
+  const isMember = !!membership && membership.status === "active";
+
+  // 获取当前会员对应的方案ID
+  const currentPlanId = membership?.plan?.includes("enterprise") ? "enterprise" : "pro";
+
+  // 管理员视图
+  if (isAdmin) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-surface-card)]">
+        <div className="text-center py-16 px-4">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-red-500 flex items-center justify-center mx-auto mb-6 shadow-lg">
+              <Shield className="w-10 h-10 text-white" />
+            </div>
+            <h1 className="text-4xl md:text-5xl font-bold text-[var(--color-ink)] mb-4">管理员特权</h1>
+            <p className="text-lg text-[var(--color-mute)] max-w-[600px] mx-auto mb-8">
+              您拥有最高权限，无需订阅会员即可享受所有功能
+            </p>
+            <Badge className="bg-gradient-to-r from-amber-500 to-red-500 text-white text-base px-6 py-2 rounded-full">
+              <Shield className="w-4 h-4 mr-1.5" />
+              最高权限 · 全功能开放
+            </Badge>
+          </motion.div>
+        </div>
+
+        <div className="max-w-[800px] mx-auto px-4 pb-20">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
+            {MEMBERSHIP_BENEFITS.map((b, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+                className="p-4 rounded-xl bg-[var(--color-surface-soft)] text-center"
+              >
+                <span className="text-2xl mb-2 block">{b.icon}</span>
+                <p className="text-sm font-medium text-[var(--color-ink)]">{b.title}</p>
+                <p className="text-xs text-[var(--color-mute)]">{b.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+
+          <div className="p-6 rounded-2xl bg-gradient-to-r from-amber-50 to-red-50 dark:from-amber-900/10 dark:to-red-900/10 border border-amber-200 dark:border-amber-800">
+            <div className="flex items-center gap-3 mb-3">
+              <Zap className="w-5 h-5 text-amber-500" />
+              <h3 className="font-semibold text-[var(--color-ink)]">管理员专属能力</h3>
+            </div>
+            <ul className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-[var(--color-mute)]">
+              <li className="flex items-center gap-2"><Check className="w-4 h-4 text-green-500" />用户管理与审核</li>
+              <li className="flex items-center gap-2"><Check className="w-4 h-4 text-green-500" />图片审核与删除</li>
+              <li className="flex items-center gap-2"><Check className="w-4 h-4 text-green-500" />订单确认与拒绝</li>
+              <li className="flex items-center gap-2"><Check className="w-4 h-4 text-green-500" />系统设置管理</li>
+              <li className="flex items-center gap-2"><Check className="w-4 h-4 text-green-500" />数据统计与监控</li>
+              <li className="flex items-center gap-2"><Check className="w-4 h-4 text-green-500" />机器人配置管理</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 已订阅会员的用户视图
+  if (isMember) {
+    const expiresDate = membership.expiresAt
+      ? new Date(membership.expiresAt).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })
+      : "";
+
+    return (
+      <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-surface-card)]">
+        <div className="text-center py-16 px-4">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center mx-auto mb-6 shadow-lg">
+              <Crown className="w-10 h-10 text-white" />
+            </div>
+            <h1 className="text-4xl md:text-5xl font-bold text-[var(--color-ink)] mb-4">
+              {currentPlanId === "enterprise" ? "企业版" : "Pro"} 会员
+            </h1>
+            <p className="text-lg text-[var(--color-mute)] max-w-[600px] mx-auto mb-6">
+              您正在享受 {getPlanLabel(membership.plan)} 专属权益
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <Badge className="bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm px-4 py-1.5 rounded-full">
+                <Crown className="w-3.5 h-3.5 mr-1" />
+                {getPlanLabel(membership.plan)}
+              </Badge>
+              {expiresDate && (
+                <Badge variant="outline" className="text-sm px-4 py-1.5 rounded-full">
+                  到期: {expiresDate}
+                </Badge>
+              )}
+            </div>
+          </motion.div>
+        </div>
+
+        <div className="max-w-[800px] mx-auto px-4 pb-20">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            {MEMBERSHIP_BENEFITS.map((b, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+                className="p-4 rounded-xl bg-[var(--color-surface-soft)] text-center"
+              >
+                <span className="text-2xl mb-2 block">{b.icon}</span>
+                <p className="text-sm font-medium text-[var(--color-ink)]">{b.title}</p>
+                <p className="text-xs text-[var(--color-mute)]">{b.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* 续费/升级按钮 */}
+          <div className="flex items-center justify-center gap-4">
+            <Button
+              onClick={() => {
+                setSelectedPlan(annual ? "yearly" : "monthly");
+                setSelectedAmount(annual ? 149 : 19.9);
+                setPaymentOpen(true);
+              }}
+              className="rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white gap-1.5"
+            >
+              <Crown className="w-4 h-4" />
+              续费 Pro
+            </Button>
+            {currentPlanId !== "enterprise" && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSelectedPlan(annual ? "enterprise_yearly" : "enterprise_monthly");
+                  setSelectedAmount(annual ? 950 : 99);
+                  setPaymentOpen(true);
+                }}
+                className="rounded-full gap-1.5"
+              >
+                <Building className="w-4 h-4" />
+                升级企业版
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <PaymentDialog
+          isOpen={paymentOpen}
+          onClose={() => setPaymentOpen(false)}
+          orderType="membership"
+          description={`ImageGallery ${selectedPlan.includes("yearly") ? "年付" : "月付"}${selectedPlan.includes("enterprise") ? "企业版" : "Pro"}会员`}
+          amount={selectedAmount}
+          plan={selectedPlan}
+          onSuccess={() => {
+            setPaymentOpen(false);
+            window.location.reload();
+          }}
+        />
+      </div>
+    );
+  }
+
+  // 普通用户视图（未订阅）
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-surface-card)]">
       <div className="text-center py-16 px-4">
@@ -104,7 +291,18 @@ export default function PricingClient() {
                   ))}
                 </div>
                 <Button className={`w-full rounded-full ${plan.popular ? "" : "bg-[var(--color-ink)] hover:bg-[var(--color-ink)]/90"}`}
-                  variant={plan.popular ? "default" : "outline"} disabled={plan.disabled}>
+                  variant={plan.popular ? "default" : "outline"} disabled={plan.disabled}
+                  onClick={() => {
+                    if (plan.id === "pro") {
+                      setSelectedPlan(annual ? "yearly" : "monthly");
+                      setSelectedAmount(annual ? 149 : 19.9);
+                      setPaymentOpen(true);
+                    } else if (plan.id === "enterprise") {
+                      setSelectedPlan(annual ? "enterprise_yearly" : "enterprise_monthly");
+                      setSelectedAmount(annual ? 950 : 99);
+                      setPaymentOpen(true);
+                    }
+                  }}>
                   {plan.cta}
                 </Button>
               </motion.div>
@@ -129,6 +327,20 @@ export default function PricingClient() {
           </div>
         </div>
       </div>
+
+      {/* 支付弹窗 */}
+      <PaymentDialog
+        isOpen={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        orderType="membership"
+        description={`ImageGallery ${selectedPlan.includes("yearly") ? "年付" : "月付"}${selectedPlan.includes("enterprise") ? "企业版" : "Pro"}会员`}
+        amount={selectedAmount}
+        plan={selectedPlan}
+        onSuccess={() => {
+          setPaymentOpen(false);
+          window.location.reload();
+        }}
+      />
     </div>
   );
 }

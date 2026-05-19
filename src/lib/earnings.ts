@@ -7,6 +7,8 @@ export const TIP_AMOUNTS = [1, 5, 10]; // 固定打赏金额
 export const MEMBERSHIP_PRICES = {
   monthly: 19.9,
   yearly: 149,
+  enterprise_monthly: 99,
+  enterprise_yearly: 950,
 };
 export const PAID_WALLPAPER_PRICE_RANGE = { min: 0.99, max: 9.99 };
 
@@ -14,30 +16,44 @@ export const PAID_WALLPAPER_PRICE_RANGE = { min: 0.99, max: 9.99 };
 export async function setPaidWallpaper(
   imageId: number,
   userId: number,
-  price: number
+  price: number,
+  isAdmin: boolean = false
 ) {
   const { min, max } = PAID_WALLPAPER_PRICE_RANGE;
   if (price < min || price > max) {
     throw new Error(`价格范围: ${min} - ${max} 元`);
   }
 
-  // 验证图片属于用户
+  // 验证图片存在
   const image = (await query(
-    "SELECT id FROM images WHERE id = ? AND uploaded_by = ? AND status = 'approved'",
-    [imageId, userId]
+    isAdmin
+      ? "SELECT id, uploaded_by FROM images WHERE id = ? AND status = 'approved'"
+      : "SELECT id, uploaded_by FROM images WHERE id = ? AND uploaded_by = ? AND status = 'approved'",
+    isAdmin ? [imageId] : [imageId, userId]
   )) as any[];
 
   if (image.length === 0) {
-    throw new Error("图片不存在或不属于你");
+    throw new Error("图片不存在或不可用");
   }
+
+  const creatorId = image[0].uploaded_by || userId;
 
   await query(
     `INSERT INTO paid_wallpapers (image_id, user_id, price) VALUES (?, ?, ?)
      ON DUPLICATE KEY UPDATE price = ?, is_paid = 1`,
-    [imageId, userId, price, price]
+    [imageId, creatorId, price, price]
   );
 
   return { imageId, price };
+}
+
+// === 取消付费壁纸 ===
+export async function unsetPaidWallpaper(imageId: number) {
+  await query(
+    "UPDATE paid_wallpapers SET is_paid = 0 WHERE image_id = ?",
+    [imageId]
+  );
+  return { imageId, unset: true };
 }
 
 // === 打赏 ===

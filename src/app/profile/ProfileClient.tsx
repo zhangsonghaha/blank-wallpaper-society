@@ -35,6 +35,8 @@ import {
   UserPlus,
   UserCheck,
   Trophy,
+  Crown,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -424,6 +426,15 @@ export default function ProfileClient({
   const isAdmin = user.role === "admin";
   const userInitial = user.name?.[0] || user.email?.[0] || "?";
 
+  // 会员信息
+  const [membershipInfo, setMembershipInfo] = useState<{
+    plan: string;
+    startedAt: string;
+    expiresAt: string;
+    status: string;
+  } | null>(null);
+  const [loadingMembership, setLoadingMembership] = useState(true);
+
   // 等级与成就
   const [levelData, setLevelData] = useState<LevelData | null>(null);
   const [achievements, setAchievements] = useState<AchievementData[]>([]);
@@ -569,6 +580,23 @@ export default function ProfileClient({
   useEffect(() => {
     fetchFollowStats();
   }, [fetchFollowStats]);
+
+  // 加载会员信息
+  useEffect(() => {
+    setLoadingMembership(true);
+    fetch("/api/user/membership")
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then((data) => {
+        if (data && data.membership) {
+          setMembershipInfo(data.membership);
+        }
+        setLoadingMembership(false);
+      })
+      .catch(() => setLoadingMembership(false));
+  }, []);
 
   // 加载API Keys
   const fetchApiKeys = useCallback(() => {
@@ -816,6 +844,12 @@ export default function ProfileClient({
                           管理员
                         </Badge>
                       )}
+                      {membershipInfo && membershipInfo.status === "active" && !isAdmin && (
+                        <Badge className="rounded-full text-xs gap-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
+                          <Crown className="w-3 h-3" />
+                          {membershipInfo.plan.includes("enterprise") ? "企业版会员" : "Pro 会员"}
+                        </Badge>
+                      )}
                       <Badge
                         variant="outline"
                         className="rounded-full text-xs gap-1"
@@ -940,6 +974,33 @@ export default function ProfileClient({
                     >
                       {isAdmin ? "管理员" : "普通用户"}
                     </Badge>
+                  </div>
+                  {/* 会员状态 */}
+                  <div className="flex items-center justify-between py-2 px-4 rounded-lg bg-[var(--color-surface-card)]">
+                    <span className="text-sm text-[var(--color-mute)]">会员</span>
+                    {isAdmin ? (
+                      <Badge className="rounded-full text-xs gap-1 bg-gradient-to-r from-amber-500 to-red-500 text-white">
+                        <Shield className="w-3 h-3" />
+                        最高权限
+                      </Badge>
+                    ) : membershipInfo && membershipInfo.status === "active" ? (
+                      <div className="flex items-center gap-2">
+                        <Badge className="rounded-full text-xs gap-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
+                          <Crown className="w-3 h-3" />
+                          {membershipInfo.plan.includes("enterprise") ? "企业版" : "Pro"}
+                        </Badge>
+                        <span className="text-xs text-[var(--color-mute)]">
+                          到期 {new Date(membershipInfo.expiresAt).toLocaleDateString("zh-CN")}
+                        </span>
+                      </div>
+                    ) : (
+                      <Link href="/pricing">
+                        <Badge className="rounded-full text-xs gap-1 bg-[var(--color-primary)] text-white cursor-pointer hover:opacity-90 transition-opacity">
+                          <Sparkles className="w-3 h-3" />
+                          升级会员
+                        </Badge>
+                      </Link>
+                    )}
                   </div>
                   <div className="flex items-center justify-between py-2 px-4 rounded-lg bg-[var(--color-surface-card)]">
                     <span className="text-sm text-[var(--color-mute)]">注册时间</span>

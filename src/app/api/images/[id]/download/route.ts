@@ -5,6 +5,7 @@ import { getResizedKey, RESOLUTION_MAP } from "@/lib/resolutions";
 import { addExp, checkAchievements } from "@/lib/user-level";
 import { findBestVariantForResolution, VariantInfo } from "@/lib/image-variants";
 import { isWatermarkEnabled, addWatermark } from "@/lib/watermark";
+import { auth } from "@/lib/auth";
 import sharp from "sharp";
 
 // GET /api/images/[id]/download?resolution=1920x1080 - 下载指定分辨率的图片
@@ -25,6 +26,52 @@ export async function GET(
     }
 
     const image = rows[0];
+
+    // === 付费壁纸权限检查 ===
+    const paidRows = (await query(
+      "SELECT price, is_paid FROM paid_wallpapers WHERE image_id = ? AND is_paid = 1",
+      [id]
+    )) as any[];
+
+    if (paidRows.length > 0) {
+      // 这是付费壁纸，检查用户是否已购买或是否为作者
+      const session = await auth();
+      const userId = (session?.user as any)?.id;
+
+      // 作者可免费下载自己的付费壁纸
+      if (userId && userId === image.uploaded_by) {
+        // 作者本人，允许下载
+      } else if (userId) {
+        // 检查是否有已支付的订单
+        const orderRows = (await query(
+          "SELECT id FROM orders WHERE user_id = ? AND type = 'paid_wallpaper' AND related_id = ? AND payment_status = 'paid'",
+          [userId, id]
+        )) as any[];
+        if (orderRows.length === 0) {
+          // 未购买，返回付费信息
+          return NextResponse.json(
+            {
+              error: "该壁纸为付费内容",
+              is_paid_wallpaper: true,
+              price: parseFloat(paidRows[0].price),
+              image_id: parseInt(id),
+            },
+            { status: 402 }
+          );
+        }
+      } else {
+        // 未登录用户，返回付费信息
+        return NextResponse.json(
+          {
+            error: "该壁纸为付费内容，请先登录",
+            is_paid_wallpaper: true,
+            price: parseFloat(paidRows[0].price),
+            image_id: parseInt(id),
+          },
+          { status: 402 }
+        );
+      }
+    }
 
     // 增加下载计数
     await query("UPDATE images SET download_count = download_count + 1 WHERE id = ?", [id]);
