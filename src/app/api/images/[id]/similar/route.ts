@@ -45,6 +45,28 @@ export async function GET(
       paramsList.push(imageId);
     }
 
+    // 同标签（第三优先级）
+    if (current.tags && current.tags.trim()) {
+      let tagList: string[] = [];
+      // 兼容两种标签格式：JSON数组 ["tag1","tag2"] 和逗号分隔 "tag1,tag2"
+      try {
+        const parsed = JSON.parse(current.tags);
+        if (Array.isArray(parsed)) {
+          tagList = parsed.map((t: string) => String(t).trim()).filter(Boolean);
+        }
+      } catch {
+        tagList = current.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
+      }
+      // 只取前5个标签，避免查询过于宽泛
+      tagList = tagList.slice(0, 5);
+      if (tagList.length > 0) {
+        const tagConditions = tagList.map(() => "tags LIKE ?").join(" OR ");
+        conditions.push(`((${tagConditions}) AND id != ?)`);
+        tagList.forEach((tag: string) => paramsList.push(`%${tag}%`));
+        paramsList.push(imageId);
+      }
+    }
+
     let similar: any[] = [];
 
     if (conditions.length > 0) {
@@ -52,10 +74,13 @@ export async function GET(
       similar = (await query(
         `SELECT id, title, url, thumbnail_url, width, height, author, category, dominant_color, tags, uploaded_by
          FROM images
-         WHERE (${whereClause}) AND status = 'approved'
-         ORDER BY RAND()
+         WHERE (${whereClause}) AND status = 'approved' AND url IS NOT NULL AND url != ''
+         ORDER BY 
+           CASE WHEN category = ? THEN 1 ELSE 2 END,
+           CASE WHEN dominant_color = ? THEN 1 ELSE 2 END,
+           RAND()
          LIMIT 12`,
-        paramsList
+        [...paramsList, current.category || '', current.dominant_color || '']
       )) as any[];
     }
 
@@ -68,7 +93,7 @@ export async function GET(
       const extra = (await query(
         `SELECT id, title, url, thumbnail_url, width, height, author, category, dominant_color, tags, uploaded_by
          FROM images
-         WHERE id NOT IN (${placeholders}) AND status = 'approved'
+         WHERE id NOT IN (${placeholders}) AND status = 'approved' AND url IS NOT NULL AND url != ''
          ORDER BY RAND()
          LIMIT ?`,
         [...existingIds, 12 - similar.length]
@@ -77,25 +102,50 @@ export async function GET(
       similar = [...similar, ...extra];
     }
 
-    // 处理返回数据：确保 URL 有效
-    const data = similar.slice(0, 12).map((img) => ({
-      id: img.id,
-      title: img.title,
-      author: img.author,
-      category: img.category,
-      width: img.width,
-      height: img.height,
-      uploaded_by: img.uploaded_by,
-      // 始终提供可用的图片 URL
-      thumbnail_url: img.thumbnail_url || null,
-      url: img.url || null,
-      // 生成代理 URL 用于前端显示
-      display_url: img.thumbnail_url
-        ? `/api/proxy-image?url=${encodeURIComponent(img.thumbnail_url)}`
-        : img.url
-          ? `/api/proxy-image?url=${encodeURIComponent(img.url)}`
-          : null,
-    }));
+    // 处理返回数据：确保 URL 有效，并标记匹配类型
+    const data = similar.slice(0, 12).map((img) => {
+      let match_type = "random";
+      if (img.category && current.category && img.category === current.category) {
+        match_type = "same_category";
+      } else if (img.dominant_color && current.dominant_color && img.dominant_color === current.dominant_color) {
+        match_type = "same_color";
+      } else {
+        // 检查标签是否有重叠
+        if (current.tags && img.tags) {
+          let currentTags: string[] = [];
+          let imgTags: string[] = [];
+          try {
+            currentTags = JSON.parse(current.tags);
+            if (!Array.isArray(currentTags)) currentTags = [currentTags];
+          } catch { currentTags = current.tags.split(','); }
+          try {
+            imgTags = JSON.parse(img.tags);
+            if (!Array.isArray(imgTags)) imgTags = [imgTags];
+          } catch { imgTags = img.tags.split(','); }
+          const overlap = currentTags.some(t => imgTags.includes(t));
+          if (overlap) match_type = "same_tag";
+        }
+      }
+
+      return {
+        id: img.id,
+        title: img.title,
+        author: img.author,
+        category: img.category,
+        width: img.width,
+        height: img.height,
+        uploaded_by: img.uploaded_by,
+        thumbnail_url: img.thumbnail_url || null,
+        url: img.url || null,
+        match_type,
+        // 生成代理 URL 用于前端显示
+        display_url: img.thumbnail_url
+          ? `/api/proxy-image?url=${encodeURIComponent(img.thumbnail_url)}`
+          : img.url
+            ? `/api/proxy-image?url=${encodeURIComponent(img.url)}`
+            : null,
+      };
+    });
 
     return NextResponse.json({ data });
   } catch (error: any) {

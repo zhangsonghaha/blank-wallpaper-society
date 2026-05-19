@@ -55,12 +55,9 @@ export default function SimilarImages({
   const getImgSrc = (img: any) => {
     // 优先使用API预处理好的display_url（已走代理）
     if (img.display_url) return img.display_url;
-    // 回退：直接用thumbnail或url
-    if (imgErrors.has(img.id)) {
-      const rawUrl = img.thumbnail_url || img.url;
-      return rawUrl ? `/api/proxy-image?url=${encodeURIComponent(rawUrl)}` : "";
-    }
-    return img.thumbnail_url || img.url || "";
+    // 始终使用代理URL，避免跨域和加载失败问题
+    const rawUrl = img.thumbnail_url || img.url;
+    return rawUrl ? `/api/proxy-image?url=${encodeURIComponent(rawUrl)}` : "";
   };
 
   const handleImgError = (imgId: number) => {
@@ -75,24 +72,12 @@ export default function SimilarImages({
   return (
     <AnimatePresence>
       {isOpen && (
-        <>
-          {/* 半透明遮罩 - 仅覆盖右侧面板区域 */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[101] bg-black/20"
-            onClick={onClose}
-          />
-
-          {/* 面板主体 */}
           <motion.div
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="fixed inset-y-0 right-0 w-[400px] max-w-[90vw] bg-white shadow-2xl z-[101] flex flex-col"
+            className="fixed inset-y-0 right-0 w-[400px] max-w-[90vw] bg-white shadow-2xl z-[110] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -158,6 +143,11 @@ export default function SimilarImages({
                           同色
                         </span>
                       )}
+                      {img.match_type === "same_tag" && (
+                        <span className="absolute top-1.5 right-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/80 text-white font-medium">
+                          同标签
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -171,7 +161,6 @@ export default function SimilarImages({
               )}
             </div>
           </motion.div>
-        </>
       )}
     </AnimatePresence>
   );

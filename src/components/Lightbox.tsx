@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import type { GalleryImage } from "@/data/images";
@@ -12,6 +12,7 @@ import AddToCollectionDialog from "./AddToCollectionDialog";
 import CommentSection from "./CommentSection";
 import SimilarImages from "./SimilarImages";
 import PaymentDialog from "./PaymentDialog";
+import DownloadSuccessGuide from "./DownloadSuccessGuide";
 import {
   RESOLUTIONS,
   CATEGORY_LABELS,
@@ -76,6 +77,13 @@ export default function Lightbox({
   const [paidPrice, setPaidPrice] = useState(0);
   const [hasPurchased, setHasPurchased] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+
+  // 下载成功引导弹窗
+  const [downloadSuccessOpen, setDownloadSuccessOpen] = useState(false);
+
+  // 下载按钮引用（用于定位下载面板）
+  const downloadBtnRef = useRef<HTMLDivElement>(null);
+  const [downloadPanelPos, setDownloadPanelPos] = useState<{ top: number; left: number } | null>(null);
 
   const isFavorited = favoritedIds?.has(currentImage?.id) ?? false;
 
@@ -231,6 +239,7 @@ export default function Lightbox({
   useEffect(() => {
     setIsLoaded(false);
     setDownloadPanelOpen(false);
+    setDownloadPanelPos(null);
     setDownloadingRes(null);
     setDownloadProgress(0);
     setDevicePreview(false);
@@ -243,6 +252,7 @@ export default function Lightbox({
     setPaidPrice(0);
     setHasPurchased(false);
     setPaymentDialogOpen(false);
+    setDownloadSuccessOpen(false);
 
     // 检查是否为付费壁纸
     if (currentImage?.id) {
@@ -342,6 +352,10 @@ export default function Lightbox({
       }
 
       toast.success(resolution ? `已下载 ${resolution}` : "原图下载完成");
+
+      // 打开下载成功引导弹窗
+      setDownloadPanelOpen(false);
+      setDownloadSuccessOpen(true);
 
       // 记录下载日志（异步，不阻塞）
       withCsrfHeader().then((csrfHeaders) => {
@@ -478,35 +492,24 @@ export default function Lightbox({
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && currentImage && (
-        <motion.div
-          key={`lightbox-${currentImage.id}`}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-sm"
-          onClick={() => {
-            if (downloadPanelOpen) {
-              setDownloadPanelOpen(false);
-            } else if (reportOpen) {
-              setReportOpen(false);
-            } else if (addToCollectionOpen) {
-              setAddToCollectionOpen(false);
-            } else if (commentOpen) {
-              setCommentOpen(false);
-            } else if (similarOpen) {
-              setSimilarOpen(false);
-            } else if (exifOpen) {
-              setExifOpen(false);
-            } else if (devicePreview) {
-              setDevicePreview(false);
-            } else {
-              onClose();
-            }
-          }}
-        >
+    <>
+      <AnimatePresence mode="wait">
+        {isOpen && currentImage && (
+          <motion.div
+            key={`lightbox-${currentImage.id}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className={`fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-sm ${similarOpen || commentOpen ? "bg-black/70" : "bg-black/85"}`}
+            onClick={() => {
+              if (downloadPanelOpen) {
+                setDownloadPanelOpen(false);
+              } else {
+                onClose();
+              }
+            }}
+          >
           {/* Close Button */}
           <button
             onClick={(e) => {
@@ -551,14 +554,18 @@ export default function Lightbox({
             </svg>
           </button>
 
-          {/* Image Container */}
+          {/* Image Container - 侧边面板打开时向左偏移 */}
           <motion.div
             key={`image-container-${currentImage.id}`}
             initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
+            animate={{
+              opacity: 1,
+              scale: 1,
+              x: (similarOpen || commentOpen) ? -200 : 0,
+            }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-            className="relative max-w-[95vw] sm:max-w-[90vw] max-h-[80vh] sm:max-h-[85vh] flex flex-col items-center"
+            className={`relative max-w-[95vw] sm:max-w-[90vw] max-h-[80vh] sm:max-h-[85vh] flex flex-col items-center`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* 设备预览切换按钮 */}
@@ -745,8 +752,8 @@ export default function Lightbox({
           </motion.div>
 
           {/* Bottom Action Bar - 移动端可滚动 */}
-          <div className="absolute bottom-2 sm:bottom-4 left-0 sm:left-1/2 sm:-translate-x-1/2 z-10 w-full sm:w-auto sm:max-w-[90vw] px-2 sm:px-0 overflow-x-auto scrollbar-none">
-            <div className="flex items-center gap-1.5 sm:gap-2 min-w-max sm:min-w-0 sm:flex-wrap sm:justify-center">
+          <div className="absolute bottom-2 sm:bottom-4 left-0 sm:left-1/2 sm:-translate-x-1/2 z-[60] w-full sm:w-auto sm:max-w-[90vw] px-2 sm:px-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-max sm:min-w-0 sm:flex-wrap sm:justify-center overflow-x-auto scrollbar-none" onClick={(e) => e.stopPropagation()}>
               {/* Favorite Button */}
               {onToggleFavorite && (
                 <button
@@ -859,13 +866,20 @@ export default function Lightbox({
               </button>
 
               {/* Download Button with Panel */}
-              <div className="relative">
+              <div ref={downloadBtnRef} className="relative z-30">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   if (isPaidWallpaper && !hasPurchased) {
                     setPaymentDialogOpen(true);
                   } else {
+                    if (!downloadPanelOpen && downloadBtnRef.current) {
+                      const rect = downloadBtnRef.current.getBoundingClientRect();
+                      setDownloadPanelPos({
+                        top: rect.top - 8,
+                        left: rect.left + rect.width / 2,
+                      });
+                    }
                     setDownloadPanelOpen(!downloadPanelOpen);
                   }
                 }}
@@ -885,7 +899,7 @@ export default function Lightbox({
                 )}
               </button>
 
-              {/* Download Panel */}
+              {/* Download Panel - fixed定位独立弹窗 */}
               <AnimatePresence>
                 {downloadPanelOpen && (
                   <motion.div
@@ -894,7 +908,15 @@ export default function Lightbox({
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
                     transition={{ duration: 0.15 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 bg-[var(--color-canvas,#fff)] rounded-2xl shadow-2xl border border-[var(--color-hairline,#e5e5e5)] overflow-hidden"
+                    style={{
+                      position: 'fixed',
+                      bottom: downloadPanelPos
+                        ? `calc(100vh - ${downloadPanelPos.top}px)`
+                        : undefined,
+                      left: downloadPanelPos?.left,
+                      transform: 'translateX(-50%)',
+                    }}
+                    className="w-72 z-[120] bg-[var(--color-canvas,#fff)] rounded-2xl shadow-2xl border border-[var(--color-hairline,#e5e5e5)] overflow-hidden"
                   >
                     {/* Header */}
                     <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-hairline,#e5e5e5)]">
@@ -1150,10 +1172,10 @@ export default function Lightbox({
           </AnimatePresence>
         </motion.div>
       )}
+      </AnimatePresence>
 
       {/* Add to Collection Dialog */}
       <AddToCollectionDialog
-        key={`collection-dialog-${currentImage?.id ?? 0}`}
         open={addToCollectionOpen}
         onOpenChange={setAddToCollectionOpen}
         imageId={currentImage?.id ?? null}
@@ -1162,7 +1184,6 @@ export default function Lightbox({
       {/* Comment Section */}
       {currentImage && (
         <CommentSection
-          key={`comment-section-${currentImage.id}`}
           imageId={currentImage.id}
           isOpen={commentOpen}
           onClose={() => setCommentOpen(false)}
@@ -1172,7 +1193,6 @@ export default function Lightbox({
       {/* Similar Images Panel */}
       {currentImage && (
         <SimilarImages
-          key={`similar-${currentImage.id}`}
           imageId={currentImage.id}
           isOpen={similarOpen}
           onClose={() => setSimilarOpen(false)}
@@ -1203,6 +1223,20 @@ export default function Lightbox({
           setPaymentDialogOpen(false);
         }}
       />
-    </AnimatePresence>
+
+      {/* Download Success Guide */}
+      {currentImage && (
+        <DownloadSuccessGuide
+          imageId={currentImage.id}
+          imageTitle={currentImage.title}
+          uploadedBy={currentImage.uploaded_by ?? null}
+          authorName={currentImage.author}
+          isOpen={downloadSuccessOpen}
+          onClose={() => setDownloadSuccessOpen(false)}
+          isFavorited={isFavorited}
+          isFollowing={isFollowing}
+        />
+      )}
+    </>
   );
 }

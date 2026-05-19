@@ -15,7 +15,11 @@ async function getImageData(id: string) {
   const image = rows[0];
 
   // 获取分类和标签
-  const tags = image.tags ? (typeof image.tags === "string" ? JSON.parse(image.tags) : image.tags) : [];
+  const tags = image.tags
+    ? (typeof image.tags === "string"
+        ? (() => { try { return JSON.parse(image.tags); } catch { return image.tags.split(",").map((t: string) => t.trim()).filter(Boolean); } })()
+        : image.tags)
+    : [];
 
   // 构建图片URL
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://imagegallery.app";

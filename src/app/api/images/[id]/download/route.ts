@@ -103,67 +103,96 @@ export async function GET(
 
     const isVideo = image.media_type === "video" || (image.mime_type && image.mime_type.startsWith("video/"));
 
-    if (resolution && !isVideo) {
-      // 下载指定分辨率（仅图片支持缩放）
-      const resInfo = RESOLUTION_MAP.get(resolution);
-      if (!resInfo) {
-        return NextResponse.json(
-          { error: `不支持的分辨率: ${resolution}` },
-          { status: 400 }
-        );
-      }
-
-      // 优先使用预生成变体
-      const variantsInfo = image.variants ? (typeof image.variants === 'string' ? JSON.parse(image.variants) : image.variants) : null;
-      const matchedVariant = findBestVariantForResolution(resInfo.width, resInfo.height, variantsInfo);
-
-      if (matchedVariant) {
-        // 预生成变体存在，从 MinIO 获取变体文件
-        const publicUrlBase = getPublicUrl("");
-        const variantStorageKey = matchedVariant.url
-          .replace(publicUrlBase + "/", "")
-          .replace(publicUrlBase, "");
-        buffer = await getObject(variantStorageKey);
-        mimeType = "image/webp";
-        fileName = `${image.title || "image"}_${resolution}.webp`;
-      } else {
-        // 回退到实时生成（旧图片无变体时的兼容逻辑）
-        const resizedKey = getResizedKey(
-          image.storage_key,
-          resInfo.width,
-          resInfo.height
-        );
-
-        // 检查缓存是否存在
-        const exists = await objectExists(resizedKey);
-        if (exists) {
-          buffer = await getObject(resizedKey);
-        } else {
-          // 实时生成
-          const originalBuffer = await getObject(image.storage_key);
-          buffer = await sharp(originalBuffer)
-            .resize(resInfo.width, resInfo.height, {
-              fit: "cover",
-              position: "center",
-            })
-            .webp({ quality: 90 })
-            .toBuffer();
-
-          // 异步缓存（不阻塞响应）
-          putBuffer(buffer, resizedKey, "image/webp").catch((err) => {
-            console.error("缓存缩放图失败:", err);
-          });
+    try {
+      if (resolution && !isVideo) {
+        // 下载指定分辨率（仅图片支持缩放）
+        const resInfo = RESOLUTION_MAP.get(resolution);
+        if (!resInfo) {
+          return NextResponse.json(
+            { error: `不支持的分辨率: ${resolution}` },
+            { status: 400 }
+          );
         }
 
-        mimeType = "image/webp";
-        fileName = `${image.title || "image"}_${resolution}.webp`;
+        // 优先使用预生成变体
+        const variantsInfo = image.variants ? (typeof image.variants === 'string' ? JSON.parse(image.variants) : image.variants) : null;
+        const matchedVariant = findBestVariantForResolution(resInfo.width, resInfo.height, variantsInfo);
+
+        if (matchedVariant) {
+          // 预生成变体存在，从 MinIO 获取变体文件
+          const publicUrlBase = getPublicUrl("");
+          const variantStorageKey = matchedVariant.url
+            .replace(publicUrlBase + "/", "")
+            .replace(publicUrlBase, "");
+          buffer = await getObject(variantStorageKey);
+          mimeType = "image/webp";
+          fileName = `${image.title || "image"}_${resolution}.webp`;
+        } else {
+          // 回退到实时生成（旧图片无变体时的兼容逻辑）
+          const resizedKey = getResizedKey(
+            image.storage_key,
+            resInfo.width,
+            resInfo.height
+          );
+
+          // 检查缓存是否存在
+          const exists = await objectExists(resizedKey);
+          if (exists) {
+            buffer = await getObject(resizedKey);
+          } else {
+            // 实时生成
+            const originalBuffer = await getObject(image.storage_key);
+            buffer = await sharp(originalBuffer)
+              .resize(resInfo.width, resInfo.height, {
+                fit: "cover",
+                position: "center",
+              })
+              .webp({ quality: 90 })
+              .toBuffer();
+
+            // 异步缓存（不阻塞响应）
+            putBuffer(buffer, resizedKey, "image/webp").catch((err) => {
+              console.error("缓存缩放图失败:", err);
+            });
+          }
+
+          mimeType = "image/webp";
+          fileName = `${image.title || "image"}_${resolution}.webp`;
+        }
+      } else {
+        // 下载原文件（视频或无分辨率参数的图片）
+        buffer = await getObject(image.storage_key);
+        mimeType = image.mime_type || "image/jpeg";
+        const ext = mimeType.split("/")[1] || "jpg";
+        fileName = `${image.title || "image"}.${ext}`;
       }
-    } else {
-      // 下载原文件（视频或无分辨率参数的图片）
-      buffer = await getObject(image.storage_key);
-      mimeType = image.mime_type || "image/jpeg";
-      const ext = mimeType.split("/")[1] || "jpg";
-      fileName = `${image.title || "image"}.${ext}`;
+    } catch (minioError: any) {
+      console.error("MinIO访问失败，尝试使用公共URL重定向:", minioError);
+      // MinIO访问失败时，重定向到公共URL
+      let publicUrl: string;
+      if (resolution && !isVideo) {
+        // 对于指定分辨率的请求，先尝试获取变体的公共URL
+        const resInfo = RESOLUTION_MAP.get(resolution);
+        if (resInfo) {
+          const variantsInfo = image.variants ? (typeof image.variants === 'string' ? JSON.parse(image.variants) : image.variants) : null;
+          const matchedVariant = findBestVariantForResolution(resInfo.width, resInfo.height, variantsInfo);
+          if (matchedVariant) {
+            publicUrl = matchedVariant.url;
+          } else {
+            // 无匹配变体时使用原图URL
+            publicUrl = getPublicUrl(image.storage_key);
+          }
+        } else {
+          // 无效分辨率使用原图
+          publicUrl = getPublicUrl(image.storage_key);
+        }
+      } else {
+        // 原图或视频使用存储的公共URL
+        publicUrl = getPublicUrl(image.storage_key);
+      }
+      
+      // 重定向到公共URL
+      return NextResponse.redirect(publicUrl, 302);
     }
 
     // 添加水印（仅图片，跳过视频；仅非原始分辨率下载时添加水印）
