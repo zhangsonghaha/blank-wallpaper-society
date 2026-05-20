@@ -159,6 +159,29 @@ export const webhookSubscriptionSchema = z.object({
   timeout_ms: z.coerce.number().int().min(1000).max(30000).default(5000),
 });
 
+// === 创作者认证 Schema ===
+
+export const creatorApplicationSchema = z.object({
+  real_name: z.string().min(1, "真实姓名不能为空").max(100),
+  id_type: z.enum(["id_card", "passport", "driver_license", "other"], { required_error: "请选择身份证明类型" }),
+  id_number: z.string().min(1, "身份证明编号不能为空").max(100),
+  portfolio_url: z.string().max(500).optional().or(z.literal("")),
+  brand_name: z.string().max(100).optional(),
+  brand_description: z.string().max(1000).optional(),
+});
+
+export const brandProfileSchema = z.object({
+  brand_name: z.string().min(1, "品牌名不能为空").max(100),
+  brand_description: z.string().max(1000).optional(),
+  brand_website: z.string().max(500).optional().or(z.literal("")),
+  social_links: z.record(z.string(), z.string()).optional(),
+});
+
+export const adminVerifySchema = z.object({
+  action: z.enum(["approve", "reject"]),
+  reason: z.string().max(500).optional(),
+});
+
 // === API Key Schema ===
 
 export const createApiKeySchema = z.object({

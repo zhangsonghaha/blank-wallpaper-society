@@ -1,0 +1,98 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bws-app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      # 数据库连接
+      - DATABASE_URL=mysql://bws_user:bws_password@mysql:3306/bws_db
+      # Redis 连接
+      - REDIS_URL=redis://redis:6379
+      # MinIO 配置
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=wallpapers
+      # NextAuth 配置（生产环境请替换为实际值）
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=change-me-in-production
+    env_file:
+      - .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+    networks:
+      - bws-network
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    container_name: bws-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password
+      - MYSQL_DATABASE=bws_db
+      - MYSQL_USER=bws_user
+      - MYSQL_PASSWORD=bws_password
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - bws-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: bws-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    # 开发环境不设密码，生产环境覆盖
+    networks:
+      - bws-network
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: bws-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - bws-network
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  redis-data:
+  minio-data:
+
+networks:
+  bws-network:
+    driver: bridge

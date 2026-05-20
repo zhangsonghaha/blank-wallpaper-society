@@ -30,6 +30,7 @@ import {
   Brain,
   ShoppingBag,
   Crown,
+  BadgeCheck,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,7 @@ import BotsTab from "./BotsTab";
 import ModelsTab from "./ModelsTab";
 import OrdersTab from "./OrdersTab";
 import MembershipTab from "./MembershipTab";
+import VerificationTab from "./VerificationTab";
 
 // 标签页接口
 interface TabItem {
@@ -130,6 +132,7 @@ export default function AdminClient() {
     Brain: <Brain className="w-4 h-4" />,
     ShoppingBag: <ShoppingBag className="w-4 h-4" />,
     Crown: <Crown className="w-4 h-4" />,
+    BadgeCheck: <BadgeCheck className="w-4 h-4" />,
   };
 
   // === 从数据库加载菜单 ===
@@ -257,6 +260,9 @@ export default function AdminClient() {
         break;
       case "membership":
         content = <MembershipTab />;
+        break;
+      case "verification":
+        content = <VerificationTab />;
         break;
       default:
         content = <div className="p-6">功能开发中...</div>;

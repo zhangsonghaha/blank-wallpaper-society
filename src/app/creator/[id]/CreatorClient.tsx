@@ -12,6 +12,7 @@ import {
   Shield,
   UserPlus,
   UserCheck,
+  BadgeCheck,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -21,12 +22,14 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import Link from "next/link";
+import VerifiedBadge from "@/components/VerifiedBadge";
 
 interface CreatorUser {
   id: number;
   name: string;
   avatar: string | null;
   role: string;
+  is_verified?: number;
   createdAt: string;
 }
 
@@ -130,8 +133,9 @@ export default function CreatorClient({
                     </div>
                   </div>
                   <div className="text-center md:text-left flex-1 pt-2 md:pt-0">
-                    <h1 className="text-2xl md:text-3xl font-bold text-[var(--color-ink)]">
+                    <h1 className="text-2xl md:text-3xl font-bold text-[var(--color-ink)] flex items-center gap-1">
                       {user.name}
+                      {user.is_verified === 1 && <VerifiedBadge size={22} />}
                     </h1>
                     {!isSelf && isLoggedIn && (
                       <Button

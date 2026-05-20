@@ -13,7 +13,7 @@ export default async function ProfilePage() {
   const userId = (session.user as any).id;
 
   // 获取用户信息
-  const users = (await query("SELECT id, email, name, avatar, role, created_at FROM users WHERE id = ?", [userId])) as any[];
+  const users = (await query("SELECT id, email, name, avatar, role, is_verified, created_at FROM users WHERE id = ?", [userId])) as any[];
   const user = users[0];
 
   if (!user) {
@@ -39,6 +39,7 @@ export default async function ProfilePage() {
         name: user.name,
         avatar: user.avatar,
         role: user.role,
+        is_verified: user.is_verified || 0,
         createdAt: user.created_at,
       }}
       stats={{

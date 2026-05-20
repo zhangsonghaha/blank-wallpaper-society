@@ -37,6 +37,7 @@ import {
   Trophy,
   Crown,
   Sparkles,
+  BadgeCheck as BadgeCheckIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,6 +67,9 @@ import {
 import Link from "next/link";
 import CollectionDialog from "@/components/CollectionDialog";
 import { withCsrfHeader } from "@/lib/csrf-client";
+import CreatorApplicationForm from "@/components/CreatorApplicationForm";
+import BrandProfileEditor from "@/components/BrandProfileEditor";
+import VerifiedBadge from "@/components/VerifiedBadge";
 
 interface UserData {
   id: number;
@@ -73,6 +77,7 @@ interface UserData {
   name: string;
   avatar: string | null;
   role: string;
+  is_verified?: number;
   createdAt: string;
 }
 
@@ -111,6 +116,116 @@ interface AchievementData {
   unlockedAt?: string;
   progress?: number;
   currentValue?: number;
+}
+
+/* ==================== 创作者认证入口（弹窗模式） ==================== */
+
+function CreatorVerificationEntry({ userId }: { userId: number }) {
+  const [verificationStatus, setVerificationStatus] = useState<{
+    verification_status: "none" | "pending" | "approved" | "rejected";
+    is_verified: number;
+    verified_at: string | null;
+    verification_applied_at: string | null;
+    verification_rejected_reason: string | null;
+    brand_name: string | null;
+    brand_description: string | null;
+    brand_website: string | null;
+    social_links: Record<string, string> | null;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const fetchStatus = useCallback(() => {
+    setLoading(true);
+    fetch("/api/creator/status")
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then((data) => {
+        if (data && data.data) {
+          setVerificationStatus(data.data);
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
+
+  // 状态标签
+  const statusBadge = (() => {
+    if (loading) return <Badge className="rounded-full text-xs bg-gray-100 text-gray-500">加载中</Badge>;
+    const s = verificationStatus?.verification_status;
+    if (s === "approved") return <Badge className="rounded-full text-xs gap-1 bg-green-100 text-green-700 border-green-300"><CheckCircle className="w-3 h-3" />已认证</Badge>;
+    if (s === "pending") return <Badge className="rounded-full text-xs gap-1 bg-yellow-100 text-yellow-700 border-yellow-300"><Clock className="w-3 h-3" />审核中</Badge>;
+    if (s === "rejected") return <Badge className="rounded-full text-xs gap-1 bg-red-100 text-red-700 border-red-300"><XCircle className="w-3 h-3" />未通过</Badge>;
+    return <Badge className="rounded-full text-xs gap-1 bg-blue-100 text-blue-700 border-blue-300">未申请</Badge>;
+  })();
+
+  return (
+    <>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-[var(--color-ink)] flex items-center gap-2">
+          <BadgeCheckIcon className="w-5 h-5" />
+          创作者认证
+        </h2>
+        <div className="flex items-center gap-3">
+          {statusBadge}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDialogOpen(true)}
+            className="rounded-full text-xs gap-1"
+          >
+            {verificationStatus?.verification_status === "approved" ? "管理认证" : "申请认证"}
+          </Button>
+        </div>
+      </div>
+
+      {/* 创作者认证弹窗 */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-lg rounded-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BadgeCheckIcon className="w-5 h-5" />
+              创作者认证
+            </DialogTitle>
+            <DialogDescription>
+              {verificationStatus?.verification_status === "approved"
+                ? "管理您的创作者认证信息与品牌资料"
+                : "成为认证创作者，获取专属标识、品牌主页和更多特权"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <CreatorApplicationForm
+              status={verificationStatus}
+              onStatusChange={() => { fetchStatus(); }}
+            />
+            {verificationStatus?.verification_status === "approved" && (
+              <div className="mt-4">
+                <BrandProfileEditor
+                  initialData={
+                    verificationStatus
+                      ? {
+                          brand_name: verificationStatus.brand_name || "",
+                          brand_description: verificationStatus.brand_description || "",
+                          brand_website: verificationStatus.brand_website || "",
+                          social_links: verificationStatus.social_links,
+                        }
+                      : null
+                  }
+                  onSaveSuccess={fetchStatus}
+                />
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
 /* ==================== 账号注销区域组件 ==================== */
@@ -819,6 +934,7 @@ export default function ProfileClient({
                           <h1 className="text-2xl md:text-3xl font-bold text-[var(--color-ink)]">
                             {user.name}
                           </h1>
+                          {user.is_verified === 1 && <VerifiedBadge size={22} />}
                           <Button
                             variant="outline"
                             size="sm"
@@ -1152,6 +1268,12 @@ export default function ProfileClient({
                   注销账号
                 </h2>
                 <AccountDeletionZone userId={user.id} />
+              </div>
+
+              {/* 创作者认证入口 */}
+              <Separator />
+              <div className="px-6 md:px-8 py-6">
+                <CreatorVerificationEntry userId={user.id} />
               </div>
 
               {/* Tabs: Favorites + Uploads */}
