@@ -19,9 +19,9 @@ export interface VerificationApplication {
 
 export interface BrandProfile {
   brand_name: string;
-  brand_description: string;
-  brand_website: string;
-  social_links: Record<string, string>;
+  brand_description?: string;
+  brand_website?: string;
+  social_links?: Record<string, string>;
 }
 
 export interface VerificationStatus {
@@ -218,9 +218,9 @@ export async function updateBrandProfile(
     WHERE id = ?`,
     [
       data.brand_name,
-      data.brand_description,
-      data.brand_website,
-      JSON.stringify(data.social_links),
+      data.brand_description || null,
+      data.brand_website || null,
+      data.social_links ? JSON.stringify(data.social_links) : null,
       userId,
     ]
   );

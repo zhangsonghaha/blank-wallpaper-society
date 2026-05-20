@@ -176,7 +176,7 @@ export default function CreatorApplicationForm({
             <Label htmlFor="id_type">身份证明类型 *</Label>
             <Select
               value={formData.id_type}
-              onValueChange={(v) => setFormData({ ...formData, id_type: v })}
+              onValueChange={(v) => v && setFormData({ ...formData, id_type: v })}
             >
               <SelectTrigger>
                 <SelectValue placeholder="选择类型" />
