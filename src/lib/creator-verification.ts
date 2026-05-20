@@ -12,7 +12,7 @@ export interface VerificationApplication {
   real_name: string;
   id_type: string;
   id_number: string;
-  portfolio_url: string;
+  portfolio_url?: string;
   brand_name?: string;
   brand_description?: string;
 }
