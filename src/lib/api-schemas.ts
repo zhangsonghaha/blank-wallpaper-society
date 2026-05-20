@@ -163,7 +163,7 @@ export const webhookSubscriptionSchema = z.object({
 
 export const creatorApplicationSchema = z.object({
   real_name: z.string().min(1, "真实姓名不能为空").max(100),
-  id_type: z.enum(["id_card", "passport", "driver_license", "other"], { required_error: "请选择身份证明类型" }),
+  id_type: z.enum(["id_card", "passport", "driver_license", "other"], { message: "请选择身份证明类型" }),
   id_number: z.string().min(1, "身份证明编号不能为空").max(100),
   portfolio_url: z.string().max(500).optional().or(z.literal("")),
   brand_name: z.string().max(100).optional(),
