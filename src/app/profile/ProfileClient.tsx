@@ -886,27 +886,25 @@ export default function ProfileClient({
       <Toaster position="top-right" richColors />
 
       {/* Header Banner */}
-      <div className="relative h-48 md:h-64 group">
+      <div className="relative h-40 md:h-52 group">
         {bannerUrl ? (
           <img
             src={bannerUrl}
             alt="主页Banner"
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover pointer-events-none"
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-r from-[var(--color-primary)] to-purple-600" />
+          <div className="w-full h-full bg-gradient-to-r from-[var(--color-primary)] to-purple-600 pointer-events-none" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
-        {/* Banner上传覆盖层 */}
-        <label className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10">
+        <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent pointer-events-none" />
+        {/* Banner上传按钮 — 右上角小按钮，hover时显示 */}
+        <label className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 bg-black/40 backdrop-blur-sm rounded-full text-white text-xs cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60 z-10">
           {bannerUploading ? (
-            <div className="w-10 h-10 border-3 border-white border-t-transparent rounded-full animate-spin" />
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
           ) : (
-            <div className="text-center text-white">
-              <Camera className="w-8 h-8 mx-auto mb-1" />
-              <span className="text-sm">更换Banner</span>
-            </div>
+            <Camera className="w-3.5 h-3.5" />
           )}
+          <span>{bannerUploading ? "上传中..." : "更换Banner"}</span>
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp"
@@ -942,18 +940,18 @@ export default function ProfileClient({
         </label>
       </div>
 
-      <div className="max-w-[960px] mx-auto px-4 lg:px-8 -mt-24 md:-mt-32 pb-12">
+      <div className="max-w-[960px] mx-auto px-4 lg:px-8 -mt-12 md:-mt-16 pb-12">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
           {/* Profile Card */}
-          <Card className="rounded-2xl border-none shadow-lg overflow-visible">
+          <Card className="rounded-2xl border-none shadow-lg overflow-visible relative z-10">
             <CardContent className="p-0">
               {/* Avatar + Basic Info */}
-              <div className="px-6 md:px-8 pb-6 pt-0">
-                <div className="flex flex-col md:flex-row items-center md:items-end gap-4 -mt-16 md:-mt-20">
+              <div className="px-6 md:px-8 pb-6 pt-4 md:pt-6">
+                <div className="flex flex-col md:flex-row items-center md:items-end gap-4 -mt-14 md:-mt-20">
                   <div className="relative group shrink-0">
                     <div className="w-28 h-28 md:w-36 md:h-36 rounded-full overflow-hidden ring-4 ring-white shadow-xl">
                       <Avatar className="w-full h-full">
@@ -1030,6 +1028,42 @@ export default function ProfileClient({
                         </>
                       )}
                     </div>
+                    {/* 简介 */}
+                    {bio && (
+                      <p className="text-sm text-[var(--color-mute)] mt-2 max-w-lg">
+                        {bio}
+                      </p>
+                    )}
+                    {/* 社交链接 */}
+                    {socialLinks && Object.values(socialLinks).some(v => v?.trim()) && (
+                      <div className="flex items-center gap-2 mt-2 flex-wrap justify-center md:justify-start">
+                        {Object.entries(socialLinks).map(([key, value]) => {
+                          if (!value?.trim()) return null;
+                          const platformMap: Record<string, { label: string; icon: string; prefix: string }> = {
+                            weibo: { label: "微博", icon: "📢", prefix: "https://weibo.com/" },
+                            twitter: { label: "Twitter/X", icon: "🐦", prefix: "https://twitter.com/" },
+                            bilibili: { label: "B站", icon: "📺", prefix: "https://space.bilibili.com/" },
+                            xiaohongshu: { label: "小红书", icon: "📕", prefix: "https://xiaohongshu.com/" },
+                            instagram: { label: "Instagram", icon: "📸", prefix: "https://instagram.com/" },
+                            github: { label: "GitHub", icon: "💻", prefix: "https://github.com/" },
+                          };
+                          const platform = platformMap[key];
+                          if (!platform) return null;
+                          return (
+                            <a
+                              key={key}
+                              href={value.startsWith("http") ? value : `${platform.prefix}${value}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--color-surface-card)] border border-[var(--color-hairline)] text-xs text-[var(--color-ink)] hover:bg-[var(--color-primary)] hover:text-white transition-colors"
+                            >
+                              <span>{platform.icon}</span>
+                              {platform.label}
+                            </a>
+                          );
+                        })}
+                      </div>
+                    )}
                     <div className="flex items-center gap-3 mt-2 justify-center md:justify-start">
                       <Badge
                         variant="secondary"

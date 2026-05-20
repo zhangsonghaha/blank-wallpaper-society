@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { notFound } from "next/navigation";
+import { getUserLevel } from "@/lib/user-level";
 import UserClient from "./UserClient";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -58,7 +59,8 @@ export default async function UserPage({
     `SELECT
       COUNT(*) as totalImages,
       COALESCE(SUM(view_count), 0) as totalViews,
-      COALESCE(SUM(download_count), 0) as totalDownloads
+      COALESCE(SUM(download_count), 0) as totalDownloads,
+      COALESCE(SUM(favorite_count), 0) as totalFavorites
     FROM images WHERE uploaded_by = ? AND status = 'approved'`,
     [userId]
   )) as any[];
@@ -90,6 +92,42 @@ export default async function UserPage({
       );
     }
   }
+
+  // 获取用户等级信息
+  let levelData = null;
+  try {
+    const levelInfo = await getUserLevel(userId);
+    levelData = {
+      level: levelInfo.level,
+      title: levelInfo.title,
+      exp: levelInfo.exp,
+      nextExp: levelInfo.nextExp,
+      prevExp: levelInfo.prevExp,
+      expProgress: levelInfo.expProgress,
+    };
+  } catch { levelData = null; }
+
+  // 获取会员信息
+  let membershipInfo = null;
+  try {
+    const memberRows = (await query(
+      "SELECT plan, started_at, expires_at, status FROM memberships WHERE user_id = ? AND status = 'active' LIMIT 1",
+      [userId]
+    )) as any[];
+    if (memberRows.length > 0) {
+      const m = memberRows[0];
+      membershipInfo = {
+        plan: m.plan,
+        startedAt: m.started_at,
+        expiresAt: m.expires_at,
+        status: m.status,
+      };
+    }
+    // 管理员也显示会员标识
+    if (user.role === "admin") {
+      membershipInfo = { plan: "admin", startedAt: null, expiresAt: null, status: "active" };
+    }
+  } catch { membershipInfo = null; }
 
   // 已通过的壁纸（分页）
   const images = (await query(
@@ -129,11 +167,14 @@ export default async function UserPage({
           totalImages: stats?.totalImages || 0,
           totalViews: stats?.totalViews || 0,
           totalDownloads: stats?.totalDownloads || 0,
+          totalFavorites: stats?.totalFavorites || 0,
         }}
         followers={followStats?.followers || 0}
         following={followStats?.following || 0}
         featuredCollections={featuredCollectionDetails}
         images={images}
+        levelData={levelData}
+        membershipInfo={membershipInfo}
       />
     </>
   );

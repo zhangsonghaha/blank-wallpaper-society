@@ -16,12 +16,15 @@ import {
   ExternalLink,
   FolderOpen,
   Loader2,
+  Heart,
+  Crown,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
+import LevelBadge from "@/components/LevelBadge";
 import VerifiedBadge from "@/components/VerifiedBadge";
 
 interface UserInfo {
@@ -40,6 +43,7 @@ interface UserStats {
   totalImages: number;
   totalViews: number;
   totalDownloads: number;
+  totalFavorites: number;
 }
 
 interface FeaturedCollection {
@@ -60,6 +64,22 @@ const SOCIAL_ICONS: Record<string, { label: string; icon: string; prefix: string
   github: { label: "GitHub", icon: "💻", prefix: "https://github.com/" },
 };
 
+interface LevelData {
+  level: number;
+  title: string;
+  exp: number;
+  nextExp: number;
+  prevExp: number;
+  expProgress: number;
+}
+
+interface MembershipInfo {
+  plan: string;
+  startedAt: string | null;
+  expiresAt: string | null;
+  status: string;
+}
+
 export default function UserClient({
   user,
   stats,
@@ -67,6 +87,8 @@ export default function UserClient({
   following: initialFollowing,
   featuredCollections,
   images,
+  levelData,
+  membershipInfo,
 }: {
   user: UserInfo;
   stats: UserStats;
@@ -74,6 +96,8 @@ export default function UserClient({
   following: number;
   featuredCollections: FeaturedCollection[];
   images: any[];
+  levelData: LevelData | null;
+  membershipInfo: MembershipInfo | null;
 }) {
   const { data: session } = useSession();
   const [isFollowing, setIsFollowing] = useState(false);
@@ -158,7 +182,7 @@ export default function UserClient({
   return (
     <div className="min-h-[calc(100vh-64px)] bg-[var(--color-surface-soft)]">
       {/* Banner */}
-      <div className="relative h-48 md:h-64 lg:h-80 overflow-hidden">
+      <div className="relative h-48 md:h-64 lg:h-80 overflow-hidden pointer-events-none">
         {user.banner ? (
           <img
             src={user.banner}
@@ -168,7 +192,7 @@ export default function UserClient({
         ) : (
           <div className="w-full h-full bg-gradient-to-r from-[var(--color-primary)] to-purple-600" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
       </div>
 
       <div className="max-w-[1200px] mx-auto px-4 lg:px-8 -mt-24 md:-mt-32 pb-12">
@@ -201,6 +225,13 @@ export default function UserClient({
                       {user.name}
                       {user.isVerified === 1 && <VerifiedBadge size={22} />}
                     </h1>
+                    {/* 会员标识 */}
+                    {membershipInfo && membershipInfo.status === "active" && (
+                      <Badge className="rounded-full text-xs gap-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
+                        <Crown className="w-3 h-3" />
+                        {membershipInfo.plan === "admin" ? "管理员" : membershipInfo.plan.includes("enterprise") ? "企业版会员" : "Pro 会员"}
+                      </Badge>
+                    )}
                     {/* 关注按钮 */}
                     {!isSelf && isLoggedIn && (
                       <div className="mt-2">
@@ -238,6 +269,10 @@ export default function UserClient({
                     )}
                     {/* 标签 */}
                     <div className="flex items-center gap-3 mt-2 flex-wrap justify-center md:justify-start">
+                      {/* 等级徽章 */}
+                      {levelData && (
+                        <LevelBadge level={levelData.level} title={levelData.title} size="md" />
+                      )}
                       {isAdmin && (
                         <Badge className="rounded-full text-xs gap-1 bg-amber-500">
                           <Shield className="w-3 h-3" />
@@ -280,13 +315,30 @@ export default function UserClient({
                         })}
                       </div>
                     )}
+                    {/* 经验值进度条 */}
+                    {levelData && (
+                      <div className="mt-3 max-w-xs mx-auto md:mx-0">
+                        <div className="flex items-center justify-between text-[10px] text-[var(--color-mute)] mb-1">
+                          <span>EXP {levelData.exp}</span>
+                          <span>{levelData.nextExp}</span>
+                        </div>
+                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${levelData.expProgress * 100}%` }}
+                            transition={{ duration: 0.8, ease: "easeOut" }}
+                            className="h-full bg-gradient-to-r from-[var(--color-primary)] to-purple-500 rounded-full"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
               {/* Stats */}
               <div className="px-6 md:px-8 py-6 bg-[var(--color-surface-card)] rounded-b-2xl">
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="text-center">
                     <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-2">
                       <ImageIcon className="w-5 h-5 text-blue-600" />
@@ -304,6 +356,15 @@ export default function UserClient({
                       {stats.totalViews.toLocaleString()}
                     </p>
                     <p className="text-xs text-[var(--color-mute)]">浏览</p>
+                  </div>
+                  <div className="text-center">
+                    <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-2">
+                      <Heart className="w-5 h-5 text-red-500" />
+                    </div>
+                    <p className="text-2xl font-bold text-[var(--color-ink)]">
+                      {stats.totalFavorites?.toLocaleString() || 0}
+                    </p>
+                    <p className="text-xs text-[var(--color-mute)]">收藏</p>
                   </div>
                   <div className="text-center">
                     <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-2">

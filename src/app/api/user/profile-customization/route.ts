@@ -4,7 +4,7 @@ import { query } from "@/lib/db";
 import { getMinioClient, PUBLIC_URL_BASE, BUCKET_NAME } from "@/lib/minio";
 import sharp from "sharp";
 
-// GET /api/user/profile-customization - 获取当前用户主页定制信息
+// GET /api/user/profile-customization - 获取当前用户的主页定制信息
 export async function GET() {
   try {
     const session = await auth();
@@ -23,19 +23,25 @@ export async function GET() {
     }
 
     const user = users[0];
-    // 解析 JSON 字段
-    let socialLinks = null;
-    let featuredCollections = null;
+
+    // 解析 JSON 字段（MySQL JSON 列可能返回字符串）
+    let socialLinks = {};
+    let featuredCollections: number[] = [];
     try {
-      socialLinks = user.social_links ? (typeof user.social_links === "string" ? JSON.parse(user.social_links) : user.social_links) : null;
-    } catch { socialLinks = null; }
+      socialLinks = user.social_links
+        ? (typeof user.social_links === "string" ? JSON.parse(user.social_links) : user.social_links)
+        : {};
+    } catch { socialLinks = {}; }
     try {
-      featuredCollections = user.featured_collections ? (typeof user.featured_collections === "string" ? JSON.parse(user.featured_collections) : user.featured_collections) : null;
-    } catch { featuredCollections = null; }
+      const raw = user.featured_collections
+        ? (typeof user.featured_collections === "string" ? JSON.parse(user.featured_collections) : user.featured_collections)
+        : [];
+      featuredCollections = Array.isArray(raw) ? raw : [];
+    } catch { featuredCollections = []; }
 
     return NextResponse.json({
-      banner: user.banner || null,
-      bio: user.bio || null,
+      banner: user.banner || "",
+      bio: user.bio || "",
       social_links: socialLinks,
       featured_collections: featuredCollections,
     });
@@ -56,7 +62,7 @@ export async function PATCH(request: NextRequest) {
 
     const contentType = request.headers.get("content-type") || "";
 
-    // === Banner上传（FormData）===
+    // === Banner 上传（FormData）===
     if (contentType.includes("multipart/form-data")) {
       const formData = await request.formData();
       const bannerFile = formData.get("banner") as File | null;
@@ -75,9 +81,10 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: "Banner文件不能超过 5MB" }, { status: 400 });
       }
 
+      // 读取文件缓冲区
       const buffer = Buffer.from(await bannerFile.arrayBuffer());
 
-      // 用 sharp 压缩为 Banner 尺寸
+      // 用 sharp 压缩和调整尺寸
       const processedBuffer = await sharp(buffer)
         .resize(1920, 480, { fit: "cover", position: "center" })
         .jpeg({ quality: 85 })
@@ -104,95 +111,65 @@ export async function PATCH(request: NextRequest) {
       });
     }
 
-    // === JSON 更新 ===
+    // === JSON 更新（bio / social_links / featured_collections）===
     const body = await request.json();
-    const { banner, bio, social_links, featured_collections } = body;
+    const { bio, social_links, featured_collections } = body;
 
     const updates: string[] = [];
-    const params: any[] = [];
+    const values: any[] = [];
 
-    // 验证 banner
-    if (banner !== undefined) {
-      if (banner && banner.length > 500) {
-        return NextResponse.json({ error: "Banner URL最长500字符" }, { status: 400 });
-      }
-      if (banner && !/^https?:\/\/.+/.test(banner)) {
-        return NextResponse.json({ error: "Banner URL格式不正确" }, { status: 400 });
-      }
-      updates.push("banner = ?");
-      params.push(banner || null);
-    }
-
-    // 验证 bio
     if (bio !== undefined) {
-      if (bio && bio.length > 200) {
-        return NextResponse.json({ error: "个人简介最长200字符" }, { status: 400 });
+      if (typeof bio !== "string" || bio.length > 200) {
+        return NextResponse.json({ error: "简介最长200个字符" }, { status: 400 });
       }
       updates.push("bio = ?");
-      params.push(bio || null);
+      values.push(bio);
     }
 
-    // 验证 social_links
     if (social_links !== undefined) {
-      if (social_links) {
-        if (typeof social_links !== "object" || Array.isArray(social_links)) {
-          return NextResponse.json({ error: "社交链接格式不正确" }, { status: 400 });
-        }
-        const keys = Object.keys(social_links);
-        if (keys.length > 5) {
-          return NextResponse.json({ error: "社交链接最多5个" }, { status: 400 });
-        }
-        for (const key of keys) {
-          if (typeof social_links[key] !== "string") {
-            return NextResponse.json({ error: "社交链接值必须为字符串" }, { status: 400 });
-          }
-          if (social_links[key].length > 200) {
-            return NextResponse.json({ error: "每个社交链接最长200字符" }, { status: 400 });
-          }
-        }
+      if (typeof social_links !== "object" || social_links === null) {
+        return NextResponse.json({ error: "社交链接格式错误" }, { status: 400 });
+      }
+      // 最多5个社交链接
+      const keys = Object.keys(social_links);
+      if (keys.length > 5) {
+        return NextResponse.json({ error: "最多5个社交链接" }, { status: 400 });
       }
       updates.push("social_links = ?");
-      params.push(social_links ? JSON.stringify(social_links) : null);
+      values.push(JSON.stringify(social_links));
     }
 
-    // 验证 featured_collections
     if (featured_collections !== undefined) {
-      if (featured_collections) {
-        if (!Array.isArray(featured_collections)) {
-          return NextResponse.json({ error: "精选合集必须为数组" }, { status: 400 });
-        }
-        if (featured_collections.length > 3) {
-          return NextResponse.json({ error: "精选合集最多3个" }, { status: 400 });
-        }
-        // 验证合集属于当前用户
-        if (featured_collections.length > 0) {
-          const collectionIds = featured_collections.map((id: any) => Number(id)).filter((id: number) => !isNaN(id));
-          if (collectionIds.length !== featured_collections.length) {
-            return NextResponse.json({ error: "合集ID格式不正确" }, { status: 400 });
-          }
-          const ownedCollections = (await query(
-            `SELECT id FROM collections WHERE id IN (${collectionIds.map(() => "?").join(",")}) AND user_id = ?`,
-            [...collectionIds, userId]
-          )) as any[];
-          if (ownedCollections.length !== collectionIds.length) {
-            return NextResponse.json({ error: "只能选择自己创建的合集" }, { status: 400 });
-          }
+      if (!Array.isArray(featured_collections)) {
+        return NextResponse.json({ error: "精选合集格式错误" }, { status: 400 });
+      }
+      if (featured_collections.length > 3) {
+        return NextResponse.json({ error: "最多3个精选合集" }, { status: 400 });
+      }
+      // 验证合集存在且属于当前用户
+      if (featured_collections.length > 0) {
+        const validCollections = (await query(
+          `SELECT id FROM collections WHERE id IN (${featured_collections.map(() => "?").join(",")}) AND user_id = ?`,
+          [...featured_collections, userId]
+        )) as any[];
+        if (validCollections.length !== featured_collections.length) {
+          return NextResponse.json({ error: "部分合集不存在或不属于您" }, { status: 400 });
         }
       }
       updates.push("featured_collections = ?");
-      params.push(featured_collections && featured_collections.length > 0 ? JSON.stringify(featured_collections) : null);
+      values.push(JSON.stringify(featured_collections));
     }
 
     if (updates.length === 0) {
-      return NextResponse.json({ error: "没有需要更新的字段" }, { status: 400 });
+      return NextResponse.json({ error: "没有需要更新的内容" }, { status: 400 });
     }
 
-    params.push(userId);
-    await query(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`, params);
+    values.push(userId);
+    await query(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`, values);
 
-    return NextResponse.json({ message: "更新成功" });
+    return NextResponse.json({ message: "主页定制已保存" });
   } catch (error: any) {
     console.error("PATCH /api/user/profile-customization error:", error);
-    return NextResponse.json({ error: error.message || "更新失败" }, { status: 500 });
+    return NextResponse.json({ error: error.message || "保存失败" }, { status: 500 });
   }
 }

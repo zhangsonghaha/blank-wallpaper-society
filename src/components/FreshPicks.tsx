@@ -93,10 +93,14 @@ export default function FreshPicks() {
               </div>
               {/* 作者信息 */}
               {img.author_name && (
-                <Link
-                  href={`/user/${img.author_id}`}
-                  className="flex items-center gap-1.5 mt-2 px-1"
-                  onClick={(e) => e.stopPropagation()}
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 mt-2 px-1 hover:opacity-80 transition-opacity"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.location.href = `/user/${img.author_id}`;
+                  }}
                 >
                   <Avatar className="w-5 h-5">
                     <AvatarImage src={img.author_avatar || ""} />
@@ -105,7 +109,7 @@ export default function FreshPicks() {
                     </AvatarFallback>
                   </Avatar>
                   <span className="text-xs text-[var(--color-mute)] truncate">{img.author_name}</span>
-                </Link>
+                </button>
               )}
             </Link>
           </motion.div>

@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import MasonryGrid from "@/components/MasonryGrid";
 import DailyWallpaperCard from "@/components/DailyWallpaperCard";
-import FeaturedCarousel from "@/components/FeaturedCarousel";
 
 export const metadata: Metadata = {
   title: "发现视觉灵感",
@@ -36,7 +35,6 @@ export default function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <FeaturedCarousel />
       <DailyWallpaperCard />
       <Suspense>
         <MasonryGrid />
