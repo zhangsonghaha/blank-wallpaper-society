@@ -29,6 +29,7 @@ interface LightboxProps {
   onNext: () => void;
   favoritedIds?: Set<number>;
   onToggleFavorite?: (id: number) => void;
+  onJumpToImage?: (imageId: number, imageData?: GalleryImage) => void;
 }
 
 interface ResolutionWithCache extends Resolution {
@@ -44,8 +45,24 @@ export default function Lightbox({
   onNext,
   favoritedIds,
   onToggleFavorite,
+  onJumpToImage,
 }: LightboxProps) {
-  const currentImage = images[currentIndex];
+  // 额外追加的相似图片（不在原始列表中的）
+  const [extraImages, setExtraImages] = useState<GalleryImage[]>([]);
+  // 合并后的图片列表
+  const allImages = useMemo(() => [...images, ...extraImages], [images, extraImages]);
+  // 索引覆盖：当追加相似图片时，用此状态覆盖父组件的 currentIndex
+  const [overrideIndex, setOverrideIndex] = useState<number | null>(null);
+  const activeIndex = overrideIndex !== null ? overrideIndex : currentIndex;
+  // 当 lightbox 关闭时清空额外图片和索引覆盖
+  useEffect(() => {
+    if (!isOpen) {
+      setExtraImages([]);
+      setOverrideIndex(null);
+    }
+  }, [isOpen]);
+
+  const currentImage = allImages[activeIndex];
   const [isLoaded, setIsLoaded] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
@@ -267,7 +284,7 @@ export default function Lightbox({
         })
         .catch(() => {});
     }
-  }, [currentIndex]);
+  }, [activeIndex]);
 
   // 获取作者关注状态
   useEffect(() => {
@@ -529,7 +546,7 @@ export default function Lightbox({
 
           {/* Counter */}
           <div className="absolute top-4 left-4 z-10 px-3 py-1.5 rounded-full bg-black/40 text-white text-sm font-medium">
-            {currentIndex + 1} / {images.length}
+            {activeIndex + 1} / {allImages.length}
           </div>
 
           {/* Prev Button */}
@@ -1190,14 +1207,34 @@ export default function Lightbox({
           isOpen={similarOpen}
           onClose={() => setSimilarOpen(false)}
           onImageClick={(img) => {
-            // 点击相似图片时跳转到该图片
-            const idx = images.findIndex((i) => i.id === img.id);
+            // 点击相似图片时，替换当前展示的壁纸
+            const idx = allImages.findIndex((i) => i.id === img.id);
             if (idx >= 0) {
+              // 图片已在列表中，切换到该图片
               setSimilarOpen(false);
-              // 使用父组件的导航
+              setOverrideIndex(idx);
+              setIsLoaded(false);
+              onJumpToImage?.(img.id);
             } else {
-              // 如果图片不在当前列表中，打开新页面
-              window.open(`/?pin=${img.id}`, "_blank");
+              // 图片不在当前列表中，转换为 GalleryImage 追加到列表并切换
+              const newImg: GalleryImage = {
+                id: img.id,
+                src: img.display_url || img.url || img.thumbnail_url || "",
+                width: img.width || 1920,
+                height: img.height || 1080,
+                title: img.title || "",
+                description: img.description || "",
+                tags: img.tags ? (Array.isArray(img.tags) ? img.tags : img.tags.split(",").map((t: string) => t.trim()).filter(Boolean)) : [],
+                author: img.author || "未知",
+                avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${img.author || img.id}`,
+                media_type: img.media_type || "image",
+              };
+              setExtraImages((prev) => [...prev, newImg]);
+              // 新图片的索引 = 当前合并列表长度（追加后的位置）
+              const newIndex = allImages.length; // 这是追加前的长度，追加后就是新元素的索引
+              setOverrideIndex(newIndex);
+              setSimilarOpen(false);
+              setIsLoaded(false);
             }
           }}
         />

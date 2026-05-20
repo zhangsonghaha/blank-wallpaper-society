@@ -341,6 +341,18 @@ export default function MasonryGrid() {
     [filteredImages.length]
   );
 
+  const jumpToImage = useCallback(
+    (imageId: number, _imageData?: any) => {
+      const idx = filteredImages.findIndex((img) => img.id === imageId);
+      if (idx >= 0) {
+        setLightboxIndex(idx);
+        // 更新URL中的?pin=参数
+        router.replace(`${window.location.pathname}?pin=${imageId}`, { scroll: false });
+      }
+    },
+    [filteredImages, router]
+  );
+
   // 加载更多
   const loadMore = useCallback(() => {
     if (isLoadingMore || !hasMore) return;
@@ -858,6 +870,7 @@ export default function MasonryGrid() {
         onNext={goToNext}
         favoritedIds={favorites}
         onToggleFavorite={toggleFavorite}
+        onJumpToImage={jumpToImage}
       />
 
       {/* Advanced Filter Panel */}

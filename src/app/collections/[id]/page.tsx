@@ -454,6 +454,12 @@ export default function CollectionDetailPage() {
             prev === lightboxImages.length - 1 ? 0 : prev + 1
           )
         }
+        onJumpToImage={(imageId, _imageData) => {
+          const idx = lightboxImages.findIndex((img) => img.id === imageId);
+          if (idx >= 0) {
+            setLightboxIndex(idx);
+          }
+        }}
       />
     </div>
   );
