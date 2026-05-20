@@ -501,10 +501,14 @@ export default function Lightbox({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className={`fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-sm ${similarOpen || commentOpen ? "bg-black/70" : "bg-black/85"}`}
+            className={`fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-sm ${similarOpen || commentOpen ? "bg-black/10" : "bg-black/85"}`}
             onClick={() => {
               if (downloadPanelOpen) {
                 setDownloadPanelOpen(false);
+              } else if (similarOpen) {
+                setSimilarOpen(false);
+              } else if (commentOpen) {
+                setCommentOpen(false);
               } else {
                 onClose();
               }
@@ -560,8 +564,8 @@ export default function Lightbox({
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{
               opacity: 1,
-              scale: 1,
-              x: (similarOpen || commentOpen) ? -200 : 0,
+              scale: (similarOpen || commentOpen) ? 0.85 : 1,
+              x: 0,
             }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
@@ -607,11 +611,6 @@ export default function Lightbox({
               </div>
             ) : (
               <>
-                {/* Loading Skeleton */}
-                {!isLoaded && (
-                  <div className="w-[60vw] sm:w-[500px] h-[60vh] sm:h-[600px] rounded-2xl skeleton-pulse bg-white/10" />
-                )}
-
                 {/* 动态壁纸或静态图片 */}
                 {currentImage.media_type === "video" && currentImage.video_url ? (
                   <video
@@ -623,19 +622,13 @@ export default function Lightbox({
                     loop
                     playsInline
                     controls
-                    onLoadedData={() => setIsLoaded(true)}
-                    className={`max-w-full max-h-[60vh] sm:max-h-[75vh] object-contain rounded-lg sm:rounded-2xl shadow-2xl ${
-                      isLoaded ? "opacity-100" : "opacity-0 absolute"
-                    }`}
+                    className="max-w-full max-h-[60vh] sm:max-h-[75vh] object-contain rounded-lg sm:rounded-2xl shadow-2xl"
                   />
                 ) : (
                   <img
                     src={currentImage.src}
                     alt={currentImage.title}
-                    onLoad={() => setIsLoaded(true)}
-                    className={`max-w-full max-h-[60vh] sm:max-h-[75vh] object-contain rounded-lg sm:rounded-2xl shadow-2xl ${
-                      isLoaded ? "opacity-100" : "opacity-0 absolute"
-                    }`}
+                    className="max-w-full max-h-[60vh] sm:max-h-[75vh] object-contain rounded-lg sm:rounded-2xl shadow-2xl"
                   />
                 )}
 
