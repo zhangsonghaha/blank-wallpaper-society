@@ -55,6 +55,7 @@ import ModelsTab from "./ModelsTab";
 import OrdersTab from "./OrdersTab";
 import MembershipTab from "./MembershipTab";
 import VerificationTab from "./VerificationTab";
+import EmailMarketingTab from "./EmailMarketingTab";
 
 // 标签页接口
 interface TabItem {
@@ -263,6 +264,9 @@ export default function AdminClient() {
         break;
       case "verification":
         content = <VerificationTab />;
+        break;
+      case "email-marketing":
+        content = <EmailMarketingTab />;
         break;
       default:
         content = <div className="p-6">功能开发中...</div>;

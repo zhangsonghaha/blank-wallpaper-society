@@ -13,6 +13,8 @@ import Link from "next/link";
 import { ChevronRight, Users, Image as ImageIcon, Filter, Sparkles } from "lucide-react";
 import HotRankings from "./HotRankings";
 import RecommendForYou from "./RecommendForYou";
+import ThemeZones from "./ThemeZones";
+import FreshPicks from "./FreshPicks";
 import { withCsrfHeader } from "@/lib/csrf-client";
 
 interface ExifData {
@@ -679,6 +681,12 @@ export default function MasonryGrid() {
 
         {/* Hot Rankings - 热门排行 */}
         {!searchQuery && !activeColor && !showFavoritesOnly && activeCategory === "all" && <HotRankings />}
+
+        {/* Theme Zones - 主题专区 */}
+        {!searchQuery && !activeColor && !showFavoritesOnly && activeCategory === "all" && <ThemeZones />}
+
+        {/* Fresh Picks - 新人专区 */}
+        {!searchQuery && !activeColor && !showFavoritesOnly && activeCategory === "all" && <FreshPicks />}
 
         {/* Recommendations - 猜你喜欢 */}
         {!searchQuery && !activeColor && !showFavoritesOnly && activeCategory === "all" && <RecommendForYou />}

@@ -70,6 +70,8 @@ import { withCsrfHeader } from "@/lib/csrf-client";
 import CreatorApplicationForm from "@/components/CreatorApplicationForm";
 import BrandProfileEditor from "@/components/BrandProfileEditor";
 import VerifiedBadge from "@/components/VerifiedBadge";
+import ProfileCustomizationDialog from "@/components/ProfileCustomizationDialog";
+import EmailPreferenceDialog from "@/components/EmailPreferenceDialog";
 
 interface UserData {
   id: number;
@@ -538,6 +540,16 @@ export default function ProfileClient({
   const [avatarUrl, setAvatarUrl] = useState(user.avatar || "");
   const [uploading, setUploading] = useState(false);
 
+  // 主页定制
+  const [bannerUrl, setBannerUrl] = useState<string>("");
+  const [bio, setBio] = useState("");
+  const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
+  const [featuredCollections, setFeaturedCollections] = useState<number[]>([]);
+  const [bannerUploading, setBannerUploading] = useState(false);
+  const [profileCustomSaving, setProfileCustomSaving] = useState(false);
+  const [profileCustomOpen, setProfileCustomOpen] = useState(false);
+  const [emailPrefOpen, setEmailPrefOpen] = useState(false);
+
   const isAdmin = user.role === "admin";
   const userInitial = user.name?.[0] || user.email?.[0] || "?";
 
@@ -695,6 +707,24 @@ export default function ProfileClient({
   useEffect(() => {
     fetchFollowStats();
   }, [fetchFollowStats]);
+
+  // 加载主页定制信息
+  useEffect(() => {
+    fetch("/api/user/profile-customization")
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then((data) => {
+        if (data) {
+          setBannerUrl(data.banner || "");
+          setBio(data.bio || "");
+          setSocialLinks(data.social_links || {});
+          setFeaturedCollections(data.featured_collections || []);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // 加载会员信息
   useEffect(() => {
@@ -856,7 +886,61 @@ export default function ProfileClient({
       <Toaster position="top-right" richColors />
 
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-[var(--color-primary)] to-purple-600 h-48 md:h-64" />
+      <div className="relative h-48 md:h-64 group">
+        {bannerUrl ? (
+          <img
+            src={bannerUrl}
+            alt="主页Banner"
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-r from-[var(--color-primary)] to-purple-600" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+        {/* Banner上传覆盖层 */}
+        <label className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10">
+          {bannerUploading ? (
+            <div className="w-10 h-10 border-3 border-white border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <div className="text-center text-white">
+              <Camera className="w-8 h-8 mx-auto mb-1" />
+              <span className="text-sm">更换Banner</span>
+            </div>
+          )}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setBannerUploading(true);
+              try {
+                const fd = new FormData();
+                fd.append("banner", file);
+                const csrfHeaders = await withCsrfHeader();
+                const res = await fetch("/api/user/profile-customization", {
+                  method: "PATCH",
+                  headers: { ...csrfHeaders },
+                  body: fd,
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  setBannerUrl(data.banner);
+                  toast.success("Banner已更新");
+                } else {
+                  const data = await res.json();
+                  toast.error(data.error || "Banner上传失败");
+                }
+              } catch {
+                toast.error("上传失败，请重试");
+              }
+              setBannerUploading(false);
+            }}
+            disabled={bannerUploading}
+          />
+        </label>
+      </div>
 
       <div className="max-w-[960px] mx-auto px-4 lg:px-8 -mt-24 md:-mt-32 pb-12">
         <motion.div
@@ -1066,6 +1150,38 @@ export default function ProfileClient({
                 </div>
               </div>
 
+              {/* 主页定制 - 紧凑按钮 + 弹窗 */}
+              <Separator />
+              <div className="px-6 md:px-8 py-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Sparkles className="w-5 h-5 text-[var(--color-primary)]" />
+                    <div>
+                      <h2 className="text-sm font-semibold text-[var(--color-ink)]">主页定制</h2>
+                      <p className="text-xs text-[var(--color-mute)] mt-0.5">
+                        {bio || (Object.values(socialLinks).some(v => v?.trim()) ? "" : "") || featuredCollections.length > 0
+                          ? [
+                              bio && "简介",
+                              Object.values(socialLinks).some(v => v?.trim()) && "社交链接",
+                              featuredCollections.length > 0 && `${featuredCollections.length}个精选合集`,
+                            ].filter(Boolean).join(" · ")
+                          : "设置简介、社交链接和精选合集"
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setProfileCustomOpen(true)}
+                    className="rounded-full text-xs gap-1"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    {bio || Object.values(socialLinks).some(v => v?.trim()) || featuredCollections.length > 0 ? "编辑" : "设置"}
+                  </Button>
+                </div>
+              </div>
+
               {/* Account Info */}
               <Separator />
               <div className="px-6 md:px-8 py-6">
@@ -1258,6 +1374,31 @@ export default function ProfileClient({
                   <Download className="w-4 h-4" />
                   导出我的数据
                 </Button>
+              </div>
+
+              {/* 邮件订阅偏好 - 紧凑按钮 + 弹窗 */}
+              <Separator />
+              <div className="px-6 md:px-8 py-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Mail className="w-5 h-5 text-[var(--color-primary)]" />
+                    <div>
+                      <h2 className="text-sm font-semibold text-[var(--color-ink)]">邮件订阅</h2>
+                      <p className="text-xs text-[var(--color-mute)] mt-0.5">
+                        管理每周精选、活动通知等邮件偏好
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEmailPrefOpen(true)}
+                    className="rounded-full text-xs gap-1"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    管理
+                  </Button>
+                </div>
               </div>
 
               {/* Account Deletion - 危险区域 */}
@@ -2070,6 +2211,36 @@ export default function ProfileClient({
                     .then((res) => res.json())
                     .then((data) => setMyCollections(data.data || []));
                 }}
+              />
+
+              {/* Profile Customization Dialog */}
+              <ProfileCustomizationDialog
+                open={profileCustomOpen}
+                onOpenChange={setProfileCustomOpen}
+                initialBio={bio}
+                initialSocialLinks={socialLinks}
+                initialFeaturedCollections={featuredCollections}
+                collections={myCollections}
+                userId={user.id}
+                onSaveSuccess={() => {
+                  // 重新加载定制数据以同步
+                  fetch("/api/user/profile-customization")
+                    .then((res) => { if (!res.ok) return null; return res.json(); })
+                    .then((data) => {
+                      if (data) {
+                        setBio(data.bio || "");
+                        setSocialLinks(data.social_links || {});
+                        setFeaturedCollections(data.featured_collections || []);
+                      }
+                    })
+                    .catch(() => {});
+                }}
+              />
+
+              {/* Email Preference Dialog */}
+              <EmailPreferenceDialog
+                open={emailPrefOpen}
+                onOpenChange={setEmailPrefOpen}
               />
             </CardContent>
           </Card>
