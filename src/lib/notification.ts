@@ -12,6 +12,7 @@ export type NotificationType =
   | "follow"
   | "achievement"
   | "favorite"
+  | "message"
   | "order";
 
 export type RelatedType =
@@ -30,6 +31,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   follow: "关注",
   achievement: "成就",
   favorite: "收藏",
+  message: "私信",
   order: "订单",
 };
 
@@ -41,6 +43,7 @@ export const NOTIFICATION_TYPE_ICONS: Record<string, string> = {
   follow: "👤",
   achievement: "🏆",
   favorite: "⭐",
+  message: "📩",
   order: "💰",
 };
 

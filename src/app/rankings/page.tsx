@@ -231,7 +231,7 @@ export default function RankingsPage() {
                 {rankings.slice(3).map((item) => (
                   <Link
                     key={item.id}
-                    href={`/?pin=${item.id}`}
+                    href={`/images/${item.id}`}
                     className={`flex items-center gap-4 p-3 rounded-2xl border transition-all hover:shadow-md hover:scale-[1.01] ${getTopCardStyle(item.rank)}`}
                   >
                     {getRankBadge(item.rank)}
@@ -306,7 +306,7 @@ function TopThreeCard({
     "from-gray-300 to-gray-500";
 
   return (
-    <Link href={`/?pin=${item.id}`} className="block group">
+    <Link href={`/images/${item.id}`} className="block group">
       <div
         className={`relative rounded-2xl border-2 ${borderColor} overflow-hidden bg-[var(--color-canvas)] transition-all group-hover:shadow-lg group-hover:scale-[1.02]`}
       >

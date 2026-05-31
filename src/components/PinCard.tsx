@@ -41,7 +41,7 @@ export default function PinCard({
 
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const url = `${window.location.origin}/?pin=${image.id}`;
+    const url = `${window.location.origin}/images/${image.id}`;
     if (navigator.share) {
       navigator.share({
         title: image.title,

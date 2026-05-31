@@ -296,7 +296,7 @@ export default function CollectionDetailPage() {
                 {collection.description}
               </p>
             )}
-            <div className="flex items-center gap-4 mt-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-full bg-white/20 overflow-hidden">
                   {collection.author_avatar ? (

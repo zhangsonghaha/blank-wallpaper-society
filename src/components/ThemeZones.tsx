@@ -80,7 +80,7 @@ export default function ThemeZones() {
               {zone.images.slice(0, 6).map((img) => (
                 <Link
                   key={img.id}
-                  href={`/?pin=${img.id}`}
+                  href={`/images/${img.id}`}
                   className="group relative aspect-square overflow-hidden"
                 >
                   <img

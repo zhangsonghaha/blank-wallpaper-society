@@ -416,7 +416,7 @@ export default function Lightbox({
 
   const handleShare = () => {
     if (!currentImage) return;
-    const url = `${window.location.origin}/?pin=${currentImage.id}`;
+    const url = `${window.location.origin}/images/${currentImage.id}`;
     if (navigator.share) {
       navigator.share({
         title: currentImage.title,
@@ -681,7 +681,7 @@ export default function Lightbox({
                   <span className="text-sm text-white/80">{currentImage.author}</span>
                 </Link>
                 <span className="text-white/30">·</span>
-                <div className="flex gap-1.5">
+                <div className="flex flex-wrap justify-center gap-1">
                   {currentImage.tags.map((tag) => (
                     <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-white/15 text-white/70">
                       #{tag}

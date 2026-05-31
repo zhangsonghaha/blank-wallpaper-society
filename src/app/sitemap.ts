@@ -45,7 +45,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     )) as any[];
 
     const imagePages: MetadataRoute.Sitemap = images.map((img) => ({
-      url: `${baseUrl}/?pin=${img.id}`,
+      url: `${baseUrl}/images/${img.id}`,
       lastModified: new Date(img.updated_at),
       changeFrequency: "weekly" as const,
       priority: 0.6,

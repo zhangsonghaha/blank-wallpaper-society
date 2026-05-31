@@ -26,6 +26,8 @@ const typeIcons: Record<string, string> = {
   follow: "👤",
   achievement: "🏆",
   favorite: "⭐",
+  message: "📩",
+  order: "💰",
 };
 
 const typeLabels: Record<string, string> = {
@@ -36,6 +38,8 @@ const typeLabels: Record<string, string> = {
   follow: "关注",
   achievement: "成就",
   favorite: "收藏",
+  message: "私信",
+  order: "订单",
 };
 
 function timeAgo(dateStr: string) {

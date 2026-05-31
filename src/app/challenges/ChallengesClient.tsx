@@ -707,7 +707,7 @@ export default function ChallengesClient() {
                     </CardContent>
                   </Card>
                 ) : (
-                  <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-64 overflow-y-auto">
                     {myImages.map((img: any) => (
                       <button
                         key={img.id}

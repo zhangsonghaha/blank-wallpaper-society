@@ -779,7 +779,7 @@ export default function MasonryGrid() {
             {recommendations.length > 0 && (searchQuery || activeColor || activeCategory !== "all") && (
               <div className="mb-8 max-w-3xl mx-auto">
                 <h4 className="text-sm font-medium text-[var(--color-ink)] mb-3">为你推荐</h4>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {recommendations.slice(0, 8).map((rec) => (
                     <Link
                       key={rec.id}

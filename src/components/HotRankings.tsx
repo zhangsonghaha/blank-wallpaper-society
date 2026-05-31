@@ -54,7 +54,7 @@ export default function HotRankings() {
         {rankings.map((item) => (
           <Link
             key={item.id}
-            href={`/?pin=${item.id}`}
+            href={`/images/${item.id}`}
             className="shrink-0 w-36 group"
           >
             <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-[var(--color-surface-card)]">

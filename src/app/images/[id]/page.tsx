@@ -21,20 +21,19 @@ async function getImageData(id: string) {
         : image.tags)
     : [];
 
-  // 构建图片URL
+  // 构建图片URL — 与首页 MasonryGrid 一致：优先用 url，其次用 storage_key
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://imagegallery.app";
-  const imageUrl = image.storage_key
-    ? `https://qq.qinqin.asia/storage/${image.storage_key}`
-    : image.url || "";
+  const imageUrl = image.url
+    || (image.storage_key ? `https://qq.qinqin.asia/storage/${image.storage_key}` : "");
+  const thumbnailUrl = image.thumbnail_url
+    || (image.thumbnail_key ? `https://qq.qinqin.asia/storage/${image.thumbnail_key}` : imageUrl);
 
   return {
     id: image.id,
     title: image.title || "精选壁纸",
     description: image.description || "",
     imageUrl,
-    thumbnailUrl: image.thumbnail_key
-      ? `https://qq.qinqin.asia/storage/${image.thumbnail_key}`
-      : imageUrl,
+    thumbnailUrl,
     width: image.width || 1920,
     height: image.height || 1080,
     tags,
@@ -77,7 +76,7 @@ export async function generateMetadata({
       description,
       images: [
         {
-          url: data.thumbnailUrl,
+          url: data.thumbnailUrl || data.imageUrl,
           width: data.width,
           height: data.height,
           alt: altText,
@@ -90,7 +89,7 @@ export async function generateMetadata({
       card: "summary_large_image",
       title: data.title,
       description,
-      images: [data.thumbnailUrl],
+      images: [data.thumbnailUrl || data.imageUrl],
     },
     alternates: {
       canonical: `${data.baseUrl}/images/${id}`,
@@ -119,7 +118,7 @@ export default async function ImageDetailPage({
     description: data.description || `${data.title} - 精选壁纸`,
     url: `${data.baseUrl}/images/${id}`,
     contentUrl: data.imageUrl,
-    thumbnailUrl: data.thumbnailUrl,
+    thumbnailUrl: data.thumbnailUrl || data.imageUrl,
     width: data.width,
     height: data.height,
     author: {

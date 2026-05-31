@@ -64,7 +64,7 @@ export default function FreshPicks() {
             transition={{ delay: Math.min(index * 0.05, 0.3) }}
           >
             <Link
-              href={`/?pin=${img.id}`}
+              href={`/images/${img.id}`}
               className="group block shrink-0 w-36 sm:w-44"
             >
               <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-[var(--color-surface-card)]">

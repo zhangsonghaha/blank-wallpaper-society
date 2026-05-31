@@ -1125,7 +1125,7 @@ export default function ProfileClient({
                 <h2 className="text-lg font-semibold text-[var(--color-ink)] mb-4">
                   统计概览
                 </h2>
-                <div className="grid grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
                   <Card className="rounded-xl border-none bg-[var(--color-surface-card)]">
                     <CardContent className="p-4 text-center">
                       <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-2">
@@ -1501,7 +1501,7 @@ export default function ProfileClient({
                           {favoriteImages.slice(0, 8).map((img) => (
                             <Link
                               key={img.id}
-                              href={`/?pin=${img.id}`}
+                              href={`/images/${img.id}`}
                               className="group relative aspect-[3/4] rounded-xl overflow-hidden bg-[var(--color-surface-card)] hover:shadow-md transition-shadow"
                             >
                               <img
@@ -1785,7 +1785,7 @@ export default function ProfileClient({
                             {downloadHistory.map((item) => (
                               <Link
                                 key={item.id}
-                                href={`/?pin=${item.image_id}`}
+                                href={`/images/${item.image_id}`}
                                 className="group relative aspect-[3/4] rounded-xl overflow-hidden bg-[var(--color-surface-card)] hover:shadow-md transition-shadow"
                               >
                                 <img

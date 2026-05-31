@@ -244,7 +244,7 @@ export async function generateWeeklyDigestHtml(): Promise<{ subject: string; htm
 
   const imageCards = topImages.map((img: any) => `
     <div style="display:inline-block;width:31%;margin:1%;vertical-align:top;">
-      <a href="${baseUrl}/?pin=${img.id}" style="text-decoration:none;">
+      <a href="${baseUrl}/images/${img.id}" style="text-decoration:none;">
         <img src="${img.thumbnail_url || img.url}" alt="${img.title}" style="width:100%;border-radius:8px;" />
         <p style="color:#333;font-size:13px;margin:8px 0 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${img.title}</p>
         <p style="color:#999;font-size:11px;margin:0;">${img.download_count} 下载 · ${img.view_count} 浏览</p>

@@ -15,7 +15,7 @@ import crypto from "crypto";
 
 export type BotType = "feishu" | "qq" | "dingtalk" | "wechat_work" | "slack" | "custom";
 export type AuthMode = "webhook" | "app";
-export type NotificationEventType = "system" | "like" | "comment" | "review" | "follow" | "achievement" | "favorite" | "crawl" | "upload" | "order";
+export type NotificationEventType = "system" | "like" | "comment" | "review" | "follow" | "achievement" | "favorite" | "message" | "crawl" | "upload" | "order";
 
 export const BOT_TYPE_LABELS: Record<BotType, string> = {
   feishu: "飞书", qq: "QQ", dingtalk: "钉钉", wechat_work: "企业微信", slack: "Slack", custom: "自定义",
@@ -27,7 +27,7 @@ export const BOT_TYPE_ICONS: Record<BotType, string> = {
 
 export const EVENT_TYPE_LABELS: Record<string, string> = {
   system: "系统通知", like: "点赞", comment: "评论", review: "审核",
-  follow: "关注", achievement: "成就", favorite: "收藏", crawl: "爬取", upload: "上传", order: "订单",
+  follow: "关注", achievement: "成就", favorite: "收藏", message: "私信", crawl: "爬取", upload: "上传", order: "订单",
 };
 
 export interface BotConfig {

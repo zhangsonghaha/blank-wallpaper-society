@@ -30,8 +30,10 @@ import {
   Moon,
   Crown,
   Receipt,
+  MessageCircle,
 } from "lucide-react";
 import NotificationBell from "./NotificationBell";
+import PrivateMessagePanel from "./PrivateMessagePanel";
 import { useTheme } from "next-themes";
 import { getSearchHistory, addSearchHistory, removeSearchHistory, clearSearchHistory } from "@/lib/search-history";
 
@@ -479,6 +481,9 @@ export default function Navbar() {
               );
             })()}
 
+            {/* Private Messages */}
+            {isLoggedIn && <PrivateMessagePanel />}
+
             {/* Notification Bell */}
             {isLoggedIn && <NotificationBell />}
 
@@ -519,6 +524,14 @@ export default function Navbar() {
                   <DropdownMenuSeparator />
 
                   {/* 导航菜单项 - 使用 onClick 导航 */}
+                  <DropdownMenuItem
+                    onClick={() => router.push("/messages")}
+                    className="cursor-pointer"
+                  >
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    私信
+                  </DropdownMenuItem>
+
                   <DropdownMenuItem
                     onClick={() => router.push("/profile")}
                     className="cursor-pointer"
@@ -733,7 +746,7 @@ export default function Navbar() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden border-t border-[var(--color-hairline)] bg-white overflow-hidden relative z-50"
+            className="md:hidden border-t border-[var(--color-hairline)] bg-[var(--color-surface-soft)] overflow-hidden relative z-50"
           >
             <div className="px-4 py-4 space-y-2">
               <Link

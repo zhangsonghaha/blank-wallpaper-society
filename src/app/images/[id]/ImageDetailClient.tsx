@@ -54,6 +54,7 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
 
   const [addToCollectionOpen, setAddToCollectionOpen] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
 
   // 付费壁纸状态
@@ -199,14 +200,14 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
             <ArrowLeft className="w-5 h-5" />
             <span className="text-sm">返回首页</span>
           </Link>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <Button variant="ghost" size="sm" onClick={toggleFavorite} className={isFavorited ? "text-red-500" : ""}>
-              <Heart className={`w-4 h-4 mr-1 ${isFavorited ? "fill-current" : ""}`} />
-              {isFavorited ? "已收藏" : "收藏"}
+              <Heart className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`} />
+              <span className="hidden sm:inline ml-1">{isFavorited ? "已收藏" : "收藏"}</span>
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)}>
-              <Share2 className="w-4 h-4 mr-1" />
-              分享
+              <Share2 className="w-4 h-4" />
+              <span className="hidden sm:inline ml-1">分享</span>
             </Button>
           </div>
         </div>
@@ -222,16 +223,27 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
                 className="relative flex items-center justify-center min-h-[400px] lg:min-h-[600px]"
                 style={{ backgroundColor: imageData.dominantColor || "#f0f0f0" }}
               >
-                {!imageLoaded && (
+                {!imageLoaded && !imageError && (
                   <div className="absolute inset-0 animate-pulse bg-[var(--color-surface-hover)]" />
                 )}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={imageData.imageUrl}
-                  alt={`${imageData.title} - ${imageData.tags.join(", ")}`}
-                  className={`max-w-full max-h-[80vh] object-contain transition-opacity duration-300 ${imageLoaded ? "opacity-100" : "opacity-0"}`}
-                  onLoad={() => setImageLoaded(true)}
-                />
+                {imageError ? (
+                  <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+                    <div className="w-16 h-16 mb-3 rounded-full bg-[var(--color-surface-card)] flex items-center justify-center">
+                      <ImageIcon className="w-8 h-8 text-[var(--color-mute)]" />
+                    </div>
+                    <p className="text-sm text-[var(--color-mute)]">图片加载失败</p>
+                    <p className="text-xs text-[var(--color-ash)] mt-1">请尝试刷新页面或返回首页</p>
+                  </div>
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={imageData.imageUrl}
+                    alt={`${imageData.title} - ${imageData.tags.join(", ")}`}
+                    className={`max-w-full max-h-[80vh] object-contain transition-opacity duration-300 ${imageLoaded ? "opacity-100" : "opacity-0"}`}
+                    onLoad={() => setImageLoaded(true)}
+                    onError={() => setImageError(true)}
+                  />
+                )}
               </div>
             </div>
 
@@ -283,7 +295,7 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
             )}
 
             {/* 统计信息 */}
-            <div className="flex items-center gap-4 text-sm text-[var(--color-mute)]">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm text-[var(--color-mute)]">
               <span className="flex items-center gap-1"><Eye className="w-4 h-4" />{imageData.viewCount} 次浏览</span>
               <span className="flex items-center gap-1"><Download className="w-4 h-4" />{imageData.downloadCount} 次下载</span>
               {imageData.createdAt && (

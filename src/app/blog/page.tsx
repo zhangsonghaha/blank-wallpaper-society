@@ -138,13 +138,13 @@ export default function BlogPage() {
           <p className="text-[var(--color-mute)] mb-6">
             获取最新的壁纸推荐、创作者故事和独家教程，直接发送到你的邮箱。
           </p>
-          <div className="flex gap-2 max-w-md mx-auto">
+          <div className="flex flex-col sm:flex-row gap-2 max-w-md mx-auto">
             <input
               type="email"
               placeholder="输入你的邮箱"
               className="flex-1 h-12 px-4 bg-white border border-[var(--color-hairline)] rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-focus-outer)]"
             />
-            <button className="px-6 h-12 bg-[var(--color-primary)] text-white text-sm font-semibold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors">
+            <button className="px-6 h-12 bg-[var(--color-primary)] text-white text-sm font-semibold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors shrink-0">
               订阅
             </button>
           </div>

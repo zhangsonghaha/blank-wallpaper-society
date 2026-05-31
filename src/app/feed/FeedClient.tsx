@@ -197,69 +197,121 @@ export default function FeedClient() {
         </div>
       ) : (
         <>
-          <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 max-w-[1200px] mx-auto">
-            {/* 左列：帖子流 */}
-            {(feedType === "all" || feedType === "posts") && posts.length > 0 && (
-              <div className="w-full lg:flex-1 lg:max-w-[680px] space-y-0">
-                {posts.map((item, idx) => (
-                  <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.03, duration: 0.3 }}
-                  >
-                    <PostCard
-                      post={item.data}
-                      onUpdated={handlePostUpdated}
-                      onDeleted={handlePostDeleted}
-                    />
-                  </motion.div>
-                ))}
-              </div>
-            )}
+          {/* ===== 布局模式 1：「全部」模式 —— 帖子流 + 壁纸瀑布流 ===== */}
+          {feedType === "all" && (
+            <div className="flex flex-col gap-8">
+              {/* 帖子区域：居中窄列 */}
+              {posts.length > 0 && (
+                <section>
+                  {images.length > 0 && (
+                    <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-mute)] mb-4 px-1">
+                      <FileText className="w-4 h-4" />
+                      社区动态
+                    </h2>
+                  )}
+                  <div className="max-w-[680px] mx-auto space-y-0">
+                    {posts.map((item, idx) => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.03, duration: 0.3 }}
+                      >
+                        <PostCard
+                          post={item.data}
+                          onUpdated={handlePostUpdated}
+                          onDeleted={handlePostDeleted}
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
+                </section>
+              )}
 
-            {/* 右列：图片瀑布流 */}
-            {(feedType === "all" || feedType === "images" || feedType === "following" || feedType === "recommended" || feedType === "trending") && images.length > 0 && (
-              <div className={`${
-                posts.length > 0 && (feedType === "all")
-                  ? "w-full lg:flex-1"
-                  : "w-full"
-              }`}>
-                <div className={`${
-                  posts.length > 0 && (feedType === "all")
-                    ? "columns-2 sm:columns-2 lg:columns-3"
-                    : "columns-2 sm:columns-3 lg:columns-4 xl:columns-5"
-                } gap-2 sm:gap-4 space-y-2 sm:space-y-4`}>
-                  {images.map((item, idx) => (
-                    <motion.div
-                      key={item.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.03, duration: 0.3 }}
-                      className="break-inside-avoid"
-                    >
-                      <PinCard
-                        image={item.data}
-                        index={idx}
-                        isFavorited={item.data.is_favorited || false}
-                        onToggleFavorite={(id) => toggleFavorite(id)}
-                        onClick={() => {}}
-                      />
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-            )}
+              {/* 图片区域：全宽瀑布流 */}
+              {images.length > 0 && (
+                <section>
+                  {posts.length > 0 && (
+                    <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-mute)] mb-4 px-1">
+                      <ImageIcon className="w-4 h-4" />
+                      精选壁纸
+                    </h2>
+                  )}
+                  <div className="columns-2 sm:columns-3 lg:columns-4 xl:columns-5 gap-3 sm:gap-4 space-y-3 sm:space-y-4">
+                    {images.map((item, idx) => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: Math.min(idx, 20) * 0.02, duration: 0.3 }}
+                        className="break-inside-avoid"
+                      >
+                        <PinCard
+                          image={item.data}
+                          index={idx}
+                          isFavorited={item.data.is_favorited || false}
+                          onToggleFavorite={(id) => toggleFavorite(id)}
+                          onClick={() => {}}
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
 
-            {/* 仅帖子模式且无图片 */}
-            {feedType === "posts" && posts.length === 0 && !loading && (
-              <div className="flex-1 text-center py-10 text-[var(--color-mute)]">
-                <FileText className="w-12 h-12 mx-auto mb-3 text-[var(--color-ash)]" />
-                <p>还没有动态</p>
-                <p className="text-sm mt-1">发布第一条动态吧</p>
-              </div>
-            )}
-          </div>
+          {/* ===== 布局模式 2：「动态」模式 —— 帖子居中单列 ===== */}
+          {feedType === "posts" && posts.length > 0 && (
+            <div className="max-w-[680px] mx-auto space-y-0">
+              {posts.map((item, idx) => (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.03, duration: 0.3 }}
+                >
+                  <PostCard
+                    post={item.data}
+                    onUpdated={handlePostUpdated}
+                    onDeleted={handlePostDeleted}
+                  />
+                </motion.div>
+              ))}
+            </div>
+          )}
+
+          {/* 仅帖子模式且无内容 */}
+          {feedType === "posts" && posts.length === 0 && !loading && (
+            <div className="text-center py-10 text-[var(--color-mute)]">
+              <FileText className="w-12 h-12 mx-auto mb-3 text-[var(--color-ash)]" />
+              <p>还没有动态</p>
+              <p className="text-sm mt-1">发布第一条动态吧</p>
+            </div>
+          )}
+
+          {/* ===== 布局模式 3：壁纸 / 关注 / 推荐 / 热门 —— 全宽瀑布流 ===== */}
+          {(feedType === "images" || feedType === "following" || feedType === "recommended" || feedType === "trending") && images.length > 0 && (
+            <div className="columns-2 sm:columns-3 lg:columns-4 xl:columns-5 gap-3 sm:gap-4 space-y-3 sm:space-y-4">
+              {images.map((item, idx) => (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: Math.min(idx, 20) * 0.02, duration: 0.3 }}
+                  className="break-inside-avoid"
+                >
+                  <PinCard
+                    image={item.data}
+                    index={idx}
+                    isFavorited={item.data.is_favorited || false}
+                    onToggleFavorite={(id) => toggleFavorite(id)}
+                    onClick={() => {}}
+                  />
+                </motion.div>
+              ))}
+            </div>
+          )}
 
           {hasMore && (
             <div className="flex justify-center mt-8">

@@ -136,7 +136,7 @@ export default function CollectionsPage() {
           </p>
 
           {/* Search & Create */}
-          <div className="flex items-center justify-center gap-3 max-w-xl mx-auto">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 max-w-xl mx-auto">
             <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" />
               <input

@@ -89,6 +89,15 @@ export async function middleware(request: NextRequest) {
       "/api/feed",
       "/api/proxy-image",
       "/api/health",
+      "/api/search/",        // 搜索（热搜等）
+      "/api/announcements",   // 公告列表
+      "/api/daily-wallpaper", // 每日壁纸
+      "/api/rankings",        // 排行榜
+      "/api/discover/",       // 发现（主题专区/新鲜推荐）
+      "/api/recommendations", // 推荐
+      "/api/collections",     // 合集浏览（GET 公开，写操作在 route handler 验证）
+      "/api/logs",            // 浏览/下载日志（公开追踪）
+      "/api/user/level/",     // 用户等级查询（等级徽章展示，公开）
     ];
 
     // 管理员/审核员 API - 需要登录但在这里只检查 session，角色验证在 route handler 中
@@ -127,6 +136,13 @@ export async function middleware(request: NextRequest) {
     }
     // GET /api/feed 公开
     if (pathname === "/api/feed" && request.method === "GET") {
+      return NextResponse.next();
+    }
+
+    // GET /api/favorites 需要 session（用户个人收藏）
+    // /api/collections GET 公开（合集浏览），POST/PUT/DELETE 在 route handler 验证
+    // /api/collections/[id] GET 公开，POST/PUT/DELETE 在 route handler 验证
+    if (pathname.startsWith("/api/collections/") && request.method === "GET") {
       return NextResponse.next();
     }
 

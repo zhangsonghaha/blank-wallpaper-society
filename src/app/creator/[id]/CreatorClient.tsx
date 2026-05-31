@@ -184,7 +184,7 @@ export default function CreatorClient({
 
               {/* Stats */}
               <div className="px-6 md:px-8 py-6 bg-[var(--color-surface-card)] rounded-b-2xl">
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   <div className="text-center">
                     <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-2">
                       <ImageIcon className="w-5 h-5 text-blue-600" />
@@ -241,7 +241,7 @@ export default function CreatorClient({
                     transition={{ delay: Math.min(index * 0.05, 0.5) }}
                   >
                     <Link
-                      href={`/?pin=${img.id}`}
+                      href={`/images/${img.id}`}
                       className="group block break-inside-avoid rounded-xl overflow-hidden bg-[var(--color-surface-card)] hover:shadow-lg transition-shadow"
                     >
                       <div className="relative">

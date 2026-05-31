@@ -431,7 +431,7 @@ export default function UserClient({
                       transition={{ delay: Math.min(index * 0.05, 0.5) }}
                     >
                       <Link
-                        href={`/?pin=${img.id}`}
+                        href={`/images/${img.id}`}
                         className="group block break-inside-avoid rounded-xl overflow-hidden bg-[var(--color-surface-card)] hover:shadow-lg transition-shadow"
                       >
                         <div className="relative">

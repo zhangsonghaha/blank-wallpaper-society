@@ -61,7 +61,7 @@ export default function RecommendForYou() {
           {recommendations.map((item) => (
             <Link
               key={item.id}
-              href={`/?pin=${item.id}`}
+              href={`/images/${item.id}`}
               className="group"
             >
               <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-[var(--color-surface-card)]">
