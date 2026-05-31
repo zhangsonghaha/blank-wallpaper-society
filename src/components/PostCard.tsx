@@ -180,18 +180,24 @@ export default function PostCard({ post, onUpdated, onDeleted }: PostCardProps) 
     setShowShareMenu(false);
   };
 
-  const handleNativeShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: shareTitle, url: shareUrl });
-      } catch {}
-    }
-    setShowShareMenu(false);
-  };
-
   const handleWechatShare = () => {
     handleCopyLink();
     toast.success("链接已复制，可粘贴到微信分享");
+    setShowShareMenu(false);
+  };
+
+  const handleWeiboShare = () => {
+    const text = post.content ? post.content.slice(0, 100) : "分享一条动态";
+    const weiboUrl = `https://service.weibo.com/share/share.php?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(text)}`;
+    window.open(weiboUrl, "_blank", "width=600,height=500");
+    setShowShareMenu(false);
+  };
+
+  const handleQQShare = () => {
+    const title = post.content ? post.content.slice(0, 50) : "分享一条动态";
+    const desc = post.content ? post.content.slice(0, 100) : "快来看看这条动态吧！";
+    const qqUrl = `https://connect.qq.com/widget/shareqq/index.html?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(title)}&desc=${encodeURIComponent(desc)}`;
+    window.open(qqUrl, "_blank", "width=600,height=500");
     setShowShareMenu(false);
   };
 
@@ -568,18 +574,30 @@ export default function PostCard({ post, onUpdated, onDeleted }: PostCardProps) 
                   </svg>
                   微信分享
                 </button>
-                {typeof navigator !== "undefined" && typeof navigator.share === "function" && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleNativeShare();
-                    }}
-                    className="flex items-center gap-2 w-full px-3 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface-card)] transition-colors"
-                  >
-                    <Share2 className="w-3.5 h-3.5" />
-                    系统分享
-                  </button>
-                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleWeiboShare();
+                  }}
+                  className="flex items-center gap-2 w-full px-3 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface-card)] transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" style={{color: "#e6162d"}}>
+                    <path d="M10.09 17.68c-3.19.31-5.94-1.13-6.15-3.21-.21-2.08 2.21-4.03 5.4-4.34 3.19-.31 5.94 1.13 6.15 3.21.21 2.08-2.21 4.03-5.4 4.34zm7.54-9.63c-.26-.08-.44-.14-.3-.5.29-.78.32-1.45.01-1.93-.59-.89-2.21-.84-4.06-.03 0 0-.58.27-.43-.22.28-.95.24-1.75-.21-2.21-1.06-1.1-3.89.04-6.32 2.55C4.06 7.62 3 10.17 3 12.39c0 4.27 5.47 6.87 10.82 6.87 7.02 0 11.7-4.08 11.7-7.32 0-1.96-1.65-3.07-3.09-3.53l-.8-.36z"/>
+                  </svg>
+                  微博分享
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleQQShare();
+                  }}
+                  className="flex items-center gap-2 w-full px-3 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface-card)] transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" style={{color: "#12b7f5"}}>
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3v1c0 1.66-1.34 3-3 3s-3-1.34-3-3V8c0-1.66 1.34-3 3-3zm0 14c-2.5 0-4.73-1.14-6.22-2.92C6.63 14.77 8.62 14 12 14s5.37.77 6.22 2.08C16.73 17.86 14.5 19 12 19z"/>
+                  </svg>
+                  QQ分享
+                </button>
               </motion.div>
             )}
           </AnimatePresence>

@@ -13,6 +13,7 @@ import CommentSection from "./CommentSection";
 import SimilarImages from "./SimilarImages";
 import PaymentDialog from "./PaymentDialog";
 import DownloadSuccessGuide from "./DownloadSuccessGuide";
+import SocialShare from "./SocialShare";
 import {
   RESOLUTIONS,
   CATEGORY_LABELS,
@@ -68,6 +69,7 @@ export default function Lightbox({
   const [reportReason, setReportReason] = useState("");
   const [reportCategory, setReportCategory] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   // 关注状态
   const [isFollowing, setIsFollowing] = useState(false);
@@ -414,23 +416,6 @@ export default function Lightbox({
     }
   };
 
-  const handleShare = () => {
-    if (!currentImage) return;
-    const url = `${window.location.origin}/images/${currentImage.id}`;
-    if (navigator.share) {
-      navigator.share({
-        title: currentImage.title,
-        text: currentImage.description || `查看 ${currentImage.title}`,
-        url,
-      }).catch(() => {});
-    } else {
-      navigator.clipboard.writeText(url).then(() => {
-        toast.success("链接已复制到剪贴板");
-      }).catch(() => {
-        toast.error("复制失败");
-      });
-    }
-  };
 
   const handleReport = async () => {
     if (!currentImage) return;
@@ -841,7 +826,7 @@ export default function Lightbox({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleShare();
+                  setShareOpen(true);
                 }}
                 className="px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full bg-white/10 text-white text-xs sm:text-sm font-medium hover:bg-white/20 transition-colors backdrop-blur-sm"
               >
@@ -1265,6 +1250,17 @@ export default function Lightbox({
           onClose={() => setDownloadSuccessOpen(false)}
           isFavorited={isFavorited}
           isFollowing={isFollowing}
+        />
+      )}
+
+      {/* Social Share Modal */}
+      {currentImage && (
+        <SocialShare
+          imageId={currentImage.id}
+          imageTitle={currentImage.title}
+          imageUrl={currentImage.src}
+          isOpen={shareOpen}
+          onClose={() => setShareOpen(false)}
         />
       )}
     </>

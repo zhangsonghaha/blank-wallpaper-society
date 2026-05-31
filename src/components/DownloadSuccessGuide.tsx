@@ -81,19 +81,10 @@ export default function DownloadSuccessGuide({
     setTimeout(() => setCopied(false), 2000);
   }, [imageId]);
 
-  // Web Share API
-  const nativeShare = useCallback(async () => {
-    const url = `${window.location.origin}/images/${imageId}`;
-    if (navigator.share) {
-      await navigator.share({
-        title: imageTitle,
-        text: `${imageTitle} - ImageGallery 精选壁纸`,
-        url,
-      });
-    } else {
-      await copyLink();
-    }
-  }, [imageId, imageTitle, copyLink]);
+  // 分享：直接复制链接
+  const handleShare = useCallback(async () => {
+    await copyLink();
+  }, [copyLink]);
 
   // 检测设备类型
   const isMobile = typeof window !== "undefined" && /Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -119,7 +110,7 @@ export default function DownloadSuccessGuide({
       color: "text-blue-500",
       bgColor: "bg-blue-50 dark:bg-blue-900/10",
       done: copied,
-      onClick: nativeShare,
+      onClick: handleShare,
     },
     ...(uploadedBy ? [{
       id: "follow",

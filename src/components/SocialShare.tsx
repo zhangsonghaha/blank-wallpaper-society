@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import {
-  Share2, X, Link2, Check, MessageCircle
+  X, Link2, Check, MessageCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -117,23 +117,6 @@ function SocialShareContent({
     window.open(twitterUrl, "_blank", "width=600,height=500");
   }, [origin, imageId, imageTitle]);
 
-  const nativeShare = useCallback(async () => {
-    const url = buildShareUrl(origin, imageId, "native");
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: imageTitle,
-          text: `${imageTitle} - 精选壁纸`,
-          url,
-        });
-      } catch {
-        // 用户取消
-      }
-    } else {
-      await copyLink();
-    }
-  }, [origin, imageId, imageTitle, copyLink]);
-
   if (!isOpen) return null;
 
   return (
@@ -196,16 +179,6 @@ function SocialShareContent({
             </button>
           </div>
         </div>
-
-        {/* Web Share API */}
-        {typeof window !== "undefined" && "share" in navigator && (
-          <div className="px-5 pb-4">
-            <Button variant="outline" className="w-full rounded-full gap-2" onClick={nativeShare}>
-              <Share2 className="w-4 h-4" />
-              系统分享
-            </Button>
-          </div>
-        )}
 
         {/* 关闭 */}
         <div className="px-5 pb-5">

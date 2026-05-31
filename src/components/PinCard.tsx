@@ -42,19 +42,11 @@ export default function PinCard({
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
     const url = `${window.location.origin}/images/${image.id}`;
-    if (navigator.share) {
-      navigator.share({
-        title: image.title,
-        text: image.description || `查看 ${image.title}`,
-        url,
-      }).catch(() => {});
-    } else {
-      navigator.clipboard.writeText(url).then(() => {
-        toast.success("链接已复制到剪贴板");
-      }).catch(() => {
-        toast.error("复制失败，请手动复制");
-      });
-    }
+    navigator.clipboard.writeText(url).then(() => {
+      toast.success("链接已复制到剪贴板");
+    }).catch(() => {
+      toast.error("复制失败，请手动复制");
+    });
   };
 
   const tagLabels: Record<string, string> = {
