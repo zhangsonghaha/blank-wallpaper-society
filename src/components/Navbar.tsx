@@ -324,7 +324,9 @@ export default function Navbar() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
                           <span className="text-sm text-[var(--color-ink)] truncate">{h}</span>
-                          <button
+                          <span
+                            role="button"
+                            tabIndex={0}
                             className="ml-auto w-5 h-5 flex items-center justify-center rounded-full hover:bg-[var(--color-secondary-bg)]"
                             onMouseDown={(e) => {
                               e.stopPropagation();
@@ -332,11 +334,19 @@ export default function Navbar() {
                               removeSearchHistory(h);
                               setSearchHistory(getSearchHistory());
                             }}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.stopPropagation();
+                                removeSearchHistory(h);
+                                setSearchHistory(getSearchHistory());
+                              }
+                            }}
                           >
                             <svg className="w-3 h-3 text-[var(--color-ash)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                             </svg>
-                          </button>
+                          </span>
                         </button>
                       ))}
                     </>

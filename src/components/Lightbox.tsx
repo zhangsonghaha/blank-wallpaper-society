@@ -571,7 +571,7 @@ export default function Lightbox({
             }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-            className={`relative max-w-[95vw] sm:max-w-[90vw] max-h-[80vh] sm:max-h-[85vh] flex flex-col items-center`}
+            className={`relative max-w-[95vw] sm:max-w-[90vw] flex flex-col items-center justify-center pb-24 sm:pb-20`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* 设备预览切换按钮 */}
@@ -612,7 +612,7 @@ export default function Lightbox({
                 />
               </div>
             ) : (
-              <>
+              <div className="flex-1 min-h-0 w-full flex flex-col items-center justify-center relative overflow-hidden max-h-[70vh] sm:max-h-[75vh]">
                 {/* 动态壁纸或静态图片 */}
                 {currentImage.media_type === "video" && currentImage.video_url ? (
                   <video
@@ -624,13 +624,13 @@ export default function Lightbox({
                     loop
                     playsInline
                     controls
-                    className="max-w-full max-h-[60vh] sm:max-h-[75vh] object-contain rounded-lg sm:rounded-2xl shadow-2xl"
+                    className="max-w-full max-h-full w-auto h-auto object-contain rounded-lg sm:rounded-2xl shadow-2xl"
                   />
                 ) : (
                   <img
                     src={currentImage.src}
                     alt={currentImage.title}
-                    className="max-w-full max-h-[60vh] sm:max-h-[75vh] object-contain rounded-lg sm:rounded-2xl shadow-2xl"
+                    className="max-w-full max-h-full w-auto h-auto object-contain rounded-lg sm:rounded-2xl shadow-2xl"
                   />
                 )}
 
@@ -642,15 +642,15 @@ export default function Lightbox({
                     </span>
                   </div>
                 )}
-              </>
+              </div>
             )}
 
-            {/* Image Info */}
+            {/* Image Info - 固定在底部操作栏上方 */}
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="mt-2 sm:mt-4 text-white text-center max-w-sm sm:max-w-lg px-4"
+              className="mt-3 sm:mt-4 text-white text-center max-w-sm sm:max-w-lg px-4 w-full"
             >
               <h3 className="text-base sm:text-xl font-semibold">{currentImage.title}</h3>
               <p className="text-xs sm:text-sm text-white/70 mt-1 line-clamp-2">{currentImage.description}</p>
@@ -747,8 +747,8 @@ export default function Lightbox({
           </motion.div>
 
           {/* Bottom Action Bar - 移动端可滚动 */}
-          <div className="absolute bottom-2 sm:bottom-4 left-0 sm:left-1/2 sm:-translate-x-1/2 z-[60] w-full sm:w-auto sm:max-w-[90vw] px-2 sm:px-0">
-            <div className="flex items-center gap-1.5 sm:gap-2 min-w-max sm:min-w-0 sm:flex-wrap sm:justify-center overflow-x-auto scrollbar-none" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute bottom-2 sm:bottom-4 left-0 sm:left-1/2 sm:-translate-x-1/2 z-[60] w-full sm:w-auto sm:max-w-[90vw] px-2 sm:px-0 pointer-events-none">
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-max sm:min-w-0 sm:flex-wrap sm:justify-center overflow-x-auto scrollbar-none pointer-events-auto" onClick={(e) => e.stopPropagation()}>
               {/* Favorite Button */}
               {onToggleFavorite && (
                 <button
