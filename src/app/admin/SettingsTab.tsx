@@ -279,6 +279,25 @@ const settingGroups: SettingGroup[] = [
       { key: "analytics_posthog_api_host", label: "PostHog API Host", type: "text", placeholder: "https://app.posthog.com", description: "PostHog 实例地址，默认为官方 SaaS" },
     ],
   },
+  {
+    id: "login_wallpaper",
+    title: "登录页壁纸",
+    icon: ImageIcon,
+    description: "配置登录页开场动画使用的壁纸来源",
+    fields: [
+      {
+        key: "login_wallpaper_source",
+        label: "壁纸来源",
+        type: "select",
+        description: "选择登录页开场动画壁纸的来源",
+        options: [
+          { value: "unsplash", label: "Unsplash 精选（默认）" },
+          { value: "custom", label: "自定义图片" },
+        ],
+      },
+      { key: "login_wallpaper_urls", label: "自定义图片 URL", type: "textarea", placeholder: '每行一个图片链接\n如：\nhttps://example.com/1.jpg\nhttps://example.com/2.jpg', description: "选择「自定义图片」来源时使用，每行一个完整的图片 URL（建议 300×300 裁剪参数）" },
+    ],
+  },
 ];
 
 /* ==================== 系统设置组件 ==================== */
@@ -355,7 +374,16 @@ export default function SettingsTab() {
 
       const settingsMap: Record<string, string> = {};
       (data || []).forEach((item: SettingItem) => {
-        settingsMap[item.setting_key] = item.setting_value || "";
+        const key = item.setting_key;
+        let val = item.setting_value || "";
+        // 登录页自定义壁纸 URL：JSON 数组 → 换行分隔文本
+        if (key === "login_wallpaper_urls" && val.startsWith("[")) {
+          try {
+            const arr = JSON.parse(val);
+            if (Array.isArray(arr)) val = arr.join("\n");
+          } catch { /* 保持原值 */ }
+        }
+        settingsMap[key] = val;
       });
 
       setSettings(settingsMap);
@@ -524,6 +552,15 @@ export default function SettingsTab() {
         toast.info("没有修改需要保存");
         setSaving(false);
         return;
+      }
+
+      // 登录页自定义壁纸 URL：换行分隔文本 → JSON 数组
+      if (changed.login_wallpaper_urls) {
+        const lines = changed.login_wallpaper_urls
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0);
+        changed.login_wallpaper_urls = JSON.stringify(lines);
       }
 
       const csrfHeaders = await withCsrfHeader();

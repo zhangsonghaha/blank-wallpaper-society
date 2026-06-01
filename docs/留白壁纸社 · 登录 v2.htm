@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>登录 · 留白壁纸社</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+  /* ============ 基础 ============ */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  body {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #18181b;
+    background: #ffffff;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+  input { font-family: inherit; }
+  a { color: inherit; text-decoration: none; }
+
+  /* ============ 主背景:淡渐变光晕(非常淡) ============ */
+  .ambient {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(60% 50% at 20% 30%, rgba(168, 85, 247, 0.06), transparent 60%),
+      radial-gradient(50% 40% at 80% 70%, rgba(236, 72, 153, 0.05), transparent 60%),
+      radial-gradient(40% 30% at 60% 20%, rgba(59, 130, 246, 0.04), transparent 60%);
+  }
+
+  /* ============ 壁纸阵列 loading(开场动画用) ============ */
+  .wall-stage {
+    position: fixed; inset: 0; z-index: 200;
+    background: #ffffff;
+    display: flex; align-items: center; justify-content: center;
+    perspective: 1200px;
+  }
+  .wall-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 130px);
+    grid-template-rows: repeat(4, 130px);
+    gap: 8px;
+    transform: rotateX(8deg) rotateY(-5deg) scale(0.9);
+  }
+  .wall-cell {
+    background-size: cover; background-position: center;
+    background-color: #f4f4f5;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    will-change: transform, opacity;
+  }
+
+  /* 启动时隐藏在屏外,GSAP会接管 */
+  .wall-cell {
+    opacity: 0;
+  }
+
+  /* 启动状态:中心 logo 浮现 */
+  .intro-logo {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 210; pointer-events: none;
+    text-align: center;
+    opacity: 0;
+  }
+  .intro-logo .mark {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: #0a0a0a;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 28px; font-weight: 800;
+    margin-bottom: 18px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+  }
+  .intro-logo .name {
+    font-size: 14px; letter-spacing: 6px;
+    color: #18181b; font-weight: 600;
+  }
+
+  /* ============ 主页 ============ */
+  .app { position: fixed; inset: 0; z-index: 5; opacity: 0; }
+
+  /* 顶部导航 */
+  .nav {
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 64px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 32px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 1px solid #f4f4f5;
+    z-index: 10;
+  }
+  .nav-left { display: flex; align-items: center; gap: 32px; }
+  .nav-logo { display: flex; align-items: center; gap: 8px; }
+  .nav-logo .mark {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #0a0a0a;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .nav-logo .mark::after {
+    content: "f"; color: #fff; font-size: 16px; font-weight: 700;
+    font-style: italic;
+  }
+  .nav-logo .name {
+    font-size: 16px; font-weight: 700; letter-spacing: -0.3px;
+  }
+  .nav-links { display: flex; gap: 4px; }
+  .nav-links a {
+    padding: 7px 14px; font-size: 13.5px; font-weight: 500;
+    color: #71717a; border-radius: 999px;
+    transition: all 0.2s;
+  }
+  .nav-links a:hover { background: #f4f4f5; color: #18181b; }
+  .nav-links a.active { background: #f4f4f5; color: #18181b; }
+
+  .nav-right { display: flex; align-items: center; gap: 8px; }
+  .theme-toggle, .feedback-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s;
+  }
+  .theme-toggle:hover, .feedback-btn:hover { background: #f4f4f5; }
+  .theme-toggle svg, .feedback-btn svg { width: 16px; height: 16px; color: #52525b; }
+  .feedback-btn {
+    background: #ef4444; color: white;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+  }
+  .feedback-btn:hover { background: #dc2626; }
+  .feedback-btn svg { color: white; }
+  .nav-action {
+    margin-left: 8px;
+    padding: 7px 16px; font-size: 13.5px; font-weight: 500;
+    color: #18181b; border-radius: 999px;
+  }
+  .nav-action:hover { background: #f4f4f5; }
+  .nav-action.primary {
+    background: #0a0a0a; color: #fff; font-weight: 600;
+  }
+  .nav-action.primary:hover { background: #27272a; }
+
+  /* 中央卡片 */
+  .stage {
+    position: absolute; top: 64px; left: 0; right: 0; bottom: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 32px 16px;
+    overflow-y: auto;
+  }
+  .card {
+    width: 100%; max-width: 400px;
+    background: #fff;
+    border: 1px solid #f4f4f5;
+    border-radius: 20px;
+    box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.08);
+    padding: 36px 32px 28px;
+    position: relative;
+  }
+
+  .card-head { text-align: center; margin-bottom: 28px; }
+  .card-icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: #0a0a0a;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #fff; margin-bottom: 18px;
+  }
+  .card-icon svg { width: 22px; height: 22px; }
+  .card-head h1 {
+    font-size: 22px; font-weight: 700;
+    color: #18181b; letter-spacing: -0.4px;
+    margin-bottom: 6px;
+  }
+  .card-head p {
+    font-size: 13px; color: #71717a;
+  }
+
+  /* 表单 */
+  .form { display: flex; flex-direction: column; gap: 14px; }
+  .field { position: relative; }
+  .field input {
+    width: 100%;
+    padding: 12px 14px 12px 42px;
+    background: #fafafa;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    font-size: 14px; color: #18181b;
+    outline: none;
+    transition: all 0.25s ease;
+  }
+  .field input::placeholder { color: #a1a1aa; }
+  .field input:hover { background: #f4f4f5; }
+  .field input:focus {
+    background: #fff;
+    border-color: #0a0a0a;
+    box-shadow: 0 0 0 3px rgba(10, 10, 10, 0.08);
+  }
+  .field .ico {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    color: #a1a1aa; pointer-events: none;
+    transition: color 0.25s, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .field .ico svg { width: 16px; height: 16px; display: block; }
+  .field input:focus ~ .ico { color: #0a0a0a; transform: translateY(-50%) scale(1.1); }
+  .field .toggle-pwd {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    color: #a1a1aa; padding: 4px;
+    transition: color 0.2s;
+  }
+  .field .toggle-pwd:hover { color: #52525b; }
+  .field .toggle-pwd svg { width: 16px; height: 16px; display: block; }
+
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12.5px; color: #71717a;
+    margin-top: 2px;
+  }
+  .check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .check input { display: none; }
+  .check .box {
+    width: 16px; height: 16px; border-radius: 4px;
+    border: 1.5px solid #d4d4d8;
+    background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+  }
+  .check input:checked + .box { background: #0a0a0a; border-color: #0a0a0a; }
+  .check input:checked + .box::after { content: "✓"; color: #fff; font-size: 11px; font-weight: 700; }
+  .check:hover .box { border-color: #71717a; }
+  .row a { color: #71717a; }
+  .row a:hover { color: #18181b; }
+
+  /* 主按钮 */
+  .btn {
+    margin-top: 6px;
+    width: 100%; padding: 13px 16px;
+    background: #0a0a0a; color: #fff;
+    border-radius: 12px;
+    font-size: 14px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    position: relative; overflow: hidden;
+    transition: all 0.25s ease;
+  }
+  .btn:hover { background: #27272a; transform: translateY(-1px); box-shadow: 0 8px 20px -4px rgba(0,0,0,0.25); }
+  .btn:active { transform: translateY(0); }
+  .btn svg { width: 14px; height: 14px; transition: transform 0.3s; }
+  .btn:hover svg { transform: translateX(3px); }
+  .btn::after {
+    content: ""; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transition: left 0.6s;
+  }
+  .btn:hover::after { left: 100%; }
+
+  /* 测试账号卡 */
+  .test-card {
+    margin-top: 18px;
+    padding: 12px 14px;
+    background: #fafafa;
+    border-radius: 10px;
+    font-size: 12px;
+    color: #71717a;
+    line-height: 1.7;
+  }
+  .test-card .title {
+    font-size: 11px; font-weight: 600; color: #52525b;
+    letter-spacing: 0.5px; margin-bottom: 4px;
+  }
+  .test-card .row-info {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .test-card code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px; color: #18181b;
+    background: #fff;
+    padding: 1px 5px; border-radius: 4px;
+  }
+
+  /* 分割 */
+  .divider {
+    display: flex; align-items: center; gap: 12px;
+    margin: 22px 0 14px;
+    color: #a1a1aa; font-size: 11.5px;
+  }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: #f4f4f5; }
+
+  /* 第三方 */
+  .socials { display: flex; flex-direction: column; gap: 10px; }
+  .social-btn {
+    width: 100%; padding: 11px 16px;
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 12px;
+    font-size: 13.5px; font-weight: 500;
+    color: #18181b;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: all 0.2s;
+  }
+  .social-btn:hover { background: #fafafa; border-color: #d4d4d8; transform: translateY(-1px); box-shadow: 0 4px 12px -4px rgba(0,0,0,0.08); }
+  .social-btn svg { width: 16px; height: 16px; }
+  .social-btn.github { background: #0a0a0a; color: #fff; border-color: #0a0a0a; }
+  .social-btn.github:hover { background: #27272a; }
+
+  /* 底部 */
+  .foot {
+    margin-top: 22px; padding-top: 18px;
+    border-top: 1px solid #f4f4f5;
+    text-align: center;
+    font-size: 12.5px; color: #71717a;
+  }
+  .foot a { color: #18181b; font-weight: 600; }
+
+  /* 底部水印 */
+  .bottom-meta {
+    position: fixed; bottom: 20px; left: 0; right: 0;
+    text-align: center; z-index: 6;
+    font-size: 11px; color: #a1a1aa; letter-spacing: 2px;
+  }
+
+  /* 响应式 */
+  @media (max-width: 720px) {
+    .nav-links { display: none; }
+    .nav { padding: 0 16px; }
+    .card { border-radius: 16px; padding: 28px 22px 22px; }
+    .bottom-meta { display: none; }
+  }
+  @media (max-width: 480px) {
+    .feedback-btn, .theme-toggle { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 环境光 -->
+<div class="ambient"></div>
+
+<!-- 加载阶段:壁纸阵列 -->
+<div class="wall-stage" id="wallStage">
+  <div class="wall-grid" id="wallGrid"></div>
+</div>
+
+<!-- 启动logo -->
+<div class="intro-logo" id="introLogo">
+  <div class="mark">f</div>
+  <div class="name">留白壁纸社</div>
+</div>
+
+<!-- 主页 -->
+<div class="app" id="app">
+  <!-- 顶部 -->
+  <nav class="nav">
+    <div class="nav-left">
+      <a class="nav-logo" href="#">
+        <div class="mark"></div>
+        <span class="name">留白壁纸社</span>
+      </a>
+      <div class="nav-links">
+        <a href="#" class="active">探索</a>
+        <a href="#">动态</a>
+        <a href="#">热门</a>
+        <a href="#">收藏</a>
+        <a href="#">合集</a>
+        <a href="#">标签</a>
+        <a href="#">挑战赛</a>
+        <a href="#">会员</a>
+      </div>
+    </div>
+    <div class="nav-right">
+      <button class="theme-toggle" title="切换主题">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+      <button class="feedback-btn" title="反馈">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
+      </button>
+      <a class="nav-action" href="#">登录</a>
+      <a class="nav-action primary" href="#">注册</a>
+    </div>
+  </nav>
+
+  <!-- 卡片 -->
+  <div class="stage">
+    <div class="card" id="card">
+      <div class="card-head">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </div>
+        <h1 id="cardTitle">欢迎回来</h1>
+        <p id="cardSub">登录你的账号以继续</p>
+      </div>
+
+      <form class="form" id="loginForm" onsubmit="return handleSubmit(event)">
+        <div class="field">
+          <input type="email" id="email" placeholder="your@email.com" autocomplete="email" required />
+          <span class="ico">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          </span>
+        </div>
+
+        <div class="field">
+          <input type="password" id="password" placeholder="输入密码" autocomplete="current-password" required minlength="6" />
+          <span class="ico">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </span>
+          <button type="button" class="toggle-pwd" id="togglePwd" title="显示密码">
+            <svg id="eyeOff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            <svg id="eyeOn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+
+        <div class="row">
+          <label class="check">
+            <input type="checkbox" id="remember" />
+            <span class="box"></span>
+            <span>记住我</span>
+          </label>
+          <a href="#" id="forgotLink">忘记密码?</a>
+        </div>
+
+        <button type="submit" class="btn" id="submitBtn">
+          <span>登录</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </button>
+      </form>
+
+      <div class="test-card">
+        <div class="title">测试账号</div>
+        <div class="row-info">管理员: <code>admin@img.com</code> / <code>admin123</code></div>
+        <div class="row-info">普通用户: 注册即可</div>
+      </div>
+
+      <div class="divider">或使用第三方账号登录</div>
+      <div class="socials">
+        <button class="social-btn github" type="button">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.79 23.4c.6.1.82-.26.82-.58v-2.16c-3.34.73-4.04-1.41-4.04-1.41-.55-1.39-1.34-1.76-1.34-1.76-1.09-.74.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.84 2.81 1.31 3.5 1 .1-.78.42-1.31.76-1.61-2.66-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.11-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.65 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.81 5.62-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.21.69.83.57A12 12 0 0 0 12 .3"/></svg>
+          使用 GitHub 登录
+        </button>
+        <button class="social-btn" type="button">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M22.46 6c-.77.35-1.6.58-2.46.69.88-.53 1.56-1.37 1.88-2.38-.83.5-1.75.85-2.72 1.05A4.28 4.28 0 0 0 12 9.13c0 .34.04.67.11.98A12.13 12.13 0 0 1 3 4.79a4.28 4.28 0 0 0 1.32 5.71c-.7-.02-1.36-.21-1.94-.53v.05a4.28 4.28 0 0 0 3.43 4.19c-.36.1-.74.15-1.13.15-.28 0-.54-.03-.8-.08a4.28 4.28 0 0 0 4 2.98A8.6 8.6 0 0 1 2 19.54a12.13 12.13 0 0 0 6.58 1.93c7.9 0 12.22-6.55 12.22-12.23 0-.19 0-.37-.01-.56A8.7 8.7 0 0 0 22.46 6z"/></svg>
+          使用 Twitter 登录
+        </button>
+      </div>
+
+      <div class="foot" id="foot">
+        还没有账号? <a href="#" id="switchLink">立即注册</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-meta">© 2026 LIUBAI · IMAGE WALLPAPER COMMUNITY</div>
+</div>
+
+<!-- GSAP -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+
+<script>
+  // ==================== 24张真实壁纸 ====================
+  const wallpapers = [
+    "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1418065460487-3e41a6c84dc5?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1426604966848-d7adac402bff?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1472214103451-9374bd1c798e?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1494500764479-0c8f2919a3d8?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1483728642387-6c3bdd6c93e5?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1493246507139-91e8fad9978e?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1502082553048-f009c37129b9?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1465146344425-f00d5f5c8f07?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1505144808419-1957a94ca61e?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1454496522488-7a8e488e8606?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1480497490787-505ec076689f?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1542202229-7d93c33f5d07?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1505765050516-f72dcac9c60f?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1431794062232-2a99a5431c6c?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1502082553048-f009c37129b9?w=300&h=300&fit=crop",
+    "https://images.unsplash.com/photo-1444930694458-01babe71870e?w=300&h=300&fit=crop"
+  ];
+
+  // 构建网格
+  const wallGrid = document.getElementById('wallGrid');
+  const cells = [];
+  wallpapers.forEach((url, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'wall-cell';
+    cell.style.backgroundImage = `url(${url})`;
+    wallGrid.appendChild(cell);
+    cells.push(cell);
+  });
+
+  // ==================== GSAP 时间线 ====================
+  const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+
+  // 1. 启动 logo 浮现
+  tl.to('#introLogo', {
+    duration: 0.7,
+    opacity: 1,
+    y: -10,
+    ease: "power2.out"
+  }, 0);
+
+  // 2. logo 短暂停留后,壁纸阵列从四面八方飞入汇聚
+  tl.to({}, { duration: 0.5 });
+
+  tl.to(cells, {
+    duration: 1.0,
+    opacity: 1,
+    scale: 1,
+    x: (i) => {
+      // 计算最终位置:6列4行,居中显示
+      const col = i % 6;
+      const row = Math.floor(i / 6);
+      // 从屏幕外飞入
+      const fromX = (Math.random() - 0.5) * window.innerWidth * 1.4;
+      const fromY = (Math.random() - 0.5) * window.innerHeight * 1.4;
+      return fromX; // 注意:这只是初始值,我们要用fromTo
+    },
+    y: (i) => (Math.random() - 0.5) * window.innerHeight * 1.4,
+    rotation: () => (Math.random() - 0.5) * 60,
+    stagger: { amount: 0.6, from: "random" },
+    ease: "expo.out"
+  }, 0.5);
+
+  // 上面那个 from 不对,换 fromTo
+  // 重做:从随机方向飞入到 0,0
+  tl.clear();
+
+  // 重新设计
+  // 0: logo 浮现
+  tl.to('#introLogo', { duration: 0.6, opacity: 1, y: -10, ease: "power2.out" }, 0);
+
+  // 0.6: 启动 logo 退场
+  tl.to('#introLogo', { duration: 0.4, opacity: 0, scale: 0.85, ease: "power2.in" }, 0.8);
+
+  // 0.8: 壁纸阵列从随机方向飞入
+  cells.forEach((cell, i) => {
+    const fromX = (Math.random() - 0.5) * 1600;
+    const fromY = (Math.random() - 0.5) * 1000;
+    const fromRot = (Math.random() - 0.5) * 90;
+    const delay = 0.8 + Math.random() * 0.5;
+    tl.fromTo(cell,
+      { x: fromX, y: fromY, rotation: fromRot, opacity: 0, scale: 0.5 },
+      { duration: 0.9, x: 0, y: 0, rotation: 0, opacity: 1, scale: 1, ease: "expo.out" },
+      delay
+    );
+  });
+
+  // 1.9: 阵列停留 0.6s 展示一下(也是为了让图片加载完)
+  tl.to({}, { duration: 0.6 });
+
+  // 2.5: 阵列散开
+  cells.forEach((cell, i) => {
+    const toX = (Math.random() - 0.5) * 1800;
+    const toY = (Math.random() - 0.5) * 1100;
+    const toRot = (Math.random() - 0.5) * 120;
+    tl.to(cell, {
+      duration: 0.7,
+      x: toX, y: toY, rotation: toRot,
+      opacity: 0, scale: 0.5,
+      ease: "power2.in"
+    }, 2.5);
+  });
+
+  // 3.0: 加载舞台淡出
+  tl.to('#wallStage', {
+    duration: 0.5, opacity: 0, ease: "power2.inOut",
+    onComplete: () => {
+      document.getElementById('wallStage').style.display = 'none';
+      document.getElementById('introLogo').style.display = 'none';
+    }
+  }, 3.0);
+
+  // 3.0: 主页显示
+  tl.set('#app', { opacity: 1 }, 3.0);
+
+  // 主页入场
+  tl.from('.nav', { duration: 0.6, y: -30, opacity: 0, ease: "power2.out" }, 3.0);
+  tl.from('.nav-left > *', { duration: 0.5, y: -10, opacity: 0, stagger: 0.05, ease: "power2.out" }, 3.1);
+  tl.from('.nav-right > *', { duration: 0.5, y: -10, opacity: 0, stagger: 0.05, ease: "power2.out" }, 3.2);
+
+  tl.from('.card', { duration: 0.9, y: 30, opacity: 0, scale: 0.96, ease: "power3.out" }, 3.2);
+  tl.from('.card-head > *', { duration: 0.5, y: 15, opacity: 0, stagger: 0.08, ease: "power2.out" }, 3.5);
+  tl.from('.form > *', { duration: 0.5, y: 12, opacity: 0, stagger: 0.06, ease: "power2.out" }, 3.6);
+  tl.from('.row', { duration: 0.4, opacity: 0, ease: "power2.out" }, 3.8);
+  tl.from('.test-card', { duration: 0.5, y: 10, opacity: 0, ease: "power2.out" }, 3.9);
+  tl.from('.divider, .socials > *', { duration: 0.4, y: 8, opacity: 0, stagger: 0.05, ease: "power2.out" }, 4.0);
+  tl.from('.foot', { duration: 0.4, opacity: 0, ease: "power2.out" }, 4.2);
+  tl.from('.bottom-meta', { duration: 0.6, opacity: 0, ease: "power2.out" }, 4.3);
+
+  // 持续鼠标交互
+  document.addEventListener('mousemove', (e) => {
+    // 卡片轻微视差
+    const card = document.getElementById('card');
+    const rect = card.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const rx = ((e.clientY - rect.top) / rect.height - 0.5) * -2;
+    const ry = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
+    gsap.to(card, { duration: 0.6, rotateX: rx, rotateY: ry, ease: "power2.out" });
+  });
+  document.addEventListener('mouseleave', () => {
+    gsap.to('#card', { duration: 0.8, rotateX: 0, rotateY: 0, ease: "power2.out" });
+  });
+
+  // 切换密码可见
+  const togglePwd = document.getElementById('togglePwd');
+  const pwdInput = document.getElementById('password');
+  const eyeOff = document.getElementById('eyeOff');
+  const eyeOn = document.getElementById('eyeOn');
+  let pwdVisible = false;
+  togglePwd.addEventListener('click', () => {
+    pwdVisible = !pwdVisible;
+    pwdInput.type = pwdVisible ? 'text' : 'password';
+    eyeOff.style.display = pwdVisible ? 'none' : 'block';
+    eyeOn.style.display = pwdVisible ? 'block' : 'none';
+    // 轻微回弹
+    gsap.fromTo(togglePwd, { scale: 0.8 }, { duration: 0.3, scale: 1, ease: "back.out(2)" });
+  });
+
+  // 登录/注册 切换
+  const cardTitle = document.getElementById('cardTitle');
+  const cardSub = document.getElementById('cardSub');
+  const submitBtn = document.getElementById('submitBtn');
+  const foot = document.getElementById('foot');
+  let mode = 'login';
+  function setMode(m) {
+    if (m === mode) return;
+    mode = m;
+    const card = document.getElementById('card');
+    gsap.fromTo(card, { scale: 0.985 }, { duration: 0.35, scale: 1, ease: "power2.out" });
+    if (m === 'login') {
+      cardTitle.textContent = '欢迎回来';
+      cardSub.textContent = '登录你的账号以继续';
+      submitBtn.querySelector('span').textContent = '登录';
+      foot.innerHTML = '还没有账号? <a href="#" id="switchLink">立即注册</a>';
+    } else {
+      cardTitle.textContent = '创建账号';
+      cardSub.textContent = '几秒钟即可加入我们';
+      submitBtn.querySelector('span').textContent = '注册';
+      foot.innerHTML = '已有账号? <a href="#" id="switchLink">返回登录</a>';
+    }
+    document.getElementById('switchLink').onclick = (e) => {
+      e.preventDefault();
+      setMode(m === 'login' ? 'signup' : 'login');
+    };
+  }
+  document.getElementById('switchLink').onclick = (e) => {
+    e.preventDefault();
+    setMode('signup');
+  };
+
+  // 提交
+  function handleSubmit(e) {
+    e.preventDefault();
+    const btn = submitBtn;
+    const span = btn.querySelector('span');
+    const original = span.textContent;
+    btn.style.pointerEvents = 'none';
+    span.textContent = '验证中...';
+    setTimeout(() => {
+      span.textContent = '✓  ' + (mode === 'login' ? '登录成功' : '注册成功');
+      setTimeout(() => {
+        span.textContent = original;
+        btn.style.pointerEvents = '';
+      }, 1800);
+    }, 1000);
+    return false;
+  }
+</script>
+<style>
+#minimax-floating-ball {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 10px 12px;
+  background: #222222;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  color: #F8F8F8;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  z-index: 9999;
+  transition: all 0.3s ease;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+#minimax-floating-ball:hover {
+  transform: translateY(-2px);
+  background: #383838;
+}
+.minimax-ball-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.minimax-logo-wave {
+  width: 20px;
+  height: 20px;
+  background-image: url("data:image/svg+xml,%3Csvg%20preserveAspectRatio%3D%27none%27%20width%3D%27100%25%27%20height%3D%27100%25%27%20overflow%3D%27visible%27%20style%3D%27display%3A%20block%3B%27%20viewBox%3D%270%200%20170.136%20138.225%27%20fill%3D%27none%27%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%3E%3Cg%20id%3D%27Frame%202116748449%27%3E%3Cpath%20id%3D%27Subtract%27%20d%3D%27M170%20101.783C170%20105.144%20168.49%20108.327%20165.886%20110.453L134.963%20135.702C132.964%20137.334%20130.463%20138.225%20127.883%20138.225H10.4938C4.69824%20138.225%200%20133.527%200%20127.732V39.2289C0%2035.8597%201.51758%2032.6698%204.13162%2030.5442L38.5402%202.56547C40.536%200.942662%2043.0298%200.0567377%2045.602%200.0567377H159.506C165.302%200.0567377%20170%204.75498%20170%2010.5506V101.783Z%27%20fill%3D%27black%27%20style%3D%27fill%3Ablack%3Bfill-opacity%3A1%3B%27/%3E%3Cpath%20id%3D%27Subtract_2%27%20d%3D%27M149.011%2094.4632C149.011%2096.1471%20148.253%2097.7415%20146.946%2098.8043L125.893%20115.936C124.895%20116.748%20123.648%20117.191%20122.361%20117.191H24.6479C22.716%20117.191%2021.15%20115.625%2021.15%20113.693V46.1166C21.15%2044.4267%2021.9135%2042.8274%2023.2274%2041.7648L47.367%2022.2437C48.3638%2021.4376%2049.607%2020.9982%2050.8888%2020.9988L145.514%2021.0427C147.446%2021.0436%20149.011%2022.6094%20149.011%2024.5406V94.4632Z%27%20fill%3D%27white%27%20style%3D%27fill%3Awhite%3Bfill-opacity%3A1%3B%27/%3E%3Cpath%20id%3D%27Rectangle%20111142564%27%20d%3D%27M42.111%2080.8025C42.111%2077.7115%2044.6167%2075.2057%2047.7077%2075.2057H60.9999C64.0908%2075.2057%2066.5966%2077.7115%2066.5966%2080.8025V121.029H42.111V80.8025Z%27%20fill%3D%27black%27%20style%3D%27fill%3Ablack%3Bfill-opacity%3A1%3B%27/%3E%3Cpath%20id%3D%27Rectangle%20111142567%27%20d%3D%27M79.1894%2080.8025C79.1894%2077.7115%2081.6952%2075.2057%2084.7861%2075.2057H98.0783C101.169%2075.2057%20103.675%2077.7115%20103.675%2080.8025V121.029H79.1894V80.8025Z%27%20fill%3D%27black%27%20style%3D%27fill%3Ablack%3Bfill-opacity%3A1%3B%27/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 14px 11px;
+  background-color: #8FD1FF;
+  border-radius: 4px;
+}
+
+.minimax-ball-text {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.minimax-close-icon {
+  margin-left: 8px;
+  font-size: 16px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.minimax-close-icon:hover {
+  opacity: 1;
+}
+</style>
+<div id="minimax-floating-ball">
+  <div class="minimax-ball-content">
+    <div class="minimax-logo-wave"></div>
+    <span class="minimax-ball-text">Created by MiniMax Agent</span>
+  </div>
+  <div class="minimax-close-icon">×</div>
+</div>
+<script>
+// Initialize floating ball functionality
+function initFloatingBall() {
+  const ball = document.getElementById('minimax-floating-ball');
+  if (!ball) return;
+
+  // Initial animation
+  ball.style.opacity = '0';
+  ball.style.transform = 'translateY(20px)';
+
+  setTimeout(() => {
+    ball.style.opacity = '1';
+    ball.style.transform = 'translateY(0)';
+  }, 500);
+
+  // Handle logo click
+  const ballContent = ball.querySelector('.minimax-ball-content');
+  ballContent.addEventListener('click', function (e) {
+    e.stopPropagation();
+    window.open('https://agent.minimaxi.com/', '_blank');
+    ball.style.transform = 'scale(0.95)';
+    setTimeout(() => {
+      ball.style.transform = 'scale(1)';
+    }, 100);
+  });
+
+  // Handle close button click
+  const closeIcon = ball.querySelector('.minimax-close-icon');
+  closeIcon.addEventListener('click', function (e) {
+    e.stopPropagation();
+    ball.style.opacity = '0';
+    ball.style.transform = 'translateY(20px)';
+
+    setTimeout(() => {
+      ball.style.display = 'none';
+    }, 300);
+  });
+}
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', initFloatingBall); 
+</script>
+</body>
+</html>
