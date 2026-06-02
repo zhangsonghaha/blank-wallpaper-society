@@ -89,10 +89,10 @@
     "readyTimeout": 20000,
     "connections": {
       "redis-server": {
-        "host": "82.156.161.12",
+        "host": "your-server-ip",
         "port": 22,
         "username": "root",
-        "password": "zs15210265092."
+        "password": "your-ssh-password"
       }
     }
   }
