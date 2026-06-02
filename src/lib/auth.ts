@@ -2,9 +2,18 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import GitHub from "next-auth/providers/github";
+import crypto from "crypto";
 import { query } from "@/lib/db";
 import { checkLoginLock, recordLoginFailure, clearLoginFailures } from "@/lib/login-security";
 import { hashPassword, verifyPassword } from "@/lib/password";
+
+// Auth Secret：优先 AUTH_SECRET，其次 NEXTAUTH_SECRET，都不存在时自动生成
+// 注意：自动生成的密钥在每次部署/重启时变化，会导致已有会话失效
+// 生产环境请务必在环境变量中设置 AUTH_SECRET
+const authSecret: string =
+  process.env.AUTH_SECRET ||
+  process.env.NEXTAUTH_SECRET ||
+  crypto.randomBytes(32).toString("hex");
 
 // OAuth 凭据：优先环境变量，其次数据库设置
 async function getOAuthConfig() {
@@ -264,5 +273,5 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60,
   },
-  secret: process.env.AUTH_SECRET || (process.env.NODE_ENV === "production" ? "" : "local-dev-secret-not-for-production"),
+  secret: authSecret,
 });
