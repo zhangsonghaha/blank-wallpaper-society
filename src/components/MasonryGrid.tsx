@@ -65,8 +65,6 @@ interface CategoryRecord {
   slug: string;
 }
 
-const ITEMS_PER_PAGE = 12;
-
 export default function MasonryGrid() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -91,7 +89,9 @@ export default function MasonryGrid() {
   const [images, setImages] = useState<ImageRecord[]>([]);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [autoLoadedPages, setAutoLoadedPages] = useState(0);
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -140,66 +140,75 @@ export default function MasonryGrid() {
       .catch(() => {});
   }, []);
 
-  // 加载图片
+  // 加载图片（带分页）
+  const fetchImages = useCallback(
+    (pageNum: number, append: boolean) => {
+      setIsLoadingMore(true);
+      const controller = new AbortController();
+      const params = new URLSearchParams();
+
+      if (activeColor) {
+        params.set("color", activeColor);
+        params.set("threshold", String(colorThreshold));
+      }
+
+      if (activeCategory !== "all") params.set("category", activeCategory);
+      if (searchQuery.trim()) params.set("search", searchQuery);
+      if (sortBy) params.set("sort", sortBy);
+
+      if (resolutionFilter.minWidth) params.set("minWidth", String(resolutionFilter.minWidth));
+      if (resolutionFilter.maxWidth) params.set("maxWidth", String(resolutionFilter.maxWidth));
+      if (resolutionFilter.minHeight) params.set("minHeight", String(resolutionFilter.minHeight));
+      if (resolutionFilter.maxHeight) params.set("maxHeight", String(resolutionFilter.maxHeight));
+
+      if (dateFilter.from) params.set("dateFrom", dateFilter.from);
+      if (dateFilter.to) params.set("dateTo", dateFilter.to);
+
+      params.set("page", String(pageNum));
+      params.set("limit", "24");
+
+      const apiUrl = activeColor ? `/api/images/search/color?${params}` : `/api/images?${params}`;
+
+      fetch(apiUrl, { signal: controller.signal })
+        .then((res) => res.json())
+        .then((data) => {
+          if (controller.signal.aborted) return;
+          const newData = data.data || [];
+          if (append) {
+            setImages((prev) => [...prev, ...newData]);
+          } else {
+            setImages(newData);
+            if (!activeColor) {
+              setSearchEngine(data._searchEngine || "");
+              setRecommendations(data.recommendations || []);
+            }
+          }
+          setTotalCount(data.total || 0);
+          setTotalPages(data.totalPages || 1);
+          setLoading(false);
+          setIsLoadingMore(false);
+        })
+        .catch((err) => {
+          if (err.name !== "AbortError") {
+            setLoading(false);
+            setIsLoadingMore(false);
+          }
+        });
+
+      return controller;
+    },
+    [activeCategory, searchQuery, activeColor, colorThreshold, sortBy, resolutionFilter, dateFilter]
+  );
+
+  // 筛选变化时重新加载第 1 页
   useEffect(() => {
     setLoading(true);
-    const controller = new AbortController();
-    const params = new URLSearchParams();
-
-    if (activeColor) {
-      // 颜色搜索使用专门的API
-      params.set("color", activeColor);
-      params.set("threshold", String(colorThreshold));
-    }
-    
-    // 通用参数
-    if (activeCategory !== "all") params.set("category", activeCategory);
-    if (searchQuery.trim()) params.set("search", searchQuery);
-    if (sortBy) params.set("sort", sortBy);
-    
-    // 分辨率筛选
-    if (resolutionFilter.minWidth) params.set("minWidth", String(resolutionFilter.minWidth));
-    if (resolutionFilter.maxWidth) params.set("maxWidth", String(resolutionFilter.maxWidth));
-    if (resolutionFilter.minHeight) params.set("minHeight", String(resolutionFilter.minHeight));
-    if (resolutionFilter.maxHeight) params.set("maxHeight", String(resolutionFilter.maxHeight));
-    
-    // 日期筛选
-    if (dateFilter.from) params.set("dateFrom", dateFilter.from);
-    if (dateFilter.to) params.set("dateTo", dateFilter.to);
-    
-    params.set("limit", "100");
-
-    if (activeColor) {
-      fetch(`/api/images/search/color?${params}`, { signal: controller.signal })
-        .then((res) => res.json())
-        .then((data) => {
-          if (controller.signal.aborted) return;
-          setImages(data.data || []);
-          setTotalCount(data.total || 0);
-          setVisibleCount(ITEMS_PER_PAGE);
-          setLoading(false);
-        })
-        .catch((err) => {
-          if (err.name !== 'AbortError') setLoading(false);
-        });
-    } else {
-      fetch(`/api/images?${params}`, { signal: controller.signal })
-        .then((res) => res.json())
-        .then((data) => {
-          if (controller.signal.aborted) return;
-          setImages(data.data || []);
-          setTotalCount(data.total || 0);
-          setSearchEngine(data._searchEngine || "");
-          setRecommendations(data.recommendations || []);
-          setVisibleCount(ITEMS_PER_PAGE);
-          setLoading(false);
-        })
-        .catch((err) => {
-          if (err.name !== 'AbortError') setLoading(false);
-        });
-    }
-
-    return () => controller.abort();
+    setPage(1);
+    setAutoLoadedPages(0);
+    const controller = fetchImages(1, false);
+    return () => {
+      if (controller) controller.abort();
+    };
   }, [activeCategory, searchQuery, activeColor, colorThreshold, sortBy, resolutionFilter, dateFilter]);
 
   // 处理 URL 中的 ?pin= 参数，自动打开灯箱
@@ -268,12 +277,10 @@ export default function MasonryGrid() {
     return result;
   }, [images, showFavoritesOnly, favorites, sortBy]);
 
-  // 分页
-  const displayedImages = useMemo(() => {
-    return filteredImages.slice(0, visibleCount);
-  }, [filteredImages, visibleCount]);
+  // 分页（不再切片，直接显示全部已加载的图片）
+  const displayedImages = filteredImages;
 
-  const hasMore = visibleCount < filteredImages.length;
+  const hasMore = page < totalPages;
 
   // 收藏切换
   const toggleFavorite = useCallback(async (id: number) => {
@@ -355,30 +362,35 @@ export default function MasonryGrid() {
     [filteredImages, router]
   );
 
-  // 加载更多
+  const AUTO_LOAD_PAGES = 3;
+
+  // 手动加载更多
   const loadMore = useCallback(() => {
     if (isLoadingMore || !hasMore) return;
-    setIsLoadingMore(true);
-    setTimeout(() => {
-      setVisibleCount((prev) => prev + ITEMS_PER_PAGE);
-      setIsLoadingMore(false);
-    }, 300);
-  }, [isLoadingMore, hasMore]);
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchImages(nextPage, true);
+  }, [isLoadingMore, hasMore, page, fetchImages]);
 
-  // 无限滚动
+  // 混合滚动：自动加载前 3 页，之后只显示按钮
   useEffect(() => {
-    if (!loadMoreRef.current) return;
+    if (!loadMoreRef.current || !hasMore || isLoadingMore) return;
+    if (autoLoadedPages >= AUTO_LOAD_PAGES) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
-          loadMore();
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore && autoLoadedPages < AUTO_LOAD_PAGES) {
+          setAutoLoadedPages((prev) => prev + 1);
+          const nextPage = page + 1;
+          setPage(nextPage);
+          fetchImages(nextPage, true);
         }
       },
       { threshold: 0.1 }
     );
     observer.observe(loadMoreRef.current);
     return () => observer.disconnect();
-  }, [hasMore, isLoadingMore, loadMore]);
+  }, [hasMore, isLoadingMore, autoLoadedPages, page, fetchImages]);
 
   // 分列 - 响应式列数
   const [colCount, setColCount] = useState(4);
@@ -490,7 +502,6 @@ export default function MasonryGrid() {
         activeCategory={activeCategory}
         onCategoryChange={(cat) => {
           setActiveCategory(cat);
-          setVisibleCount(ITEMS_PER_PAGE);
         }}
       />
 
@@ -567,7 +578,6 @@ export default function MasonryGrid() {
               activeColor={activeColor}
               onColorSelect={(color) => {
                 setActiveColor(color);
-                setVisibleCount(ITEMS_PER_PAGE);
               }}
             />
 
@@ -849,7 +859,7 @@ export default function MasonryGrid() {
                 </span>
               ) : (
                 <span>
-                  加载更多 ({displayedImages.length}/{filteredImages.length})
+                  加载更多 ({displayedImages.length}/{totalCount})
                 </span>
               )}
             </button>
@@ -862,7 +872,7 @@ export default function MasonryGrid() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
-              已展示全部 {filteredImages.length} 张图片
+              已展示全部 {totalCount} 张图片
             </span>
           </div>
         )}
