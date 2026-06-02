@@ -42,6 +42,7 @@ export default function ThemeZoneDetailPage() {
   const [loading, setLoading] = useState(true);
   const [imagesLoading, setImagesLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [autoLoadedPages, setAutoLoadedPages] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -92,12 +93,17 @@ export default function ThemeZoneDetailPage() {
     fetchImages(1, false);
   }, [fetchImages]);
 
-  // 无限滚动
+  const AUTO_LOAD_PAGES = 3;
+
+  // 混合滚动：自动加载前 3 页
   useEffect(() => {
-    if (!loadMoreRef.current) return;
+    if (!loadMoreRef.current || !hasMore || imagesLoading) return;
+    if (autoLoadedPages >= AUTO_LOAD_PAGES) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !imagesLoading) {
+        if (entries[0].isIntersecting && hasMore && !imagesLoading && autoLoadedPages < AUTO_LOAD_PAGES) {
+          setAutoLoadedPages((prev) => prev + 1);
           const nextPage = page + 1;
           setPage(nextPage);
           fetchImages(nextPage, true);
@@ -107,7 +113,7 @@ export default function ThemeZoneDetailPage() {
     );
     observer.observe(loadMoreRef.current);
     return () => observer.disconnect();
-  }, [hasMore, imagesLoading, page, fetchImages]);
+  }, [hasMore, imagesLoading, page, autoLoadedPages, fetchImages]);
 
   // 响应式列数
   const [colCount, setColCount] = useState(4);
@@ -290,11 +296,24 @@ export default function ThemeZoneDetailPage() {
           </div>
         )}
 
-        {/* Load More Trigger */}
-        <div ref={loadMoreRef} className="h-10" />
-        {imagesLoading && images.length > 0 && (
-          <div className="flex justify-center py-4">
-            <Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary)]" />
+        {/* Load More */}
+        {hasMore && (
+          <div ref={loadMoreRef} className="flex justify-center mt-8 pb-8">
+            <button
+              onClick={() => {
+                const nextPage = page + 1;
+                setPage(nextPage);
+                fetchImages(nextPage, true);
+              }}
+              disabled={imagesLoading}
+              className={`px-8 py-3 text-sm font-bold rounded-full transition-all ${
+                imagesLoading
+                  ? "bg-[var(--color-surface-card)] text-[var(--color-ash)] cursor-wait"
+                  : "bg-[var(--color-surface-card)] text-[var(--color-ink)] hover:bg-[var(--color-secondary-bg)] hover:shadow-sm active:scale-95"
+              }`}
+            >
+              {imagesLoading ? "加载中..." : `加载更多 (${images.length}/${total})`}
+            </button>
           </div>
         )}
         {!hasMore && images.length > 0 && (
