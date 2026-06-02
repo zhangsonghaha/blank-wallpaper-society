@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { query, safeQuery } from "@/lib/db";
 import { getCache, setCache, delCache, clearPattern } from "@/lib/redis";
-import crypto from "crypto";
+import { hashPassword } from "@/lib/password";
 
 // GET /api/admin/users/[id] - 获取用户详情
 export async function GET(
@@ -151,7 +151,7 @@ export async function PATCH(
       if (resetPassword.length < 6) {
         return NextResponse.json({ error: "密码至少6位" }, { status: 400 });
       }
-      const hash = crypto.createHash("sha256").update(resetPassword).digest("hex");
+      const hash = await hashPassword(resetPassword);
       updates.push("password = ?");
       updateParams.push(hash);
       logDetail.operation = "reset_password";

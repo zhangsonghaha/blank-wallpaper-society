@@ -4,6 +4,7 @@ import Google from "next-auth/providers/google";
 import GitHub from "next-auth/providers/github";
 import { query } from "@/lib/db";
 import { checkLoginLock, recordLoginFailure, clearLoginFailures } from "@/lib/login-security";
+import { hashPassword, verifyPassword } from "@/lib/password";
 
 // OAuth 凭据：优先环境变量，其次数据库设置
 async function getOAuthConfig() {
@@ -51,8 +52,6 @@ async function buildProviders() {
         password: { label: "密码", type: "password" },
       },
       async authorize(credentials) {
-        const crypto = await import("crypto");
-
         if (!credentials?.email || !credentials?.password) {
           throw new Error("请填写邮箱和密码");
         }
@@ -77,17 +76,20 @@ async function buildProviders() {
         }
 
         const user = rows[0];
-        const hash = crypto
-          .createHash("sha256")
-          .update(password)
-          .digest("hex");
+        const { valid, upgradedHash } = await verifyPassword(password, user.password);
 
-        if (hash !== user.password) {
+        if (!valid) {
           const failResult = recordLoginFailure(email);
           if (failResult.locked) {
             throw new Error("账号已被临时锁定，请15分钟后重试");
           }
           throw new Error("邮箱或密码错误");
+        }
+
+        // 自动升级旧 SHA-256 哈希为 bcrypt
+        if (upgradedHash) {
+          query("UPDATE users SET password = ? WHERE id = ?", [upgradedHash, user.id])
+            .catch((err) => console.error("[auth] 密码哈希升级失败:", err));
         }
 
         // 检查账号状态
@@ -125,7 +127,6 @@ async function buildProviders() {
     providers.push(Google({
       clientId: config.googleClientId,
       clientSecret: config.googleClientSecret,
-      allowDangerousEmailAccountLinking: true,
     }));
   }
 
@@ -134,7 +135,6 @@ async function buildProviders() {
     providers.push(GitHub({
       clientId: config.githubClientId,
       clientSecret: config.githubClientSecret,
-      allowDangerousEmailAccountLinking: true,
     }));
   }
 
@@ -215,17 +215,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           // 新用户，自动注册
           const crypto = await import("crypto");
           const randomPassword = crypto.randomBytes(32).toString("hex");
-          const hash = crypto
-            .createHash("sha256")
-            .update(randomPassword)
-            .digest("hex");
+          const hashedPassword = await hashPassword(randomPassword);
 
           const name = user.name || email.split("@")[0];
           const avatar = user.image || null;
 
           const result = (await query(
             "INSERT INTO users (email, name, password, avatar, role) VALUES (?, ?, ?, ?, 'user')",
-            [email, name, hash, avatar]
+            [email, name, hashedPassword, avatar]
           )) as any;
 
           userId = result.insertId;
@@ -267,5 +264,5 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60,
   },
-  secret: process.env.AUTH_SECRET || "image-gallery-secret-key-2026",
+  secret: process.env.AUTH_SECRET || (process.env.NODE_ENV === "production" ? "" : "local-dev-secret-not-for-production"),
 });

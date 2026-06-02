@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import crypto from "crypto";
+import { hashPassword } from "@/lib/password";
 
 // POST /api/auth/reset-password - 通过令牌重置密码
 export async function POST(request: NextRequest) {
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     const resetToken = tokens[0];
 
     // 更新密码
-    const newHash = crypto.createHash("sha256").update(newPassword).digest("hex");
+    const newHash = await hashPassword(newPassword);
     await query("UPDATE users SET password = ? WHERE id = ?", [
       newHash,
       resetToken.user_id,

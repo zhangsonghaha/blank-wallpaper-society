@@ -286,8 +286,8 @@ function LoginForm() {
 
   // 注册字段
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("admin@img.com");
+  const [password, setPassword] = useState("admin123");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [remember, setRemember] = useState(false);
 
@@ -663,7 +663,7 @@ function LoginForm() {
               )}
 
               {/* 提交按钮 */}
-              <button type="submit" className="auth-btn auth-form-elem" disabled={loading}>
+              <button type="submit" className="auth-btn" disabled={loading}>
                 {loading ? (
                   <><SpinnerIcon />{isLogin ? "登录中..." : "注册中..."}</>
                 ) : (

@@ -2,7 +2,12 @@ import { createChallenge, verifySolution, sha } from "altcha/lib";
 
 // Altcha HMAC 签名密钥：优先 ALTCHA_HMAC_KEY，回退 AUTH_SECRET
 const HMAC_SIGNATURE_SECRET =
-  process.env.ALTCHA_HMAC_KEY || process.env.AUTH_SECRET || "altcha-default-secret-key";
+  process.env.ALTCHA_HMAC_KEY || process.env.AUTH_SECRET;
+
+// 如果没有配置签名密钥，在服务端启动时警告
+if (!HMAC_SIGNATURE_SECRET) {
+  console.warn("[Altcha] 警告：未配置 ALTCHA_HMAC_KEY 或 AUTH_SECRET，验证码签名不安全");
+}
 
 // 挑战有效期（毫秒），默认 10 分钟
 const CHALLENGE_EXPIRY = 10 * 60 * 1000;

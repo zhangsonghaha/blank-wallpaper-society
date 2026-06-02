@@ -4,14 +4,13 @@ const nextConfig: NextConfig = {
   output: "standalone",
   images: {
     remotePatterns: [
+      // 允许 HTTPS 任意来源 — 壁纸站需要显示来自各爬取源的图片
       {
         protocol: "https",
         hostname: "**",
       },
-      {
-        protocol: "http",
-        hostname: "**",
-      },
+      // 仅允许本地 MinIO 通过 HTTP 访问（开发/内网环境）
+      // 注意：生产环境 MinIO 应通过 HTTPS 反向代理访问
     ],
   },
   // API 版本化：/api/v1/* 映射到 /api/*

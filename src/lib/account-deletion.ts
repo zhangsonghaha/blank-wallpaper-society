@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { query, safeQuery } from "@/lib/db";
 import { withTransaction } from "@/lib/db-tx";
+import { hashPassword } from "@/lib/password";
 
 /**
  * 账号注销与数据删除库
@@ -140,7 +141,7 @@ export async function executeAccountDeletion(userId: number): Promise<void> {
   const deletedEmail = `deleted_${userId}@deleted.com`;
   const deletedName = "已注销用户";
   const randomPassword = crypto.randomBytes(32).toString("hex");
-  const hashedPassword = crypto.createHash("sha256").update(randomPassword).digest("hex");
+  const hashedPassword = await hashPassword(randomPassword);
 
   // 使用事务保护整个注销流程，确保数据一致性
   await withTransaction(async (conn) => {
@@ -334,7 +335,7 @@ export async function deleteAccountByAdmin(
   const deletedEmail = `deleted_${userId}_${Date.now()}@deleted.com`;
   const deletedName = "已删除用户";
   const randomPassword = crypto.randomBytes(32).toString("hex");
-  const hashedPassword = crypto.createHash("sha256").update(randomPassword).digest("hex");
+  const hashedPassword = await hashPassword(randomPassword);
 
   await query(
     `UPDATE users SET 

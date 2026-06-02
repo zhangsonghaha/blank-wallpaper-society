@@ -6,7 +6,7 @@ import {
   cancelAccountDeletion,
   getAccountDeletionStatus,
 } from "@/lib/account-deletion";
-import crypto from "crypto";
+import { verifyPassword } from "@/lib/password";
 
 /**
  * POST /api/auth/account-deletion - 请求注销账号
@@ -37,12 +37,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
 
-    const hash = crypto
-      .createHash("sha256")
-      .update(password)
-      .digest("hex");
+    const { valid } = await verifyPassword(password, users[0].password);
 
-    if (hash !== users[0].password) {
+    if (!valid) {
       return NextResponse.json({ error: "密码不正确" }, { status: 400 });
     }
 

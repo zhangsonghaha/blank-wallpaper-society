@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import crypto from "crypto";
 import { verifyAltchaSolution } from "@/lib/altcha";
 import { sendWelcomeEmail } from "@/lib/email";
 import { sanitizeName, sanitizeEmail } from "@/lib/sanitize";
 import { withTransaction } from "@/lib/db-tx";
+import { hashPassword } from "@/lib/password";
 
 export async function POST(request: NextRequest) {
   try {
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 创建用户（默认角色为 user）- 使用事务保护
-    const hash = crypto.createHash("sha256").update(password).digest("hex");
+    const hashedPassword = await hashPassword(password);
     const result = await withTransaction(async (conn) => {
       // 在事务内再次检查邮箱，防止并发注册
       const [recheck] = await conn.execute(
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
 
       const [insertResult] = await conn.execute(
         "INSERT INTO users (email, name, password, role) VALUES (?, ?, ?, 'user')",
-        [cleanEmail, cleanName || cleanEmail.split("@")[0], hash]
+        [cleanEmail, cleanName || cleanEmail.split("@")[0], hashedPassword]
       );
       return insertResult;
     });

@@ -4,6 +4,7 @@ import { query } from "@/lib/db";
 import { getMinioClient, PUBLIC_URL_BASE, BUCKET_NAME } from "@/lib/minio";
 import sharp from "sharp";
 import { sanitizeName } from "@/lib/sanitize";
+import { hashPassword, verifyPassword } from "@/lib/password";
 
 // PATCH /api/auth/profile - 更新用户信息
 export async function PATCH(request: NextRequest) {
@@ -76,27 +77,20 @@ export async function PATCH(request: NextRequest) {
       }
 
       // 验证当前密码
-      const crypto = await import("crypto");
       const users = (await query("SELECT password FROM users WHERE id = ?", [
         userId,
       ])) as any[];
       if (users.length === 0) {
         return NextResponse.json({ error: "用户不存在" }, { status: 404 });
       }
-      const currentHash = crypto
-        .createHash("sha256")
-        .update(currentPassword)
-        .digest("hex");
-      if (currentHash !== users[0].password) {
+      const { valid, upgradedHash } = await verifyPassword(currentPassword, users[0].password);
+      if (!valid) {
         return NextResponse.json({ error: "当前密码不正确" }, { status: 400 });
       }
 
-      const newHash = crypto
-        .createHash("sha256")
-        .update(newPassword)
-        .digest("hex");
+      const newHash = await hashPassword(newPassword);
       await query("UPDATE users SET password = ? WHERE id = ?", [
-        newHash,
+        upgradedHash || newHash,
         userId,
       ]);
 
