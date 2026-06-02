@@ -68,6 +68,7 @@ export default function CollectionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [imagesLoading, setImagesLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [autoLoadedPages, setAutoLoadedPages] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -113,12 +114,17 @@ export default function CollectionDetailPage() {
     fetchImages(1, false);
   }, [fetchImages]);
 
-  // 无限滚动
+  const AUTO_LOAD_PAGES = 3;
+
+  // 混合滚动：自动加载前 3 页
   useEffect(() => {
-    if (!loadMoreRef.current) return;
+    if (!loadMoreRef.current || !hasMore || imagesLoading) return;
+    if (autoLoadedPages >= AUTO_LOAD_PAGES) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !imagesLoading) {
+        if (entries[0].isIntersecting && hasMore && !imagesLoading && autoLoadedPages < AUTO_LOAD_PAGES) {
+          setAutoLoadedPages((prev) => prev + 1);
           const nextPage = page + 1;
           setPage(nextPage);
           fetchImages(nextPage, true);
@@ -128,7 +134,7 @@ export default function CollectionDetailPage() {
     );
     observer.observe(loadMoreRef.current);
     return () => observer.disconnect();
-  }, [hasMore, imagesLoading, page, fetchImages]);
+  }, [hasMore, imagesLoading, page, autoLoadedPages, fetchImages]);
 
   // 订阅/取消订阅
   const handleSubscribe = async () => {
@@ -429,11 +435,29 @@ export default function CollectionDetailPage() {
           </div>
         )}
 
-        {/* Load More Trigger */}
-        <div ref={loadMoreRef} className="h-10" />
-        {imagesLoading && images.length > 0 && (
-          <div className="flex justify-center py-4">
-            <Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary)]" />
+        {/* Load More */}
+        {hasMore && (
+          <div ref={loadMoreRef} className="flex justify-center mt-8 pb-8">
+            <button
+              onClick={() => {
+                const nextPage = page + 1;
+                setPage(nextPage);
+                fetchImages(nextPage, true);
+              }}
+              disabled={imagesLoading}
+              className={`px-8 py-3 text-sm font-bold rounded-full transition-all ${
+                imagesLoading
+                  ? "bg-[var(--color-surface-card)] text-[var(--color-ash)] cursor-wait"
+                  : "bg-[var(--color-surface-card)] text-[var(--color-ink)] hover:bg-[var(--color-secondary-bg)] hover:shadow-sm active:scale-95"
+              }`}
+            >
+              {imagesLoading ? "加载中..." : `加载更多 (${images.length}/${collection?.image_count || "..."})`}
+            </button>
+          </div>
+        )}
+        {!hasMore && images.length > 0 && (
+          <div className="text-center pb-8 text-sm text-[var(--color-ash)]">
+            已展示全部 {collection?.image_count || images.length} 张图片
           </div>
         )}
       </div>
