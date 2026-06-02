@@ -31,6 +31,7 @@ import {
   ShoppingBag,
   Crown,
   BadgeCheck,
+  Eye,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ import CategoriesTab from "./CategoriesTab";
 import NotificationsTab from "./NotificationsTab";
 import SettingsTab from "./SettingsTab";
 import CrawlTab from "./CrawlTab";
+import CrawlPreview from "./CrawlPreview";
 import ReportTab from "./ReportTab";
 import ApiUsageTab from "./ApiUsageTab";
 import ChallengesTab from "./ChallengesTab";
@@ -199,7 +201,8 @@ export default function AdminClient() {
     }
 
     const menuItem = allMenuItems.find(item => item.id === tabId);
-    if (!menuItem) return;
+    // crawl-preview 是爬虫预览子页面，不在数据库菜单中
+    if (!menuItem && tabId !== "crawl-preview") return;
 
     let content: React.ReactNode;
     switch (tabId) {
@@ -229,6 +232,9 @@ export default function AdminClient() {
         break;
       case "crawl":
         content = <CrawlTab />;
+        break;
+      case "crawl-preview":
+        content = <CrawlPreview />;
         break;
       case "api-usage":
         content = <ApiUsageTab />;
@@ -278,8 +284,8 @@ export default function AdminClient() {
 
     const newTab: TabItem = {
       id: tabId,
-      title: menuItem.title,
-      icon: menuItem.icon,
+      title: menuItem ? menuItem.title : "预览选择",
+      icon: menuItem ? menuItem.icon : <Eye className="w-4 h-4" />,
       content,
       closable: tabId !== "dashboard",
     };

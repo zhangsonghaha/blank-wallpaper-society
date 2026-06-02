@@ -133,11 +133,11 @@ export default function DailyWallpaperCard({
 
   if (!data?.pick) return null;
 
-  const imageSrc = currentImage?.thumbnail_url || currentImage?.url || "";
+  // 每日精选优先使用原图 URL 以保证清晰度，Next.js Image 会自动优化尺寸
+  const imageSrc = currentImage?.url || currentImage?.thumbnail_url || "";
   const isVideo = currentImage?.media_type === "video" && currentImage?.video_url;
 
-  // 用主色调作为背景，object-contain 时填充空白
-  const bgColor = currentImage?.dominant_color || "#111";
+
 
   return (
     <motion.div
@@ -148,7 +148,32 @@ export default function DailyWallpaperCard({
       style={{ height: containerHeight }}
       onClick={() => currentImage?.id && onViewLightbox?.(currentImage.id)}
     >
-      {/* 背景图片/视频容器 — 使用 object-contain 完整展示 */}
+      {/* 背景层：模糊放大版本填充空白区域，暗色叠加压制亮度 */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={`bg-${currentImage?.id || "daily"}`}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.4 }}
+          className="absolute inset-0"
+        >
+          {!isVideo && (
+            <Image
+              src={imageSrc}
+              alt=""
+              fill
+              className="object-cover scale-110 blur-2xl opacity-50 saturate-[1.2]"
+              sizes="100vw"
+              priority
+            />
+          )}
+          {/* 暗色叠加层：防止模糊背景过亮干扰信息阅读 */}
+          <div className="absolute inset-0 bg-black/30" />
+        </motion.div>
+      </AnimatePresence>
+
+      {/* 前景层：清晰完整展示图片 */}
       <AnimatePresence mode="wait">
         <motion.div
           key={currentImage?.id || "daily"}
@@ -156,8 +181,7 @@ export default function DailyWallpaperCard({
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.98 }}
           transition={{ duration: 0.5 }}
-          className="absolute inset-0"
-          style={{ backgroundColor: bgColor }}
+          className="absolute inset-0 z-[1]"
         >
           {isVideo ? (
             <DailyVideoPlayer
@@ -169,8 +193,8 @@ export default function DailyWallpaperCard({
               src={imageSrc}
               alt={currentImage?.title || "每日壁纸"}
               fill
-              className="object-contain sm:object-cover sm:object-center transition-transform duration-700 group-hover:scale-[1.02]"
-              sizes="(max-width: 640px) 100vw, 80vw"
+              className="object-contain transition-transform duration-700 group-hover:scale-[1.02]"
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 90vw, 1200px"
               priority
             />
           )}

@@ -45,15 +45,15 @@ export async function GET() {
           conditions.push("i.status = 'approved'");
           conditions.push("i.media_type != 'video'");
 
-          // 多分类匹配
+          // 多分类匹配（兼容 category 字段存储 slug 或中文名两种情况）
           if (zone.categories && Array.isArray(zone.categories) && zone.categories.length > 0) {
             const placeholders = zone.categories.map(() => "?").join(", ");
-            conditions.push(`i.category IN (${placeholders})`);
-            params.push(...zone.categories);
+            conditions.push(`(i.category IN (${placeholders}) OR i.category IN (SELECT c.name FROM categories c WHERE c.slug IN (${placeholders})))`);
+            params.push(...zone.categories, ...zone.categories);
           } else if (zone.category) {
             // 兼容旧版单分类
-            conditions.push("i.category = ?");
-            params.push(zone.category);
+            conditions.push("(i.category = ? OR i.category = (SELECT c.name FROM categories c WHERE c.slug = ?))");
+            params.push(zone.category, zone.category);
           }
 
           // 标签匹配（可选）

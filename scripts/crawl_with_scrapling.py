@@ -48,12 +48,12 @@ try:
     import requests
 except ImportError:
     print("错误: 请先安装 requests 库: pip install requests", file=sys.stderr)
+    sys.exit(1)
 
 try:
     from altcha import solve_challenge_v1, ChallengeV1
 except ImportError:
     solve_challenge_v1 = None  # altcha 库可选，未安装时使用预览版本
-    sys.exit(1)
 
 
 # ============================================================
@@ -277,6 +277,20 @@ class AdaptiveCrawler:
 
     def _fetch_page(self, url, mode="auto"):
         """根据模式选择合适的 Fetcher 获取页面"""
+        # 已知 JS 动态渲染站点列表（自动强制使用隐身浏览器）
+        JS_RENDERED_SITES = [
+            'bizihu.com', 'wallhaven.cc', 'unsplash.com',
+            'pexels.com', 'pixabay.com',
+        ]
+        
+        if mode == "auto":
+            # 对已知 JS 渲染站点自动使用 stealthy
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower().replace("www.", "")
+            if any(js_site in domain for js_site in JS_RENDERED_SITES):
+                print(f"[Adaptive] 检测到 JS 渲染站点 ({domain})，强制使用隐身浏览器模式", file=sys.stderr)
+                mode = "stealthy"
+        
         if mode == "stealthy":
             return self._fetch_stealthy(url)
         elif mode == "static":
@@ -714,6 +728,52 @@ class AdaptiveCrawler:
 
         print(f"[Adaptive] 找到 {len(img_elements)} 个 <img> 标签", file=sys.stderr)
         
+        # ====== bizihu.com 专用提取规则 ======
+        if 'bizihu.com' in base_domain:
+            print(f"[Adaptive] 检测到壁纸湖网站，使用专用提取规则", file=sys.stderr)
+            
+            # bizihu 壁纸的 HTML 结构：
+            # <img src="./fliee/loading.jpg" class="lazyload" 
+            #      data-original="https://pic*.zhimg.com/v2-XXXXX_r.jpg">
+            # 
+            # 直接按 lazyload + data-original 精准提取
+            lazyload_imgs = page.css("img.lazyload[data-original]")
+            print(f"[Adaptive] bizihu lazyload 图片: {len(lazyload_imgs)} 个", file=sys.stderr)
+            
+            for img in lazyload_imgs:
+                if len(results) >= count:
+                    break
+                # 跳过 class 为 UI 元素的
+                img_class = img.css("::attr(class)").get() or ""
+                if self._is_ui_class(img_class):
+                    continue
+                # 跳过模板占位符
+                data_orig = img.css("::attr(data-original)").get() or ""
+                if not data_orig or data_orig.startswith("{") or data_orig == "{link}":
+                    continue
+                result = self._build_image_result(img, base_domain, page_title)
+                if result:
+                    results.append(result)
+            
+            # 如果不够，也尝试通用的 a img 中非 UI 图片
+            if len(results) < count:
+                remaining = count - len(results)
+                print(f"[Adaptive] bizihu 补充提取 ({remaining} 张)", file=sys.stderr)
+                for img in img_elements:
+                    if len(results) >= count:
+                        break
+                    img_class = img.css("::attr(class)").get() or ""
+                    if self._is_ui_class(img_class):
+                        continue
+                    data_orig = img.css("::attr(data-original)").get() or ""
+                    if data_orig.startswith("{") or data_orig == "{link}":
+                        continue
+                    result = self._build_image_result(img, base_domain, page_title)
+                    if result and result not in results:
+                        results.append(result)
+            
+            return results
+
         # netbian.com 特殊处理：优先提取列表页的图片链接
         if 'netbian.com' in base_domain:
             print(f"[Adaptive] 检测到彼岸桌面网站，使用专用提取规则", file=sys.stderr)
@@ -769,14 +829,25 @@ class AdaptiveCrawler:
                 break
 
             try:
-                # 优先 srcset 中的高质量图片
+                # 收集所有可能的图片URL属性（懒加载优先于 src）
                 srcset = img.css("::attr(srcset)").get() or ""
                 src = img.css("::attr(src)").get() or ""
                 data_src = img.css("::attr(data-src)").get() or ""
                 data_srcset = img.css("::attr(data-srcset)").get() or ""
+                data_original = img.css("::attr(data-original)").get() or ""
+                data_lazy_src = img.css("::attr(data-lazy-src)").get() or ""
+                data_bg = img.css("::attr(data-bg)").get() or ""
+                # 额外尝试 CSS 背景图懒加载
+                if not data_bg:
+                    data_bg = img.css("::attr(data-background)").get() or ""
 
-                # 选择最佳URL
-                image_url = self._pick_best_image_url(srcset, data_srcset, src, data_src)
+                # 选择最佳URL（懒加载属性优先于占位图）
+                image_url = self._pick_best_image_url(
+                    srcset, data_srcset, src, data_src,
+                    data_original=data_original,
+                    data_lazy_src=data_lazy_src,
+                    data_bg=data_bg,
+                )
 
                 if not image_url:
                     continue
@@ -793,27 +864,32 @@ class AdaptiveCrawler:
                 height_attr = img.css("::attr(height)").get() or ""
 
                 # 过滤掉明显太小的图片（图标、logo等）
-                # 也过滤 0x0 尺寸的无效图片
                 try:
                     w = int(width_attr) if width_attr else 0
                     h = int(height_attr) if height_attr else 0
-                    # 如果宽高都有明确值，过滤掉过小或0尺寸的图片
                     if w > 0 or h > 0:
                         if w < self.min_width or h < self.min_height:
                             continue
-                    # URL 中包含 0x0 尺寸标识的也过滤
                     if '0x0' in image_url.lower():
                         continue
                 except ValueError:
                     pass
 
+                # 从URL中提取尺寸信息做二次过滤
+                import re as _re_url
+                size_in_url = _re_url.search(r'[/_-](\d{2,4})x(\d{2,4})[/_.]', image_url.lower())
+                if size_in_url:
+                    uw = int(size_in_url.group(1))
+                    uh = int(size_in_url.group(2))
+                    if uw < self.min_width or uh < self.min_height:
+                        continue
+
                 title = alt.strip() if alt.strip() else f"{page_title} - 图片"
                 tags = self._guess_tags(alt, page_title)
                 category = self._guess_category(tags)
-                # 检测媒体类型
                 media_type = self._detect_media_type(image_url) or "image"
 
-                # 检查 data-video/data-mp4 属性（某些网站用img缩略图+data属性存视频URL）
+                # 检查 data-video/data-mp4 属性
                 data_video_url = ""
                 if media_type == "image":
                     for attr in ["data-video", "data-mp4", "data-webm", "data-video-url", "data-src-video"]:
@@ -832,24 +908,21 @@ class AdaptiveCrawler:
                     "source": urlparse(base_domain).netloc.replace("www.", ""),
                     "tags": tags,
                     "category": category,
-                    "width": w if 'w' in dir() else 0,
-                    "height": h if 'h' in dir() else 0,
+                    "width": w if w > 0 else 0,
+                    "height": h if h > 0 else 0,
                     "filename": filename,
                     "media_type": media_type,
                 }
                 if media_type == "video":
                     result["video_url"] = data_video_url or image_url
                     result["poster_url"] = image_url if data_video_url else ""
-                    # 如果有 data-video 属性，image_url 作为封面图
                     if data_video_url:
                         result["video_url"] = self._normalize_url(data_video_url, base_domain)
-                        # image_url 保持为缩略图/封面图
-                    # 确保视频URL绝对正确
                     if not result["video_url"].startswith(("http://", "https://")):
                         result["video_url"] = self._normalize_url(result["video_url"], base_domain)
                 results.append(result)
 
-            except Exception as e:
+            except Exception:
                 continue
 
         return results
@@ -1327,8 +1400,136 @@ class AdaptiveCrawler:
 
         return results
 
-    def _pick_best_image_url(self, srcset, data_srcset, src, data_src):
-        """从多个图片属性中选择最高质量的URL"""
+    def _build_image_result(self, img, base_domain, page_title):
+        """从单个 img 元素构建结果条目（提取懒加载属性等）"""
+        try:
+            # 收集所有可能的图片URL属性
+            srcset = img.css("::attr(srcset)").get() or ""
+            src = img.css("::attr(src)").get() or ""
+            data_src = img.css("::attr(data-src)").get() or ""
+            data_srcset = img.css("::attr(data-srcset)").get() or ""
+            data_original = img.css("::attr(data-original)").get() or ""
+            data_lazy_src = img.css("::attr(data-lazy-src)").get() or ""
+            data_bg = img.css("::attr(data-bg)").get() or "" or img.css("::attr(data-background)").get() or ""
+
+            image_url = self._pick_best_image_url(
+                srcset, data_srcset, src, data_src,
+                data_original=data_original,
+                data_lazy_src=data_lazy_src,
+                data_bg=data_bg,
+            )
+
+            if not image_url:
+                return None
+
+            image_url = self._normalize_url(image_url, base_domain)
+
+            if not self._is_valid_image_url(image_url):
+                return None
+
+            # 从URL中提取尺寸做过滤
+            import re as _re_url
+            size_in_url = _re_url.search(r'[/_-](\d{2,4})x(\d{2,4})[/_.]', image_url.lower())
+            if size_in_url:
+                uw = int(size_in_url.group(1))
+                uh = int(size_in_url.group(2))
+                if uw < self.min_width or uh < self.min_height:
+                    return None
+
+            alt = img.css("::attr(alt)").get() or ""
+            title = alt.strip() if alt.strip() else f"{page_title} - 图片"
+            tags = self._guess_tags(alt, page_title)
+            category = self._guess_category(tags)
+            media_type = self._detect_media_type(image_url) or "image"
+
+            # 检查 data-video/data-mp4 属性
+            data_video_url = ""
+            if media_type == "image":
+                for attr in ["data-video", "data-mp4", "data-webm", "data-video-url", "data-src-video"]:
+                    dv = img.css(f"::attr({attr})").get() or ""
+                    if dv and any(ext in dv.lower() for ext in ['.mp4', '.webm', '.mov']):
+                        data_video_url = dv
+                        media_type = "video"
+                        break
+
+            filename = self._url_to_filename(image_url, media_type)
+
+            result = {
+                "title": title[:200],
+                "image_url": image_url,
+                "source_url": base_domain,
+                "source": urlparse(base_domain).netloc.replace("www.", ""),
+                "tags": tags,
+                "category": category,
+                "width": 0,
+                "height": 0,
+                "filename": filename,
+                "media_type": media_type,
+            }
+            if media_type == "video":
+                result["video_url"] = data_video_url or image_url
+                result["poster_url"] = image_url if data_video_url else ""
+                if data_video_url:
+                    result["video_url"] = self._normalize_url(data_video_url, base_domain)
+                if not result["video_url"].startswith(("http://", "https://")):
+                    result["video_url"] = self._normalize_url(result["video_url"], base_domain)
+            return result
+        except Exception:
+            return None
+
+    def _is_ui_class(self, img_class):
+        """检查 img 的 class 是否为 UI 元素（logo、图标、按钮等）"""
+        if not img_class:
+            return False
+        ui_class_patterns = [
+            'logo', 'user-more', 'close_fixed', 'gotop-icon', 'discuss-icon',
+            'feedback', 'go-top', 'loading-spinner', 'nav-icon', 'header-icon',
+            'footer-icon', 'social-icon', 'share-icon', 'menu-icon',
+            'avatar', 'badge', 'btn-icon', 'button-icon',
+        ]
+        classes_lower = img_class.lower().split()
+        for cls in classes_lower:
+            if any(pattern in cls for pattern in ui_class_patterns):
+                return True
+        return False
+
+    def _is_placeholder_url(self, url):
+        """判断URL是否为占位图（加载骨架、透明像素、低质量缩略图等）"""
+        if not url:
+            return True
+        url_lower = url.lower()
+        # data: URI 占位图
+        if url_lower.startswith("data:"):
+            return True
+        # 常见的占位图特征
+        placeholder_markers = [
+            'data:image/gif;base64', 'data:image/png;base64',
+            'data:image/svg+xml', '1x1', 'placeholder', 'blank.gif',
+            'spacer.gif', 'transparent', 'loading.gif', 'lazyload.gif',
+            'pixel.gif', 'empty.gif', 'default_thumb', 'noimage',
+            'nopic', 'no-photo', 'img_loading', 'ajax-loader',
+            'skeleton', 'shimmer',
+        ]
+        if any(m in url_lower for m in placeholder_markers):
+            return True
+        # 尺寸极小的占位图（如 1x1, 10x10, 30x30 像素）
+        import re
+        size_match = re.search(r'[/_-](\d{1,2})x(\d{1,2})[/_.]', url_lower)
+        if size_match:
+            w, h = int(size_match.group(1)), int(size_match.group(2))
+            if w <= 50 and h <= 50:
+                return True
+        return False
+
+    def _pick_best_image_url(self, srcset, data_srcset, src, data_src, 
+                             data_original="", data_lazy_src="", data_bg=""):
+        """从多个图片属性中选择最高质量的URL（懒加载属性优先）"""
+        # 收集所有懒加载属性中的高质量URL（优先于 src 占位图）
+        lazy_sources = []
+        for ds in [data_src, data_original, data_lazy_src]:
+            if ds and not self._is_placeholder_url(ds):
+                lazy_sources.append(ds)
+        
         # 优先从 srcset/data-srcset 中选择高质量图片
         for ss in [srcset, data_srcset]:
             if not ss:
@@ -1341,6 +1542,8 @@ class AdaptiveCrawler:
                 segments = part.split()
                 if segments:
                     url = segments[0]
+                    if self._is_placeholder_url(url):
+                        continue
                     # 优先选择较大尺寸
                     if len(segments) > 1 and "w" in segments[1]:
                         try:
@@ -1354,8 +1557,22 @@ class AdaptiveCrawler:
                 # 返回最后一个（通常是最大的）
                 return candidates[-1]
 
-        # 回退到 src 或 data-src
-        return src or data_src
+        # 懒加载属性优先于 src（src 通常是占位图）
+        if lazy_sources:
+            return lazy_sources[0]
+        
+        # 回退：如果 src 不是占位图，使用 src
+        if src and not self._is_placeholder_url(src):
+            return src
+        
+        # 最后尝试 data_bg（背景图懒加载）
+        if data_bg:
+            import re
+            bg_match = re.search(r'url\(["\']?(.*?)["\']?\)', data_bg)
+            if bg_match:
+                return bg_match.group(1)
+        
+        return None
 
     def _normalize_url(self, url, base_domain):
         """将相对URL转为绝对URL"""
@@ -1399,8 +1616,15 @@ class AdaptiveCrawler:
             'pixel', 'tracking', 'analytics', 'beacon', '1x1',
             # 表情包/装饰图
             'sticker', 'decoration', 'ornament', 'separator',
-            # 其他非壁纸内容
-            'qrcode', 'qr-code', 'barcode', 'watermark',
+            # 二维码/小程序码
+            'qrcode', 'qr-code', 'qrcode', 'barcode', 'watermark',
+            'weixin', 'wechat', 'wxacode', 'mini-program',
+            # 广告/赞助图
+            'advert', 'sponsor', 'donate', 'support-', 'donation',
+            # 其他非壁纸
+            'alert', 'warning', 'error-page', '404', '500',
+            'wp-smiley', 'smiley', 'emoticon', 'expression',
+            # CDN缩略处理参数（_120x, _64x_ 等小尺寸缩略图）
         ]
         if any(p in url.lower() for p in skip_patterns):
             return False

@@ -225,86 +225,63 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 数据库级去重：查询已存在的图片URL，避免重复入库
-    let dedupSkipped = 0;
-    const existingUrls = new Set<string>();
-    if (enableDedup) {
-      const imageUrls = crawlResult.results
-        .map((item: any) => item.image_url)
-        .filter(Boolean) as string[];
-      if (imageUrls.length > 0) {
-        // 分批查询，避免SQL过长
-        const batchSize = 50;
-        for (let i = 0; i < imageUrls.length; i += batchSize) {
-          const batch = imageUrls.slice(i, i + batchSize);
-          const placeholders = batch.map(() => "?").join(",");
-          const existing = await query(
-            `SELECT url FROM images WHERE description LIKE '%[crawl]%' AND url IN (${placeholders})`,
-            batch
-          );
-          for (const row of existing as any[]) {
-            existingUrls.add(row.url);
-          }
-          // 也检查 storage_key
-          const storageKeys = batch.map((url: string) => {
-            const hash = url.split("/").pop() || "";
-            return `images/%${hash}`;
-          });
-        }
+    // 创建预览会话 — 不再直接入库，先写入临时预览表供用户选择
+    const sessionResult = await query(
+      `INSERT INTO crawl_sessions (source_url, source_type, category, tags, crawl_log_id, total_count, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+      [
+        isUrlMode ? url : (CRAWL_SOURCES.find(s => s.id === source)?.url || ""),
+        isUrlMode ? "custom" : source,
+        categoryValue,
+        tagsStr,
+        crawlLogId,
+        crawlResult.results.length,
+      ]
+    );
+    const sessionId = (sessionResult as any).insertId;
+
+    // 批量写入预览项
+    if (crawlResult.results.length > 0) {
+      const insertValues: string[] = [];
+      const insertParams: any[] = [];
+      for (const item of crawlResult.results) {
+        const isVideo = item.media_type === "video";
+        insertValues.push("(?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)");
+        insertParams.push(
+          sessionId,
+          isVideo ? (item.video_url || item.image_url) : (item.image_url || ""),
+          item.title || "",
+          item.width || 0,
+          item.height || 0,
+          item.file_size || 0,
+          item.mime_type || (isVideo ? "video/mp4" : "image/jpeg"),
+          isVideo ? "video" : "image",
+          item.source || (isUrlMode ? new URL(url).hostname : source),
+          Array.isArray(item.tags) ? item.tags.join(",") : (item.tags || ""),
+          item.category || categoryValue,
+          isVideo ? (item.video_url || null) : null,
+          isVideo ? (item.poster_url || null) : null
+        );
       }
-    }
-
-    // 处理爬取结果：下载图片 -> 上传 MinIO -> 写入数据库
-    const processedResults = [];
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const item of crawlResult.results) {
-      try {
-        // 数据库级去重检查
-        if (enableDedup && item.image_url && existingUrls.has(item.image_url)) {
-          dedupSkipped++;
-          console.log(`[去重] 跳过已存在的图片: ${item.image_url}`);
-          continue;
-        }
-
-        const result = await processCrawledImage(item, userId);
-        if (result) {
-          processedResults.push(result);
-          successCount++;
-        } else {
-          failCount++;
-        }
-      } catch (error: any) {
-        console.error(`处理爬取图片失败 [${item.title}]:`, error);
-        failCount++;
-      }
+      await query(
+        `INSERT INTO crawl_preview_items (session_id, source_url, title, width, height, file_size, mime_type, media_type, is_selected, source, tags, category, video_url, poster_url)
+         VALUES ${insertValues.join(", ")}`,
+        insertParams
+      );
     }
 
     // 更新爬取历史为完成
     const duration = Math.round((Date.now() - startTime) / 1000);
     await query(
-      `UPDATE crawl_logs SET status = 'completed', success_count = ?, fail_count = ?, dedup_skipped = ?, finished_at = NOW(), duration_seconds = ? WHERE id = ?`,
-      [successCount, failCount, dedupSkipped, duration, crawlLogId]
+      `UPDATE crawl_logs SET status = 'completed', success_count = ?, finished_at = NOW(), duration_seconds = ? WHERE id = ?`,
+      [crawlResult.results.length, duration, crawlLogId]
     );
 
     return NextResponse.json({
       success: true,
-      message: `爬取完成: 成功 ${successCount} 张, 失败 ${failCount} 张${dedupSkipped > 0 ? `, 去重跳过 ${dedupSkipped} 张` : ""}`,
-      total: crawlResult.results.length,
-      successCount,
-      failCount,
-      dedupSkipped,
-      results: processedResults,
-      sourceResults: crawlResult.results.map((item: any, idx: number) => ({
-        ...item,
-        id: idx + 1,
-        original_video_url: item.video_url || null,
-        original_image_url: item.image_url || null,
-        url: item.image_url,
-        thumbnail_url: item.poster_url || item.image_url,
-        tags: Array.isArray(item.tags) ? item.tags.join(",") : (item.tags || ""),
-      })),
+      message: `爬取完成，共 ${crawlResult.results.length} 张图片，请选择后确认入库`,
+      session_id: sessionId,
+      total_count: crawlResult.results.length,
     });
   } catch (error: any) {
     console.error("POST /api/admin/crawl error:", error);

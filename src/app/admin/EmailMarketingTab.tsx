@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { withCsrfHeader } from "@/lib/csrf-client";
 
 interface Campaign {
   id: number;
@@ -95,7 +96,7 @@ export default function EmailMarketingTab() {
     try {
       const res = await fetch("/api/admin/email-marketing/campaigns", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await withCsrfHeader()) },
         body: JSON.stringify({ action: "generate_weekly" }),
       });
       const data = await res.json();
@@ -120,7 +121,7 @@ export default function EmailMarketingTab() {
     try {
       const res = await fetch("/api/admin/email-marketing/campaigns", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await withCsrfHeader()) },
         body: JSON.stringify({
           action: "create",
           subject: formSubject,
@@ -150,7 +151,7 @@ export default function EmailMarketingTab() {
     try {
       const res = await fetch("/api/admin/email-marketing/campaigns", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await withCsrfHeader()) },
         body: JSON.stringify({ action: "send", campaignId }),
       });
       const data = await res.json();

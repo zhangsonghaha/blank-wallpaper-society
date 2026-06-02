@@ -59,7 +59,7 @@ export default function ThemeZones() {
           >
             {/* 专区头部 */}
             <Link
-              href={`/?category=${zone.category}`}
+              href={`/theme-zone/${zone.key}`}
               className="flex items-center justify-between p-4 hover:bg-[var(--color-surface-soft)] transition-colors"
             >
               <div className="flex items-center gap-3">

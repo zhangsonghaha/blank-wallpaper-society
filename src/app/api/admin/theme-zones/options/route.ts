@@ -10,18 +10,17 @@ export async function GET() {
       return NextResponse.json({ error: "需要管理员权限" }, { status: 403 });
     }
 
-    // 获取所有分类及其图片数量
+    // 获取所有分类及其图片数量（兼容 category 字段存储 slug 或中文名两种情况）
     const categories = (await query(
       `SELECT 
-        i.category as id, 
-        i.category as name, 
-        COUNT(*) as count
-      FROM images i
-      WHERE i.status = 'approved' 
+        c.slug as id, 
+        c.name as name, 
+        COUNT(i.id) as count
+      FROM categories c
+      LEFT JOIN images i ON (i.category = c.slug OR i.category = c.name)
+        AND i.status = 'approved' 
         AND i.media_type != 'video'
-        AND i.category IS NOT NULL
-        AND i.category != ''
-      GROUP BY i.category
+      GROUP BY c.slug, c.name
       ORDER BY count DESC`
     )) as any[];
 

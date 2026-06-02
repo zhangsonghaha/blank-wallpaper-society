@@ -21,6 +21,7 @@ import {
   Shield,
   Layers,
   Filter,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -304,12 +305,9 @@ export default function CrawlTab() {
       }
 
       setStatus("done");
-      // 优先展示未经下载上传的原始数据，方便用户确认
-      setResults(data.sourceResults || data.results || []);
-      toast.success(data.message || `爬取完成，成功 ${data.successCount} 张`);
-      setProgressText(
-        `成功: ${data.successCount} 张 | 失败: ${data.failCount} 张${data.dedupSkipped > 0 ? ` | 去重跳过: ${data.dedupSkipped} 张` : ""}`
-      );
+      setResults([]); // 不再展示旧的结果列表
+      toast.success(data.message || "爬取完成");
+      setProgressText(data.message || `爬取完成，共 ${data.total_count} 张图片，请选择后确认入库`);
 
       // 刷新历史记录
       loadHistory();
@@ -794,105 +792,26 @@ export default function CrawlTab() {
         </CardContent>
       </Card>
 
-      {/* 爬取结果预览 */}
-      {results.length > 0 && (
-        <Card>
+      {/* 爬取完成提示 + 前往预览 */}
+      {status === "done" && progressText && (
+        <Card className="border-green-200 bg-green-50/30">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <ImageIcon className="w-4 h-4" />
-              本次爬取结果 ({results.length} 张)
+            <CardTitle className="text-base flex items-center gap-2 text-green-700">
+              <CheckCircle className="w-4 h-4" />
+              爬取完成
             </CardTitle>
-            <CardDescription>
-              引用原始地址预览，点击下方"确认导入"按钮将数据保存到图库
-            </CardDescription>
+            <CardDescription>{progressText}</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {results.map((item) => (
-                <div
-                  key={item.id}
-                  className="group relative rounded-lg border overflow-hidden bg-muted/30 hover:shadow-md transition-shadow"
-                >
-                  {/* 缩略图/视频预览 */}
-                  <div className="aspect-[4/3] relative">
-                    {item.media_type === "video" && (item.original_video_url || item.video_url) ? (
-                      <VideoPreview
-                        videoUrl={item.original_video_url || item.video_url || ""}
-                        posterUrl={item.poster_url || item.thumbnail_url || item.original_image_url || item.image_url || ""}
-                      />
-                    ) : item.thumbnail_url || item.image_url || item.url ? (
-                      <img
-                        src={item.thumbnail_url || item.image_url || item.url}
-                        alt={item.title}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                        onError={(e) => {
-                          // 图片加载失败时尝试显示占位
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
-                          const parent = target.parentElement;
-                          if (parent) {
-                            const div = document.createElement('div');
-                            div.className = 'w-full h-full flex items-center justify-center bg-muted';
-                            div.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>';
-                            parent.appendChild(div);
-                          }
-                        }}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-muted">
-                        <ImageIcon className="w-8 h-8 text-muted-foreground" />
-                      </div>
-                    )}
-                    {/* 动态壁纸标识 */}
-                    {item.media_type === "video" && (
-                      <span className="absolute top-1 right-1 text-[9px] font-bold text-white bg-gradient-to-r from-purple-500 to-pink-500 px-1.5 py-0.5 rounded">
-                        LIVE
-                      </span>
-                    )}
-                  </div>
-                  {/* 信息 */}
-                  <div className="p-2 space-y-1">
-                    <p className="text-xs font-medium truncate">{item.title}</p>
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {item.category && (
-                        <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                          {item.category}
-                        </Badge>
-                      )}
-                      <Badge variant="outline" className="text-[10px] px-1 py-0">
-                        {item.width}x{item.height}
-                      </Badge>
-                    </div>
-                    {item.tags && (
-                      <div className="flex items-center gap-0.5 flex-wrap">
-                        <Tag className="w-2.5 h-2.5 text-muted-foreground" />
-                        {item.tags.split(",").slice(0, 3).map((tag, idx) => (
-                          <span
-                            key={idx}
-                            className="text-[10px] text-muted-foreground"
-                          >
-                            {tag.trim()}
-                            {idx < Math.min(item.tags.split(",").length, 3) - 1 ? "," : ""}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {/* 悬停查看大图 */}
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
-                      <ExternalLink className="w-3 h-3 text-white" />
-                    </div>
-                  </a>
-                </div>
-              ))}
-            </div>
+            <Button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent("admin:navigate", { detail: "crawl-preview" }));
+              }}
+              className="gap-2"
+            >
+              <Eye className="w-4 h-4" />
+              前往预览选择
+            </Button>
           </CardContent>
         </Card>
       )}

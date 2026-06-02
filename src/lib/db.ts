@@ -40,12 +40,19 @@ export async function query(sql: string, params?: any[]) {
 
 /** 安全查询辅助函数：查询失败时返回默认值，不影响整体 */
 export async function safeQuery(sql: string, params?: any[], defaultValue: any = []) {
-  try {
-    const [rows] = await pool.execute(sql, params);
-    return rows;
-  } catch (error) {
-    console.warn(`DB safeQuery fallback (using default): ${sql}`, error);
-    return defaultValue;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const [rows] = await pool.execute(sql, params);
+      return rows;
+    } catch (error: any) {
+      const code = error?.code || "";
+      if (attempt === 0 && RETRYABLE_ERRORS.includes(code)) {
+        console.warn(`DB safeQuery retry (${code}): ${sql}`);
+        continue;
+      }
+      console.warn(`DB safeQuery fallback (using default): ${sql}`, error);
+      return defaultValue;
+    }
   }
 }
 

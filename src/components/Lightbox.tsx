@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import type { GalleryImage } from "@/data/images";
@@ -101,10 +101,26 @@ export default function Lightbox({
   const [downloadSuccessOpen, setDownloadSuccessOpen] = useState(false);
 
   // 下载按钮引用（用于定位下载面板）
-  const downloadBtnRef = useRef<HTMLDivElement>(null);
+  const downloadBtnRef = useRef<HTMLButtonElement>(null);
+  const downloadPanelRef = useRef<HTMLDivElement>(null);
   const [downloadPanelPos, setDownloadPanelPos] = useState<{ top: number; left: number } | null>(null);
 
   const isFavorited = favoritedIds?.has(currentImage?.id) ?? false;
+
+  // 动态修正面板水平位置：渲染后测量实际宽度，确保不超出视口
+  useLayoutEffect(() => {
+    if (downloadPanelOpen && downloadPanelRef.current && downloadBtnRef.current) {
+      const panelRect = downloadPanelRef.current.getBoundingClientRect();
+      const btnRect = downloadBtnRef.current.getBoundingClientRect();
+      const halfPanelW = panelRect.width / 2;
+      const halfBtnW = btnRect.width / 2;
+      let left = btnRect.left + halfBtnW;
+      // 水平边界保护：距视口边缘至少 8px
+      if (left - halfPanelW < 8) left = halfPanelW + 8;
+      if (left + halfPanelW > window.innerWidth - 8) left = window.innerWidth - halfPanelW - 8;
+      setDownloadPanelPos({ top: btnRect.top - 8, left });
+    }
+  }, [downloadPanelOpen]);
 
   // 推荐分辨率
   const recommendedResolution = useMemo(() => {
@@ -861,8 +877,9 @@ export default function Lightbox({
               </button>
 
               {/* Download Button with Panel */}
-              <div ref={downloadBtnRef} className="relative z-30">
+              <div className="relative z-30">
               <button
+                ref={downloadBtnRef}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (isPaidWallpaper && !hasPurchased) {
@@ -894,27 +911,31 @@ export default function Lightbox({
                 )}
               </button>
 
-              {/* Download Panel - fixed定位独立弹窗 */}
+              {/* Download Panel - fixed定位独立弹窗，自适应视口高度 */}
               <AnimatePresence>
                 {downloadPanelOpen && (
                   <motion.div
+                    ref={downloadPanelRef}
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
                     transition={{ duration: 0.15 }}
                     onClick={(e) => e.stopPropagation()}
                     style={{
-                      position: 'fixed',
+                      position: 'fixed' as const,
                       bottom: downloadPanelPos
                         ? `calc(100vh - ${downloadPanelPos.top}px)`
                         : undefined,
                       left: downloadPanelPos?.left,
                       transform: 'translateX(-50%)',
+                      maxHeight: downloadPanelPos
+                        ? `calc(${downloadPanelPos.top}px - 0.75rem)`
+                        : undefined,
                     }}
-                    className="w-72 z-[120] bg-[var(--color-canvas,#fff)] rounded-2xl shadow-2xl border border-[var(--color-hairline,#e5e5e5)] overflow-hidden"
+                    className="w-72 max-w-[calc(100vw-1rem)] z-[120] bg-[var(--color-canvas,#fff)] rounded-2xl shadow-2xl border border-[var(--color-hairline,#e5e5e5)] overflow-hidden flex flex-col"
                   >
                     {/* Header */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-hairline,#e5e5e5)]">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-hairline,#e5e5e5)] shrink-0">
                       <h4 className="text-sm font-semibold text-[var(--color-ink,#1a1a1a)]">选择分辨率</h4>
                       <button
                         onClick={() => setDownloadPanelOpen(false)}
@@ -926,7 +947,7 @@ export default function Lightbox({
 
                     {/* Resolution List - 视频不显示分辨率选择 */}
                     {currentImage.media_type !== "video" && (
-                    <div className="max-h-[50vh] overflow-y-auto p-2">
+                    <div className="flex-1 overflow-y-auto p-2">
                       {loadingResolutions ? (
                         <div className="flex items-center justify-center py-6">
                           <svg className="w-5 h-5 animate-spin text-[var(--color-primary)]" fill="none" viewBox="0 0 24 24">
@@ -992,8 +1013,8 @@ export default function Lightbox({
                     </div>
                     )}
 
-                    {/* Original Download */}
-                    <div className={currentImage.media_type !== "video" ? "border-t border-[var(--color-hairline,#e5e5e5)] p-2" : "p-2"}>
+                    {/* Original Download - 始终可见 */}
+                    <div className={`shrink-0 ${currentImage.media_type !== "video" ? "border-t border-[var(--color-hairline,#e5e5e5)] p-2" : "p-2"}`}>
                       <button
                         onClick={() => handleDownloadResolution()}
                         disabled={downloadingRes !== null}

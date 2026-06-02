@@ -15,6 +15,9 @@ import {
   Search,
   ImagePlus,
   Star,
+  Check,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +48,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { withCsrfHeader } from "@/lib/csrf-client";
 
 interface ThemeZone {
   key: string;
@@ -159,7 +163,7 @@ export default function ThemeZonesTab() {
       }));
       const res = await fetch("/api/admin/theme-zones", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await withCsrfHeader()) },
         body: JSON.stringify({ zones: zonesToSave }),
       });
       if (!res.ok) {
@@ -198,11 +202,11 @@ export default function ThemeZonesTab() {
     setDialogOpen(true);
   };
 
-  const handleDialogSave = (zoneData: ThemeZone) => {
+  const handleDialogSave = async (zoneData: ThemeZone) => {
+    // 计算新的 zones 列表
+    let updatedZones: ZoneWithStats[];
     if (editingZone) {
-      setZones((prev) =>
-        prev.map((z) => (z.key === editingZone.key ? { ...z, ...zoneData } : z))
-      );
+      updatedZones = zones.map((z) => (z.key === editingZone.key ? { ...z, ...zoneData } : z));
     } else {
       const newZone: ZoneWithStats = {
         ...zoneData,
@@ -212,11 +216,34 @@ export default function ThemeZonesTab() {
         cover_thumbnail_url: null,
         sort_order: zones.length,
       };
-      setZones((prev) => [...prev, newZone]);
+      updatedZones = [...zones, newZone];
     }
+
+    // 先更新本地状态
+    setZones(updatedZones);
     setDialogOpen(false);
     setEditingZone(null);
-    toast.success(editingZone ? "已更新" : "已创建，记得保存");
+
+    // 自动持久化到数据库
+    try {
+      const zonesToSave = updatedZones.map(({ key, title, subtitle, icon, categories, tags, enabled, sort_order, cover_image_id }) => ({
+        key, title, subtitle, icon, categories,
+        tags: tags || [], enabled, sort_order, cover_image_id,
+      }));
+      const res = await fetch("/api/admin/theme-zones", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...(await withCsrfHeader()) },
+        body: JSON.stringify({ zones: zonesToSave }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "保存失败");
+      }
+      toast.success(editingZone ? "已更新" : "已创建");
+      fetchZones();
+    } catch (error: any) {
+      toast.error(error.message || "保存失败，请重试");
+    }
   };
 
   const handleOpenImagePicker = (zone: ZoneWithStats, mode: "add" | "cover") => {
@@ -614,16 +641,31 @@ function ImagePickerDialog({ open, onClose, zone, mode, onSetCover, onRefresh }:
   const [selectedImages, setSelectedImages] = useState<number[]>([]);
   const [searching, setSearching] = useState(false);
   const [loadingManual, setLoadingManual] = useState(false);
+  const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     if (open && zone) {
       fetchManualImages();
+      fetchCategoryOptions();
       setSearchQuery("");
       setSearchCategory("");
       setSearchResults([]);
       setSelectedImages([]);
     }
   }, [open, zone]);
+
+  const fetchCategoryOptions = async () => {
+    try {
+      const res = await fetch("/api/admin/theme-zones/options");
+      if (res.ok) {
+        const data = await res.json();
+        setCategoryOptions(data.categories || []);
+      }
+    } catch {
+      // 静默失败，使用空分类列表
+    }
+  };
 
   const fetchManualImages = async () => {
     if (!zone) return;
@@ -648,13 +690,16 @@ function ImagePickerDialog({ open, onClose, zone, mode, onSetCover, onRefresh }:
   };
 
   const handleSearch = async () => {
-    if (!searchQuery && !searchCategory) return;
+    if (!searchQuery && !searchCategory) {
+      toast.error("请输入搜索关键词或选择分类");
+      return;
+    }
     setSearching(true);
     try {
       const params = new URLSearchParams();
       if (searchQuery) params.set("search", searchQuery);
       if (searchCategory) params.set("category", searchCategory);
-      params.set("limit", "50");
+      params.set("limit", "100");
 
       const res = await fetch(`/api/images?${params.toString()}`);
       if (!res.ok) throw new Error("搜索失败");
@@ -668,12 +713,33 @@ function ImagePickerDialog({ open, onClose, zone, mode, onSetCover, onRefresh }:
     }
   };
 
+  const isManualImage = (imageId: number) => manualImages.some((img) => img.id === imageId);
+
+  // 可选的图片（排除已添加的）
+  const selectableResults = searchResults.filter((img) => !isManualImage(img.id));
+
+  const handleSelectAll = () => {
+    const allSelectableIds = selectableResults.map((img) => img.id);
+    const allSelected = allSelectableIds.length > 0 && allSelectableIds.every((id) => selectedImages.includes(id));
+    if (allSelected) {
+      // 取消全选
+      setSelectedImages((prev) => prev.filter((id) => !allSelectableIds.includes(id)));
+    } else {
+      // 全选（合并已有选择）
+      setSelectedImages((prev) => {
+        const merged = new Set([...prev, ...allSelectableIds]);
+        return Array.from(merged);
+      });
+    }
+  };
+
   const handleAddSelected = async () => {
     if (!zone || selectedImages.length === 0) return;
+    setAdding(true);
     try {
       const res = await fetch("/api/admin/theme-zones/images", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await withCsrfHeader()) },
         body: JSON.stringify({ zone_key: zone.key, image_ids: selectedImages }),
       });
       if (!res.ok) throw new Error("添加失败");
@@ -684,6 +750,8 @@ function ImagePickerDialog({ open, onClose, zone, mode, onSetCover, onRefresh }:
       onRefresh();
     } catch (error: any) {
       toast.error(error.message || "添加失败");
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -692,7 +760,7 @@ function ImagePickerDialog({ open, onClose, zone, mode, onSetCover, onRefresh }:
     try {
       await fetch("/api/admin/theme-zones/images", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await withCsrfHeader()) },
         body: JSON.stringify({ zone_key: zone.key, image_ids: [imageId] }),
       });
       toast.success("已移除");
@@ -709,7 +777,9 @@ function ImagePickerDialog({ open, onClose, zone, mode, onSetCover, onRefresh }:
     );
   };
 
-  const isManualImage = (imageId: number) => manualImages.some((img) => img.id === imageId);
+  // 全选状态
+  const allSelectableIds = selectableResults.map((img) => img.id);
+  const isAllSelected = allSelectableIds.length > 0 && allSelectableIds.every((id) => selectedImages.includes(id));
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -719,7 +789,7 @@ function ImagePickerDialog({ open, onClose, zone, mode, onSetCover, onRefresh }:
             {mode === "cover" ? `选择封面图 - ${zone?.title}` : `管理图片 - ${zone?.title}`}
           </DialogTitle>
           <DialogDescription>
-            {mode === "cover" ? "选择一张图片作为专区封面" : "搜索并添加图片到此专区，或管理已添加的图片"}
+            {mode === "cover" ? "选择一张图片作为专区封面" : "搜索并批量添加图片到此专区，或管理已添加的图片"}
           </DialogDescription>
         </DialogHeader>
 
@@ -774,7 +844,7 @@ function ImagePickerDialog({ open, onClose, zone, mode, onSetCover, onRefresh }:
         {/* 搜索区域 */}
         <div className="space-y-3 border-t pt-4">
           <h3 className="font-semibold text-sm">
-            {mode === "cover" ? "或从所有图片中搜索封面" : "搜索并添加图片"}
+            {mode === "cover" ? "或从所有图片中搜索封面" : "搜索并批量添加图片"}
           </h3>
           <div className="flex gap-2">
             <Input
@@ -790,34 +860,56 @@ function ImagePickerDialog({ open, onClose, zone, mode, onSetCover, onRefresh }:
               className="border rounded px-3 py-1 text-sm bg-background"
             >
               <option value="">所有分类</option>
-              <option value="nature">自然</option>
-              <option value="city">城市</option>
-              <option value="minimal">极简</option>
-              <option value="art">艺术</option>
-              <option value="anime">动漫</option>
-              <option value="people">人物</option>
-              <option value="animals">动物</option>
-              <option value="food">食物</option>
-              <option value="travel">旅行</option>
-              <option value="technology">科技</option>
-              <option value="abstract">抽象</option>
-              <option value="other">其他</option>
+              {categoryOptions.map((cat) => (
+                <option key={cat.id} value={cat.id}>{cat.name} ({cat.count})</option>
+              ))}
             </select>
             <Button onClick={handleSearch} disabled={searching}>
               {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
             </Button>
           </div>
 
+          {/* 搜索结果与批量操作 */}
           {searchResults.length > 0 && (
             <div className="space-y-2">
-              {mode === "add" && selectedImages.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">已选 {selectedImages.length} 张</span>
-                  <Button size="sm" onClick={handleAddSelected}>
-                    添加选中
-                  </Button>
+              {/* 批量操作工具栏 */}
+              {mode === "add" && (
+                <div className="flex items-center justify-between bg-muted/50 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleSelectAll}
+                      className="text-xs gap-1"
+                    >
+                      {isAllSelected ? (
+                        <><CheckSquare className="w-4 h-4 text-primary" />取消全选</>
+                      ) : (
+                        <><Square className="w-4 h-4" />全选</>
+                      )}
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      搜索结果 {searchResults.length} 张
+                      {selectableResults.length < searchResults.length && (
+                        <span className="ml-1">（{searchResults.length - selectableResults.length} 张已添加）</span>
+                      )}
+                    </span>
+                  </div>
+                  {selectedImages.length > 0 && (
+                    <Button
+                      size="sm"
+                      onClick={handleAddSelected}
+                      disabled={adding}
+                      className="gap-1"
+                    >
+                      {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+                      批量添加选中 ({selectedImages.length})
+                    </Button>
+                  )}
                 </div>
               )}
+
+              {/* 图片网格 */}
               <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 max-h-64 overflow-y-auto">
                 {searchResults.map((img) => {
                   const alreadyAdded = isManualImage(img.id);
@@ -825,9 +917,8 @@ function ImagePickerDialog({ open, onClose, zone, mode, onSetCover, onRefresh }:
                   return (
                     <div
                       key={img.id}
-                      className={`relative aspect-square rounded overflow-hidden border cursor-pointer transition-all
-                        ${isSelected ? "border-primary ring-2 ring-primary" : ""}
-                        ${alreadyAdded ? "opacity-50" : ""}`}
+                      className={`relative aspect-square rounded overflow-hidden border-2 cursor-pointer transition-all
+                        ${isSelected ? "border-primary ring-2 ring-primary" : alreadyAdded ? "border-transparent opacity-50" : "border-transparent hover:border-muted-foreground/30"}`}
                       onClick={() => {
                         if (mode === "cover") {
                           onSetCover(img.id);
@@ -837,6 +928,14 @@ function ImagePickerDialog({ open, onClose, zone, mode, onSetCover, onRefresh }:
                       }}
                     >
                       <img src={img.thumbnail_url || img.url} alt={img.title} className="w-full h-full object-cover" />
+                      {/* 复选框指示器（仅添加模式） */}
+                      {mode === "add" && !alreadyAdded && (
+                        <div className={`absolute top-1 left-1 w-5 h-5 rounded border-2 flex items-center justify-center transition-all
+                          ${isSelected ? "bg-primary border-primary" : "bg-black/30 border-white/60"}`}>
+                          {isSelected && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+                        </div>
+                      )}
+                      {/* 已添加标记 */}
                       {alreadyAdded && mode === "add" && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/40">
                           <span className="text-white text-xs">已添加</span>
@@ -851,6 +950,11 @@ function ImagePickerDialog({ open, onClose, zone, mode, onSetCover, onRefresh }:
         </div>
 
         <DialogFooter>
+          {mode === "add" && selectedImages.length > 0 && (
+            <div className="mr-auto flex items-center gap-2 text-sm text-muted-foreground">
+              <span>已选 {selectedImages.length} 张图片</span>
+            </div>
+          )}
           <Button variant="outline" onClick={onClose}>关闭</Button>
         </DialogFooter>
       </DialogContent>

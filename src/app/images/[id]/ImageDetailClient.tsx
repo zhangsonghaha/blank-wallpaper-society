@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -49,6 +49,9 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
   const [isFollowing, setIsFollowing] = useState(false);
   const [downloadPanelOpen, setDownloadPanelOpen] = useState(false);
   const [downloadingRes, setDownloadingRes] = useState<string | null>(null);
+  const resolutionBtnRef = useRef<HTMLButtonElement>(null);
+  const resolutionPanelRef = useRef<HTMLDivElement>(null);
+  const [resolutionPanelPos, setResolutionPanelPos] = useState<{ top: number; left: number } | null>(null);
   const [commentOpen, setCommentOpen] = useState(true);
   const [similarOpen, setSimilarOpen] = useState(true);
 
@@ -113,6 +116,20 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
     }
     checkFollow();
   }, [imageData.uploadedBy]);
+
+  // 动态修正分辨率面板水平位置：渲染后测量实际宽度，确保不超出视口
+  useLayoutEffect(() => {
+    if (downloadPanelOpen && resolutionPanelRef.current && resolutionBtnRef.current) {
+      const panelRect = resolutionPanelRef.current.getBoundingClientRect();
+      const btnRect = resolutionBtnRef.current.getBoundingClientRect();
+      const halfPanelW = panelRect.width / 2;
+      const halfBtnW = btnRect.width / 2;
+      let left = btnRect.left + halfBtnW;
+      if (left - halfPanelW < 8) left = halfPanelW + 8;
+      if (left + halfPanelW > window.innerWidth - 8) left = window.innerWidth - halfPanelW - 8;
+      setResolutionPanelPos({ top: btnRect.top - 8, left });
+    }
+  }, [downloadPanelOpen]);
 
   // 切换收藏
   const toggleFavorite = useCallback(async () => {
@@ -368,38 +385,96 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
               </Button>
 
               <Button
+                ref={resolutionBtnRef}
                 variant="outline"
                 className="w-full"
-                onClick={() => setDownloadPanelOpen(!downloadPanelOpen)}
+                onClick={() => {
+                  if (!downloadPanelOpen && resolutionBtnRef.current) {
+                    const rect = resolutionBtnRef.current.getBoundingClientRect();
+                    // 面板定位在按钮上方，水平居中
+                    setResolutionPanelPos({
+                      top: rect.top - 8,
+                      left: rect.left + rect.width / 2,
+                    });
+                  }
+                  setDownloadPanelOpen(!downloadPanelOpen);
+                }}
               >
                 <Monitor className="w-4 h-4 mr-2" />
                 选择分辨率
                 <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${downloadPanelOpen ? "rotate-180" : ""}`} />
               </Button>
 
+              {/* 分辨率浮窗 - fixed 定位独立弹层 */}
               <AnimatePresence>
                 {downloadPanelOpen && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="grid grid-cols-2 gap-2 pt-2">
-                      {RESOLUTIONS.slice(0, 8).map((res) => (
+                  <>
+                    {/* 点击外部关闭的遮罩 */}
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.1 }}
+                      className="fixed inset-0 z-[90]"
+                      onClick={() => setDownloadPanelOpen(false)}
+                    />
+                    <motion.div
+                      ref={resolutionPanelRef}
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="fixed z-[100] w-72 max-w-[calc(100vw-1rem)] bg-[var(--color-canvas,#fff)] rounded-2xl shadow-2xl border border-[var(--color-hairline,#e5e5e5)] overflow-hidden"
+                      style={{
+                        bottom: resolutionPanelPos
+                          ? `calc(100vh - ${resolutionPanelPos.top}px)`
+                          : undefined,
+                        left: resolutionPanelPos?.left,
+                        transform: resolutionPanelPos ? 'translateX(-50%)' : undefined,
+                      }}
+                    >
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-hairline,#e5e5e5)]">
+                        <h4 className="text-sm font-semibold text-[var(--color-ink,#1a1a1a)]">选择分辨率</h4>
+                        <button
+                          onClick={() => setDownloadPanelOpen(false)}
+                          className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-[var(--color-surface-soft,#f5f5f5)] text-[var(--color-ink,#1a1a1a)]"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="max-h-[50vh] overflow-y-auto p-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          {RESOLUTIONS.slice(0, 8).map((res) => (
+                            <Button
+                              key={res.label}
+                              variant="outline"
+                              size="sm"
+                              className="text-xs"
+                              onClick={() => handleDownload(`${res.width}x${res.height}`)}
+                              disabled={downloadingRes !== null}
+                            >
+                              {res.label}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* 原图下载 */}
+                      <div className="border-t border-[var(--color-hairline,#e5e5e5)] p-2">
                         <Button
-                          key={res.label}
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
-                          className="text-xs"
-                          onClick={() => handleDownload(`${res.width}x${res.height}`)}
+                          className="w-full justify-between text-sm"
+                          onClick={() => handleDownload()}
                           disabled={downloadingRes !== null}
                         >
-                          {res.label}
+                          <span>原图</span>
+                          <span className="text-[10px] text-[var(--color-ash,#999)]">{imageData.width}×{imageData.height}</span>
                         </Button>
-                      ))}
-                    </div>
-                  </motion.div>
+                      </div>
+                    </motion.div>
+                  </>
                 )}
               </AnimatePresence>
 
