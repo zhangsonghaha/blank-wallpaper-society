@@ -1,13 +1,10 @@
 import Redis from "ioredis";
 
 const redis = new Redis({
-  // host: "82.156.161.12",
-  // port: 11010,
-  // password: "2b6a4d28a9f4619d3d63",
-  host: "82.156.161.12",
-  port: 6379,
-  password: "zs123",
-  db: 0,
+  host: process.env.REDIS_HOST || "localhost",
+  port: parseInt(process.env.REDIS_PORT || "6379"),
+  password: process.env.REDIS_PASSWORD || undefined,
+  db: parseInt(process.env.REDIS_DB || "0"),
   retryStrategy: (times) => {
     const delay = Math.min(times * 50, 2000);
     return delay;

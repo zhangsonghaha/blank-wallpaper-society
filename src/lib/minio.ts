@@ -1,15 +1,15 @@
 import { Client } from "minio";
 
 export const MINIO_CONFIG = {
-  endPoint: "82.157.176.188",
-  port: 9000,
-  useSSL: false,
-  accessKey: "rustfsadmin",
-  secretKey: "rustfsadmin",
+  endPoint: process.env.MINIO_ENDPOINT || "localhost",
+  port: parseInt(process.env.MINIO_PORT || "9000"),
+  useSSL: process.env.MINIO_USE_SSL === "true",
+  accessKey: process.env.MINIO_ACCESS_KEY || "",
+  secretKey: process.env.MINIO_SECRET_KEY || "",
 };
 
-export const BUCKET_NAME = "image-gallery";
-export const PUBLIC_URL_BASE = "https://qq.qinqin.asia/storage";
+export const BUCKET_NAME = process.env.MINIO_BUCKET || "image-gallery";
+export const PUBLIC_URL_BASE = process.env.MINIO_PUBLIC_URL || "http://localhost:9000";
 
 let minioClient: Client | null = null;
 

@@ -1,10 +1,10 @@
 import mysql from "mysql2/promise";
 
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || "rm-bp128b691n9909ih3ho.mysql.rds.aliyuncs.com",
+  host: process.env.DB_HOST || "localhost",
   port: parseInt(process.env.DB_PORT || "3306"),
-  user: process.env.DB_USER || "zhangsong",
-  password: process.env.DB_PASSWORD || "zs15210265092!",
+  user: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD || "",
   database: process.env.DB_NAME || "img",
   waitForConnections: true,
   connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || "15"),
