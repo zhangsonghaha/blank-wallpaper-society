@@ -56,6 +56,7 @@ import OrdersTab from "./OrdersTab";
 import MembershipTab from "./MembershipTab";
 import VerificationTab from "./VerificationTab";
 import EmailMarketingTab from "./EmailMarketingTab";
+import ThemeZonesTab from "./ThemeZonesTab";
 
 // 标签页接口
 interface TabItem {
@@ -267,6 +268,9 @@ export default function AdminClient() {
         break;
       case "email-marketing":
         content = <EmailMarketingTab />;
+        break;
+      case "theme-zones":
+        content = <ThemeZonesTab />;
         break;
       default:
         content = <div className="p-6">功能开发中...</div>;

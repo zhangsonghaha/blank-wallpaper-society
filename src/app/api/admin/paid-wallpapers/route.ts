@@ -11,7 +11,7 @@ export async function GET() {
     }
 
     const rows = await query(
-      `SELECT pw.*, i.title, i.thumbnail_url, i.width, i.height, u.nickname as creator_name
+      `SELECT pw.*, i.title, i.thumbnail_url, i.width, i.height, u.name as creator_name
        FROM paid_wallpapers pw
        LEFT JOIN images i ON pw.image_id = i.id
        LEFT JOIN users u ON pw.user_id = u.id
