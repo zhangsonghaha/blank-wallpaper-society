@@ -1,8 +1,8 @@
 import { createChallenge, verifySolution, sha } from "altcha/lib";
 
 // Altcha HMAC 签名密钥：优先 ALTCHA_HMAC_KEY，回退 AUTH_SECRET
-const HMAC_SIGNATURE_SECRET =
-  process.env.ALTCHA_HMAC_KEY || process.env.AUTH_SECRET;
+const HMAC_SIGNATURE_SECRET: string =
+  process.env.ALTCHA_HMAC_KEY || process.env.AUTH_SECRET || "";
 
 // 如果没有配置签名密钥，在服务端启动时警告
 if (!HMAC_SIGNATURE_SECRET) {
