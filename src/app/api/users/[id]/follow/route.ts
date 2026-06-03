@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { addExp, checkAchievements } from "@/lib/user-level";
 import { notifyNewFollower } from "@/lib/notification";
+import { getCache, setCache, delCache, CacheKeys, CacheTTL } from "@/lib/redis";
 
 // POST /api/users/[id]/follow - 关注/取关用户
 export async function POST(
@@ -53,6 +54,14 @@ export async function POST(
         .where("follower_id", "=", Number(userId))
         .where("following_id", "=", targetId)
         .executeTakeFirst();
+
+      // 失效双方关注统计缓存
+      await Promise.all([
+        delCache(CacheKeys.FOLLOW_STATS(userId)),
+        delCache(CacheKeys.FOLLOW_STATS(targetId)),
+        delCache(CacheKeys.USER_PROFILE(targetId)),
+      ]);
+
       return NextResponse.json({ following: false, message: "已取消关注" });
     } else {
       // 关注
@@ -66,6 +75,13 @@ export async function POST(
       // 通知被关注者
       const followerName = (session.user as any).name || "用户";
       notifyNewFollower(targetId, followerName, Number(userId)).catch(() => {});
+
+      // 失效双方关注统计缓存
+      await Promise.all([
+        delCache(CacheKeys.FOLLOW_STATS(userId)),
+        delCache(CacheKeys.FOLLOW_STATS(targetId)),
+        delCache(CacheKeys.USER_PROFILE(targetId)),
+      ]);
 
       return NextResponse.json({ following: true, message: "已关注" });
     }
@@ -91,20 +107,34 @@ export async function GET(
       return NextResponse.json({ error: "无效的用户ID" }, { status: 400 });
     }
 
-    // 获取粉丝数和关注数
-    const followersCount = await db
-      .selectFrom("user_follows")
-      .select((eb) => [eb.fn.count("id").as("count")])
-      .where("following_id", "=", targetId)
-      .execute();
+    // 尝试从缓存获取公开统计数据（followersCount / followingCount）
+    const cacheKey = CacheKeys.FOLLOW_STATS(targetId);
+    let cachedStats = await getCache<{ followers: number; following: number }>(cacheKey);
 
-    const followingCount = await db
-      .selectFrom("user_follows")
-      .select((eb) => [eb.fn.count("id").as("count")])
-      .where("follower_id", "=", targetId)
-      .execute();
+    if (!cachedStats) {
+      // 缓存未命中 → 查库
+      const followersCount = await db
+        .selectFrom("user_follows")
+        .select((eb) => [eb.fn.count("id").as("count")])
+        .where("following_id", "=", targetId)
+        .execute();
 
-    // 检查当前用户是否关注了该用户
+      const followingCount = await db
+        .selectFrom("user_follows")
+        .select((eb) => [eb.fn.count("id").as("count")])
+        .where("follower_id", "=", targetId)
+        .execute();
+
+      cachedStats = {
+        followers: Number(followersCount[0]?.count) || 0,
+        following: Number(followingCount[0]?.count) || 0,
+      };
+
+      // 异步写入缓存
+      setCache(cacheKey, cachedStats, CacheTTL.FOLLOW_STATS).catch(() => {});
+    }
+
+    // 检查当前用户是否关注了该用户（实时查，不缓存 —— 用户维度数据）
     let isFollowing = false;
     const session = await auth();
     if (session?.user) {
@@ -119,8 +149,8 @@ export async function GET(
     }
 
     return NextResponse.json({
-      followersCount: Number(followersCount[0]?.count) || 0,
-      followingCount: Number(followingCount[0]?.count) || 0,
+      followersCount: cachedStats.followers,
+      followingCount: cachedStats.following,
       isFollowing,
     });
   } catch (error: any) {

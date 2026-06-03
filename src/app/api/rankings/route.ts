@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "kysely";
-
-// 缓存：内存缓存1小时
-let rankingsCache: Record<string, { data: any[]; timestamp: number }> = {};
-const CACHE_TTL = 60 * 60 * 1000; // 1小时
+import { getOrSet, CacheKeys, CacheTTL } from "@/lib/redis";
 
 function getDateCondition(period: string): string {
   switch (period) {
@@ -40,99 +37,86 @@ export async function GET(request: NextRequest) {
     const period = searchParams.get("period") || "weekly";
     const type = searchParams.get("type") || "downloads";
 
-    // 检查缓存
-    const cacheKey = `${period}_${type}`;
-    const cached = rankingsCache[cacheKey];
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      return NextResponse.json(
-        { data: cached.data, cached: true },
-        {
-          headers: {
-            "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=600",
-          },
-        }
-      );
-    }
+    const cacheKey = CacheKeys.RANKINGS(period, type);
 
-    let rows: any[];
+    const rankings = await getOrSet(cacheKey, async () => {
+      let rows: any[];
 
-    if (type === "favorites") {
-      // 收藏排行：用 images 表的 favorite_count 字段
-      rows = await db
-        .selectFrom("images as i")
-        .select([
-          "i.id",
-          "i.title",
-          "i.description",
-          "i.url",
-          "i.thumbnail_url",
-          "i.width",
-          "i.height",
-          "i.author",
-          "i.tags",
-          "i.category",
-          "i.download_count",
-          "i.view_count",
-          "i.favorite_count",
-        ])
-        .where("i.status", "=", "approved")
-        .where("i.favorite_count", ">", 0)
-        .orderBy("i.favorite_count", "desc")
-        .orderBy("i.download_count", "desc")
-        .limit(50)
-        .execute() as any[];
-    } else {
-      // 下载/浏览排行：用日志表
-      const logTable = getLogTable(type);
-      const dateCondition = getDateCondition(period);
+      if (type === "favorites") {
+        // 收藏排行：用 images 表的 favorite_count 字段
+        rows = await db
+          .selectFrom("images as i")
+          .select([
+            "i.id",
+            "i.title",
+            "i.description",
+            "i.url",
+            "i.thumbnail_url",
+            "i.width",
+            "i.height",
+            "i.author",
+            "i.tags",
+            "i.category",
+            "i.download_count",
+            "i.view_count",
+            "i.favorite_count",
+          ])
+          .where("i.status", "=", "approved")
+          .where("i.favorite_count", ">", 0)
+          .orderBy("i.favorite_count", "desc")
+          .orderBy("i.download_count", "desc")
+          .limit(50)
+          .execute() as any[];
+      } else {
+        // 下载/浏览排行：用日志表
+        const logTable = getLogTable(type);
+        const dateCondition = getDateCondition(period);
 
-      rows = (await sql`
-        SELECT
-          i.id, i.title, i.description, i.url, i.thumbnail_url,
-          i.width, i.height, i.author, i.tags, i.category,
-          i.download_count, i.view_count,
-          l.log_count
-        FROM images i
-        INNER JOIN (
-          SELECT image_id, COUNT(*) AS log_count
-          FROM ${sql.raw(logTable)}
-          WHERE 1=1 ${sql.raw(dateCondition)}
-          GROUP BY image_id
-          ORDER BY log_count DESC
-          LIMIT 50
-        ) l ON l.image_id = i.id
-        WHERE i.status = 'approved'
-        ORDER BY l.log_count DESC
-      `.execute(db)).rows as any[];
-    }
+        rows = (await sql`
+          SELECT
+            i.id, i.title, i.description, i.url, i.thumbnail_url,
+            i.width, i.height, i.author, i.tags, i.category,
+            i.download_count, i.view_count,
+            l.log_count
+          FROM images i
+          INNER JOIN (
+            SELECT image_id, COUNT(*) AS log_count
+            FROM ${sql.raw(logTable)}
+            WHERE 1=1 ${sql.raw(dateCondition)}
+            GROUP BY image_id
+            ORDER BY log_count DESC
+            LIMIT 50
+          ) l ON l.image_id = i.id
+          WHERE i.status = 'approved'
+          ORDER BY l.log_count DESC
+        `.execute(db)).rows as any[];
+      }
 
-    // 格式化结果，添加排名
-    const rankings = rows.map((row: any, index: number) => ({
-      rank: index + 1,
-      id: row.id,
-      title: row.title,
-      description: row.description,
-      url: row.url,
-      thumbnail_url: row.thumbnail_url,
-      width: row.width,
-      height: row.height,
-      author: row.author,
-      tags: row.tags,
-      category: row.category,
-      download_count: row.download_count,
-      view_count: row.view_count,
-      favorite_count: row.favorite_count || 0,
-      log_count: row.log_count || 0,
-    }));
-
-    // 更新缓存
-    rankingsCache[cacheKey] = { data: rankings, timestamp: Date.now() };
+      // 格式化结果，添加排名
+      return rows.map((row: any, index: number) => ({
+        rank: index + 1,
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        url: row.url,
+        thumbnail_url: row.thumbnail_url,
+        width: row.width,
+        height: row.height,
+        author: row.author,
+        tags: row.tags,
+        category: row.category,
+        download_count: row.download_count,
+        view_count: row.view_count,
+        favorite_count: row.favorite_count || 0,
+        log_count: row.log_count || 0,
+      }));
+    }, CacheTTL.RANKINGS);
 
     return NextResponse.json(
-      { data: rankings, cached: false },
+      { data: rankings, cached: true },
       {
         headers: {
-          "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=600",
+          "Cache-Control": "public, s-maxage=1800, stale-while-revalidate=300",
         },
       }
     );

@@ -1,46 +1,51 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { getOrSet, delCache, CacheKeys, CacheTTL } from "@/lib/redis";
 
 // GET /api/categories - 获取分类列表（含图片计数）
 export async function GET() {
   try {
-    // 获取所有分类及其图片数量
-    const rows = await db
-      .selectFrom("categories as c")
-      .leftJoin("images as i", (join) =>
-        join
-          .onRef("i.category", "=", "c.slug")
-          .on("i.status", "=", "approved")
-      )
-      .select(["c.id", "c.name", "c.slug", "c.sort_order", "c.created_at"])
-      .select((eb) => [eb.fn.count<number>("i.id").as("image_count")])
-      .groupBy("c.id")
-      .orderBy("c.sort_order", "asc")
-      .execute();
+    const result = await getOrSet(CacheKeys.CATEGORIES, async () => {
+      // 获取所有分类及其图片数量
+      const rows = await db
+        .selectFrom("categories as c")
+        .leftJoin("images as i", (join) =>
+          join
+            .onRef("i.category", "=", "c.slug")
+            .on("i.status", "=", "approved")
+        )
+        .select(["c.id", "c.name", "c.slug", "c.sort_order", "c.created_at"])
+        .select((eb) => [eb.fn.count<number>("i.id").as("image_count")])
+        .groupBy("c.id")
+        .orderBy("c.sort_order", "asc")
+        .execute();
 
-    // 查询未分类的图片数量
-    const uncategorizedRow = await db
-      .selectFrom("images")
-      .select((eb) => [eb.fn.count<number>("id").as("count")])
-      .where((eb) => eb.or([
-        eb("category", "is", null),
-        eb("category", "=", ""),
-      ]))
-      .where("status", "=", "approved")
-      .executeTakeFirst();
+      // 查询未分类的图片数量
+      const uncategorizedRow = await db
+        .selectFrom("images")
+        .select((eb) => [eb.fn.count<number>("id").as("count")])
+        .where((eb) => eb.or([
+          eb("category", "is", null),
+          eb("category", "=", ""),
+        ]))
+        .where("status", "=", "approved")
+        .executeTakeFirst();
 
-    // 添加"未分类"选项
-    const uncategorized = {
-      id: 0,
-      name: "未分类",
-      slug: "uncategorized",
-      sort_order: 999,
-      image_count: Number(uncategorizedRow?.count ?? 0),
-      created_at: new Date().toISOString()
-    };
+      // 添加"未分类"选项
+      const uncategorized = {
+        id: 0,
+        name: "未分类",
+        slug: "uncategorized",
+        sort_order: 999,
+        image_count: Number(uncategorizedRow?.count ?? 0),
+        created_at: new Date().toISOString()
+      };
 
-    return NextResponse.json([...rows, uncategorized]);
+      return [...rows, uncategorized];
+    }, CacheTTL.CATEGORIES);
+
+    return NextResponse.json(result);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -87,8 +92,12 @@ export async function POST(request: NextRequest) {
       .values({ name: name.trim(), slug: slug.trim(), sort_order: order })
       .executeTakeFirst();
 
+    const categoryId = Number(result.insertId);
+    // 失效分类缓存
+    await delCache(CacheKeys.CATEGORIES);
+
     return NextResponse.json({
-      id: Number(result.insertId),
+      id: categoryId,
       name: name.trim(),
       slug: slug.trim(),
       sort_order: order
@@ -155,6 +164,9 @@ export async function PATCH(request: NextRequest) {
       .where("id", "=", id)
       .executeTakeFirst();
 
+    // 失效分类缓存
+    await delCache(CacheKeys.CATEGORIES);
+
     return NextResponse.json({ message: "更新成功" });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -195,6 +207,9 @@ export async function DELETE(request: NextRequest) {
     if (Number(result.numDeletedRows) === 0) {
       return NextResponse.json({ error: "分类不存在" }, { status: 404 });
     }
+
+    // 失效分类缓存
+    await delCache(CacheKeys.CATEGORIES);
 
     return NextResponse.json({ message: "删除成功" });
   } catch (error: any) {

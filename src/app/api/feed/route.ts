@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { sql } from "kysely";
+import { getOrSet, CacheKeys, CacheTTL } from "@/lib/redis";
 
 // GET /api/feed - 混合Feed流
 // 支持类型：all（默认，三源混合）、following（仅关注）、recommended（推荐）、trending（热门）
@@ -40,8 +41,12 @@ export async function GET(request: NextRequest) {
         break;
 
       case "trending":
-        // 热门排行
-        const trendResult = await getTrendingFeed(limit, offset);
+        // 热门排行（Redis 缓存）
+        const trendResult = await getOrSet(
+          CacheKeys.FEED_TRENDING(page, limit),
+          () => getTrendingFeed(limit, offset),
+          CacheTTL.FEED_TRENDING
+        );
         images = trendResult.images;
         total = trendResult.total;
         break;
@@ -54,8 +59,12 @@ export async function GET(request: NextRequest) {
           images = mixResult.images;
           total = mixResult.total;
         } else {
-          // 未登录走热门
-          const trendResult2 = await getTrendingFeed(limit, offset);
+          // 未登录走热门（Redis 缓存）
+          const trendResult2 = await getOrSet(
+            CacheKeys.FEED_TRENDING(page, limit),
+            () => getTrendingFeed(limit, offset),
+            CacheTTL.FEED_TRENDING
+          );
           images = trendResult2.images;
           total = trendResult2.total;
         }

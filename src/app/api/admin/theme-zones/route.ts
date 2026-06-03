@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { sql } from "kysely";
+import { delCache, clearPattern, CacheKeys } from "@/lib/redis";
 
 // GET /api/admin/theme-zones - 获取所有主题专区（管理端）
 export async function GET() {
@@ -195,6 +196,12 @@ export async function PUT(request: NextRequest) {
     await sql`INSERT INTO system_settings (setting_key, setting_value, description)
        VALUES (${'theme_zones'}, ${configValue}, ${'主题专区配置'})
        ON DUPLICATE KEY UPDATE setting_value = ${configValue}`.execute(db);
+
+    // 失效前端主题专区缓存（列表 + 所有详情页）
+    await Promise.all([
+      delCache(CacheKeys.THEME_ZONES),
+      clearPattern("discover:theme-zone-detail:*"),
+    ]);
 
     return NextResponse.json({ 
       message: "主题专区配置已更新", 

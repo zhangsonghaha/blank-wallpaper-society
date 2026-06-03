@@ -6,9 +6,9 @@ const SEARCH_HISTORY_KEY = "search_history";
 const MAX_HISTORY = 20;
 
 export function getSearchHistory(): string[] {
-  if (typeof window === "undefined") return [];
+  if (typeof globalThis.localStorage === "undefined") return [];
   try {
-    const raw = localStorage.getItem(SEARCH_HISTORY_KEY);
+    const raw = globalThis.localStorage.getItem(SEARCH_HISTORY_KEY);
     if (!raw) return [];
     const history: string[] = JSON.parse(raw);
     return Array.isArray(history) ? history.filter(Boolean) : [];
@@ -29,7 +29,7 @@ export function addSearchHistory(keyword: string): void {
     filtered.length = MAX_HISTORY;
   }
   try {
-    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(filtered));
+    globalThis.localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(filtered));
   } catch {
     // localStorage 满了，忽略
   }
@@ -39,12 +39,12 @@ export function removeSearchHistory(keyword: string): void {
   const history = getSearchHistory();
   const filtered = history.filter((h) => h !== keyword);
   try {
-    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(filtered));
+    globalThis.localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(filtered));
   } catch {}
 }
 
 export function clearSearchHistory(): void {
   try {
-    localStorage.removeItem(SEARCH_HISTORY_KEY);
+    globalThis.localStorage.removeItem(SEARCH_HISTORY_KEY);
   } catch {}
 }

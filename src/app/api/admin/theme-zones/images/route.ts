@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { sql } from "kysely";
+import { delCache, clearPattern, CacheKeys } from "@/lib/redis";
 
 // GET /api/admin/theme-zones/images?zone_key=xxx - 获取指定专区的手动图片列表
 export async function GET(request: NextRequest) {
@@ -56,6 +57,12 @@ export async function POST(request: NextRequest) {
     const tuples = image_ids.map((id: number) => sql`(${zone_key}, ${id})`);
     await sql`INSERT IGNORE INTO theme_zone_images (zone_key, image_id) VALUES ${sql.join(tuples)}`.execute(db);
 
+    // 失效主题专区前端缓存
+    await Promise.all([
+      delCache(CacheKeys.THEME_ZONES),
+      clearPattern("discover:theme-zone-detail:*"),
+    ]);
+
     return NextResponse.json({ success: true, added: image_ids.length });
   } catch (error: any) {
     console.error("POST /api/admin/theme-zones/images error:", error);
@@ -85,6 +92,12 @@ export async function DELETE(request: NextRequest) {
       .where("zone_key", "=", zone_key)
       .where("image_id", "in", image_ids as number[])
       .execute();
+
+    // 失效主题专区前端缓存
+    await Promise.all([
+      delCache(CacheKeys.THEME_ZONES),
+      clearPattern("discover:theme-zone-detail:*"),
+    ]);
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

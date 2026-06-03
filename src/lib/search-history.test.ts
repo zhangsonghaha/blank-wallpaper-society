@@ -11,7 +11,7 @@ const localStorageMock = (() => {
   };
 })();
 
-Object.defineProperty(globalThis, "localStorage", { value: localStorageMock });
+Object.defineProperty(globalThis, "localStorage", { value: localStorageMock, configurable: true });
 
 import {
   getSearchHistory,

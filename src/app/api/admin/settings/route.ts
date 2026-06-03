@@ -5,6 +5,7 @@ import { clearEmailConfigCache } from "@/lib/email";
 import { logAudit } from "@/lib/audit-log";
 import { clearNSFWSettingsCache } from "@/lib/nsfw";
 import { clearAnalyticsConfigCache } from "@/lib/analytics";
+import { delCache, clearPattern, CacheKeys } from "@/lib/redis";
 
 // GET /api/admin/settings - 获取所有系统设置
 export async function GET() {
@@ -52,6 +53,27 @@ export async function PATCH(request: NextRequest) {
     clearNSFWSettingsCache();
     // 清除分析配置缓存
     clearAnalyticsConfigCache();
+
+    // 清除受影响的 Redis 发现页缓存
+    // 当 theme_zones / featured_carousel 等 system_settings 变更时，前端缓存需同步失效
+    const settingKeys = Object.keys(settings);
+    const cacheInvalidations: Promise<void>[] = [];
+    if (settingKeys.includes("theme_zones")) {
+      cacheInvalidations.push(
+        delCache(CacheKeys.THEME_ZONES),
+        clearPattern("discover:theme-zone-detail:*")
+      );
+    }
+    if (settingKeys.includes("featured_carousel")) {
+      cacheInvalidations.push(delCache(CacheKeys.FEATURED_CAROUSEL));
+    }
+    // 分类相关设置变更时清除分类缓存
+    if (settingKeys.some((k) => k.includes("category"))) {
+      cacheInvalidations.push(delCache(CacheKeys.CATEGORIES));
+    }
+    if (cacheInvalidations.length > 0) {
+      await Promise.all(cacheInvalidations);
+    }
 
     // 记录审计日志
     const adminId = (session.user as any).id;

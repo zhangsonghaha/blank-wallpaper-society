@@ -15,9 +15,9 @@ interface ConsentState {
 }
 
 export function getCookieConsent(): ConsentLevel {
-  if (typeof window === "undefined") return "none";
+  if (typeof globalThis.localStorage === "undefined") return "none";
   try {
-    const raw = localStorage.getItem(COOKIE_CONSENT_KEY);
+    const raw = globalThis.localStorage.getItem(COOKIE_CONSENT_KEY);
     if (!raw) return "none";
     const state: ConsentState = JSON.parse(raw);
     return state.level;
@@ -44,7 +44,7 @@ export default function CookieConsent() {
       timestamp: new Date().toISOString(),
     };
     try {
-      localStorage.setItem(COOKIE_CONSENT_KEY, JSON.stringify(state));
+      globalThis.localStorage.setItem(COOKIE_CONSENT_KEY, JSON.stringify(state));
     } catch {}
     setVisible(false);
   };

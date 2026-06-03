@@ -2,67 +2,72 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { sql } from "kysely";
+import { getOrSet, delCache, CacheKeys, CacheTTL } from "@/lib/redis";
 
 // GET /api/discover/featured-carousel - 获取编辑精选轮播数据
 export async function GET() {
   try {
-    // 从 system_settings 读取编辑精选配置
-    const settings = await db
-      .selectFrom("system_settings")
-      .select("setting_value")
-      .where("setting_key", "=", "featured_carousel")
-      .execute();
-
-    let carouselIds: number[] = [];
-    if (settings.length > 0 && settings[0].setting_value) {
-      try {
-        const config = JSON.parse(settings[0].setting_value);
-        carouselIds = config.imageIds || [];
-      } catch {}
-    }
-
-    // 如果没有配置，自动选取热门图片
-    if (carouselIds.length === 0) {
-      const topImages = await db
-        .selectFrom("images")
-        .select("id")
-        .where("status", "=", "approved")
-        .where("media_type", "!=", "video")
-        .orderBy("download_count", "desc")
-        .orderBy("view_count", "desc")
-        .limit(8)
+    const images = await getOrSet(CacheKeys.FEATURED_CAROUSEL, async () => {
+      // 从 system_settings 读取编辑精选配置
+      const settings = await db
+        .selectFrom("system_settings")
+        .select("setting_value")
+        .where("setting_key", "=", "featured_carousel")
         .execute();
-      carouselIds = topImages.map((img) => img.id);
-    }
 
-    if (carouselIds.length === 0) {
-      return NextResponse.json({ data: [] });
-    }
+      let carouselIds: number[] = [];
+      if (settings.length > 0 && settings[0].setting_value) {
+        try {
+          const config = JSON.parse(settings[0].setting_value);
+          carouselIds = config.imageIds || [];
+        } catch {}
+      }
 
-    // 获取图片详情
-    const images = await db
-      .selectFrom("images as i")
-      .leftJoin("users as u", "u.id", "i.uploaded_by")
-      .select([
-        "i.id",
-        "i.title",
-        "i.url",
-        "i.thumbnail_url",
-        "i.width",
-        "i.height",
-        "i.category",
-        "i.view_count",
-        "i.download_count",
-        "i.dominant_color",
-        "u.name as author_name",
-        "u.avatar as author_avatar",
-      ])
-      .where("i.id", "in", carouselIds)
-      .where("i.status", "=", "approved")
-      .execute();
+      // 如果没有配置，自动选取热门图片
+      if (carouselIds.length === 0) {
+        const topImages = await db
+          .selectFrom("images")
+          .select("id")
+          .where("status", "=", "approved")
+          .where("media_type", "!=", "video")
+          .orderBy("download_count", "desc")
+          .orderBy("view_count", "desc")
+          .limit(8)
+          .execute();
+        carouselIds = topImages.map((img) => img.id);
+      }
 
-    // 按配置顺序排列
-    images.sort((a: any, b: any) => carouselIds.indexOf(a.id) - carouselIds.indexOf(b.id));
+      if (carouselIds.length === 0) {
+        return [];
+      }
+
+      // 获取图片详情
+      const images = await db
+        .selectFrom("images as i")
+        .leftJoin("users as u", "u.id", "i.uploaded_by")
+        .select([
+          "i.id",
+          "i.title",
+          "i.url",
+          "i.thumbnail_url",
+          "i.width",
+          "i.height",
+          "i.category",
+          "i.view_count",
+          "i.download_count",
+          "i.dominant_color",
+          "u.name as author_name",
+          "u.avatar as author_avatar",
+        ])
+        .where("i.id", "in", carouselIds)
+        .where("i.status", "=", "approved")
+        .execute();
+
+      // 按配置顺序排列
+      images.sort((a: any, b: any) => carouselIds.indexOf(a.id) - carouselIds.indexOf(b.id));
+
+      return images;
+    }, CacheTTL.FEATURED_CAROUSEL);
 
     return NextResponse.json({ data: images });
   } catch (error: any) {
@@ -110,6 +115,9 @@ export async function PUT(request: NextRequest) {
       VALUES ('featured_carousel', ${configValue}, '编辑精选轮播图片ID列表')
       ON DUPLICATE KEY UPDATE setting_value = ${configValue}
     `.execute(db);
+
+    // 失效编辑精选缓存
+    await delCache(CacheKeys.FEATURED_CAROUSEL);
 
     return NextResponse.json({ message: "编辑精选轮播已更新" });
   } catch (error: any) {
