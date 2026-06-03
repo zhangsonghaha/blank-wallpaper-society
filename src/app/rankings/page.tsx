@@ -129,7 +129,7 @@ export default function RankingsPage() {
                 onClick={() => setActivePeriod(p.value)}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-full transition-all ${
                   activePeriod === p.value
-                    ? "bg-[var(--color-ink)] text-white"
+                    ? "bg-black dark:bg-white text-white dark:text-black"
                     : "bg-[var(--color-surface-card)] text-[var(--color-mute)] hover:text-[var(--color-ink)]"
                 }`}
               >

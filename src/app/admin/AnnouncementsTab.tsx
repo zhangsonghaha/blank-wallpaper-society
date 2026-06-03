@@ -88,10 +88,10 @@ const priorityLabels: Record<string, string> = {
 };
 
 const priorityColors: Record<string, string> = {
-  low: "bg-gray-100 text-gray-600",
-  normal: "bg-blue-100 text-blue-600",
-  high: "bg-orange-100 text-orange-600",
-  urgent: "bg-red-100 text-red-600",
+  low: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+  normal: "bg-blue-100 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400",
+  high: "bg-orange-100 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400",
+  urgent: "bg-red-100 text-red-600 dark:bg-red-900/20 dark:text-red-400",
 };
 
 export default function AnnouncementsTab() {
@@ -358,7 +358,7 @@ export default function AnnouncementsTab() {
                             已发布
                           </Badge>
                         ) : (
-                          <Badge className="text-[10px] px-1.5 py-0 bg-gray-100 text-gray-600">
+                          <Badge className="text-[10px] px-1.5 py-0 bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
                             草稿
                           </Badge>
                         )}
@@ -578,7 +578,7 @@ export default function AnnouncementsTab() {
                   {detailAnn.is_published ? (
                     <Badge className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700">已发布</Badge>
                   ) : (
-                    <Badge className="text-[10px] px-1.5 py-0 bg-gray-100 text-gray-600">草稿</Badge>
+                    <Badge className="text-[10px] px-1.5 py-0 bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">草稿</Badge>
                   )}
                 </div>
               )}

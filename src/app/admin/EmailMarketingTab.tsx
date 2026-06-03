@@ -51,11 +51,11 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const STATUS_STYLES: Record<string, { label: string; className: string }> = {
-  draft: { label: "草稿", className: "bg-gray-100 text-gray-700" },
-  scheduled: { label: "已排期", className: "bg-blue-100 text-blue-700" },
-  sending: { label: "发送中", className: "bg-yellow-100 text-yellow-700" },
-  completed: { label: "已完成", className: "bg-green-100 text-green-700" },
-  failed: { label: "失败", className: "bg-red-100 text-red-700" },
+  draft: { label: "草稿", className: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400" },
+  scheduled: { label: "已排期", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400" },
+  sending: { label: "发送中", className: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400" },
+  completed: { label: "已完成", className: "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400" },
+  failed: { label: "失败", className: "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400" },
 };
 
 export default function EmailMarketingTab() {
@@ -242,7 +242,7 @@ export default function EmailMarketingTab() {
           ) : (
             <div className="space-y-3">
               {campaigns.map((c) => {
-                const statusInfo = STATUS_STYLES[c.status] || { label: c.status, className: "bg-gray-100 text-gray-700" };
+                const statusInfo = STATUS_STYLES[c.status] || { label: c.status, className: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400" };
                 return (
                   <div key={c.id} className="flex items-center justify-between p-4 rounded-xl bg-[var(--color-surface-card)] border border-[var(--color-hairline)]">
                     <div className="flex-1 min-w-0">

@@ -159,7 +159,7 @@ function CreatorVerificationEntry({ userId }: { userId: number }) {
 
   // 状态标签
   const statusBadge = (() => {
-    if (loading) return <Badge className="rounded-full text-xs bg-gray-100 text-gray-500">加载中</Badge>;
+    if (loading) return <Badge className="rounded-full text-xs bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">加载中</Badge>;
     const s = verificationStatus?.verification_status;
     if (s === "approved") return <Badge className="rounded-full text-xs gap-1 bg-green-100 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800"><CheckCircle className="w-3 h-3" />已认证</Badge>;
     if (s === "pending") return <Badge className="rounded-full text-xs gap-1 bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800"><Clock className="w-3 h-3" />审核中</Badge>;
@@ -857,21 +857,21 @@ export default function ProfileClient({
     switch (status) {
       case "pending":
         return (
-          <Badge className="rounded-full text-xs gap-1 bg-yellow-100 text-yellow-700 border-yellow-300">
+          <Badge className="rounded-full text-xs gap-1 bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800">
             <Clock className="w-3 h-3" />
             待审核
           </Badge>
         );
       case "approved":
         return (
-          <Badge className="rounded-full text-xs gap-1 bg-green-100 text-green-700 border-green-300">
+          <Badge className="rounded-full text-xs gap-1 bg-green-100 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
             <CheckCircle className="w-3 h-3" />
             已通过
           </Badge>
         );
       case "rejected":
         return (
-          <Badge className="rounded-full text-xs gap-1 bg-red-100 text-red-700 border-red-300" title={rejectReason || ""}>
+          <Badge className="rounded-full text-xs gap-1 bg-red-100 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800" title={rejectReason || ""}>
             <XCircle className="w-3 h-3" />
             已拒绝
           </Badge>
@@ -953,7 +953,7 @@ export default function ProfileClient({
               <div className="px-6 md:px-8 pb-6 pt-4 md:pt-6">
                 <div className="flex flex-col md:flex-row items-center md:items-end gap-4 -mt-14 md:-mt-20">
                   <div className="relative group shrink-0">
-                    <div className="w-28 h-28 md:w-36 md:h-36 rounded-full overflow-hidden ring-4 ring-white shadow-xl">
+                    <div className="w-28 h-28 md:w-36 md:h-36 rounded-full overflow-hidden ring-4 ring-white dark:ring-gray-800 shadow-xl">
                       <Avatar className="w-full h-full">
                         <AvatarImage
                           src={avatarUrl}
@@ -1103,7 +1103,7 @@ export default function ProfileClient({
                             <span>EXP {levelData.exp}</span>
                             <span>{levelData.nextExp}</span>
                           </div>
-                          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                             <motion.div
                               initial={{ width: 0 }}
                               animate={{ width: `${levelData.expProgress * 100}%` }}
@@ -1674,7 +1674,7 @@ export default function ProfileClient({
                                       </Badge>
                                     </div>
                                     <div className="flex items-center gap-3 text-xs text-[var(--color-mute)]">
-                                      <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">{key.key_preview || `${key.key_prefix}****`}</span>
+                                      <span className="font-mono bg-gray-100 dark:bg-gray-800 dark:text-gray-300 px-2 py-0.5 rounded">{key.key_preview || `${key.key_prefix}****`}</span>
                                       <span>限额: {key.rate_limit}/天</span>
                                       <span>今日: {key.usage?.today || 0}</span>
                                       <span>7天: {key.usage?.last7days || 0}</span>
@@ -2039,7 +2039,7 @@ export default function ProfileClient({
                           <CheckCircle className="w-5 h-5 text-emerald-600" />
                           <span className="font-medium text-emerald-700">创建成功</span>
                         </div>
-                        <div className="bg-white rounded-lg p-3 font-mono text-sm break-all relative">
+                        <div className="bg-white dark:bg-gray-800 rounded-lg p-3 font-mono text-sm break-all relative">
                           <button
                             onClick={() => {
                               navigator.clipboard.writeText(newKeyResult.key);

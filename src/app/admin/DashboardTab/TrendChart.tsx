@@ -183,7 +183,7 @@ export default function TrendChart({
       {/* Tooltip */}
       {hovered && hoveredPoint && (
         <div
-          className="absolute pointer-events-none bg-[var(--color-ink)] text-white text-xs px-2.5 py-1.5 rounded-lg shadow-lg z-10"
+          className="absolute pointer-events-none bg-black dark:bg-white text-white dark:text-black text-xs px-2.5 py-1.5 rounded-lg shadow-lg z-10"
           style={{
             left: `${(hoveredPoint.x / W) * 100}%`,
             top: `${((hoveredPoint.y - 30) / H) * 100}%`,

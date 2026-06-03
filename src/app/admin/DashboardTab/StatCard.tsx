@@ -48,10 +48,10 @@ export default function StatCard({
         )}
         <div className="flex items-start justify-between">
           <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center"
+            className="w-10 h-10 rounded-xl flex items-center justify-center relative dark:after:absolute dark:after:inset-0 dark:after:rounded-xl dark:after:bg-black/50"
             style={{ backgroundColor: bgColor }}
           >
-            <Icon className="w-5 h-5" style={{ color }} />
+            <Icon className="w-5 h-5 relative z-10" style={{ color }} />
           </div>
           <div className="flex items-center gap-1.5">
             {urgent && value > 0 && (
@@ -63,8 +63,8 @@ export default function StatCard({
               <div
                 className={`flex items-center gap-0.5 text-xs font-medium px-2 py-0.5 rounded-full ${
                   trend >= 0
-                    ? "text-emerald-700 bg-emerald-50"
-                    : "text-red-700 bg-red-50"
+                    ? "text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-900/20"
+                    : "text-red-700 bg-red-50 dark:text-red-400 dark:bg-red-900/20"
                 }`}
               >
                 {trend >= 0 ? (

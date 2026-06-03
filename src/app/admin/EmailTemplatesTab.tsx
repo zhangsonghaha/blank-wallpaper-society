@@ -371,11 +371,11 @@ export default function EmailTemplatesTab() {
 
   // === 分类颜色映射 ===
   const categoryColors: Record<string, string> = {
-    auth: "bg-blue-100 text-blue-700",
-    review: "bg-amber-100 text-amber-700",
-    notification: "bg-green-100 text-green-700",
-    system: "bg-gray-100 text-gray-700",
-    social: "bg-purple-100 text-purple-700",
+    auth: "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400",
+    review: "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400",
+    notification: "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400",
+    system: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400",
+    social: "bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400",
   };
 
   // === 变量面板组件（复用） ===
@@ -510,7 +510,7 @@ export default function EmailTemplatesTab() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-1">
                       <h3 className="font-semibold text-base truncate">{template.name}</h3>
-                      <Badge className={categoryColors[template.category] || "bg-gray-100 text-gray-700"}>
+                      <Badge className={categoryColors[template.category] || "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400"}>
                         {categories[template.category] || template.category}
                       </Badge>
                       {template.is_builtin ? (

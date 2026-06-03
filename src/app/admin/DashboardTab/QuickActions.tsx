@@ -79,10 +79,10 @@ export default function QuickActions({
             className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-[var(--color-surface-soft)] transition-colors text-left group"
           >
             <div
-              className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+              className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 relative dark:after:absolute dark:after:inset-0 dark:after:rounded-lg dark:after:bg-black/50"
               style={{ backgroundColor: action.bgColor }}
             >
-              <action.icon className="w-4.5 h-4.5" style={{ color: action.color }} />
+              <action.icon className="w-4.5 h-4.5 relative z-10" style={{ color: action.color }} />
             </div>
             <div className="flex-1">
               <p className="text-sm font-medium">{action.label}</p>

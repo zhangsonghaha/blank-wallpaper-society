@@ -611,7 +611,7 @@ export default function MasonryGrid() {
                 onClick={() => setSortBy("latest")}
                 className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all ${
                   sortBy === "latest"
-                    ? "bg-[var(--color-ink)] text-white"
+                    ? "bg-black dark:bg-white text-white dark:text-black"
                     : "text-[var(--color-mute)] hover:text-[var(--color-ink)]"
                 }`}
               >
@@ -621,7 +621,7 @@ export default function MasonryGrid() {
                 onClick={() => setSortBy("popular")}
                 className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all ${
                   sortBy === "popular"
-                    ? "bg-[var(--color-ink)] text-white"
+                    ? "bg-black dark:bg-white text-white dark:text-black"
                     : "text-[var(--color-mute)] hover:text-[var(--color-ink)]"
                 }`}
               >

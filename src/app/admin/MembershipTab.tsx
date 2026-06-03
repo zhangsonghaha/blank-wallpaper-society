@@ -263,7 +263,7 @@ function StatsSection() {
               {recentGrants.map((r: any) => (
                 <div key={r.id} className="flex items-center justify-between text-sm border-b pb-2">
                   <div className="flex items-center gap-2">
-                    <Badge className={SOURCE_LABELS[r.source]?.color || "bg-gray-100"}>
+                    <Badge className={SOURCE_LABELS[r.source]?.color || "bg-gray-100 dark:bg-gray-800"}>
                       {SOURCE_LABELS[r.source]?.label || r.source}
                     </Badge>
                     <span>{r.user_name}</span>
@@ -407,7 +407,7 @@ function MembersSection() {
                     </td>
                     <td className="p-3">{PLAN_LABELS[m.plan] || m.plan}</td>
                     <td className="p-3">
-                      <Badge className={SOURCE_LABELS[m.source]?.color || "bg-gray-100"}>
+                      <Badge className={SOURCE_LABELS[m.source]?.color || "bg-gray-100 dark:bg-gray-800"}>
                         {SOURCE_LABELS[m.source]?.label || m.source}
                       </Badge>
                     </td>
@@ -419,7 +419,7 @@ function MembersSection() {
                       )}
                     </td>
                     <td className="p-3">
-                      <Badge className={STATUS_STYLES[m.status]?.color || "bg-gray-100"}>
+                      <Badge className={STATUS_STYLES[m.status]?.color || "bg-gray-100 dark:bg-gray-800"}>
                         {STATUS_STYLES[m.status]?.label || m.status}
                       </Badge>
                     </td>
@@ -717,7 +717,7 @@ function RedeemCodesSection() {
                   <td className="p-3 text-xs text-muted-foreground">{c.batch_name || "-"}</td>
                   <td className="p-3 text-xs">{c.expires_at ? formatDate(c.expires_at) : "永不过期"}</td>
                   <td className="p-3">
-                    <Badge className={CODE_STATUS_STYLES[c.status]?.color || "bg-gray-100"}>
+                    <Badge className={CODE_STATUS_STYLES[c.status]?.color || "bg-gray-100 dark:bg-gray-800"}>
                       {CODE_STATUS_STYLES[c.status]?.label || c.status}
                     </Badge>
                   </td>
@@ -929,7 +929,7 @@ function ExpiringSection() {
                       </Badge>
                     </td>
                     <td className="p-3">
-                      <Badge className={SOURCE_LABELS[m.source]?.color || "bg-gray-100"}>
+                      <Badge className={SOURCE_LABELS[m.source]?.color || "bg-gray-100 dark:bg-gray-800"}>
                         {SOURCE_LABELS[m.source]?.label || m.source}
                       </Badge>
                     </td>

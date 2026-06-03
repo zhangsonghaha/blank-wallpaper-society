@@ -262,7 +262,7 @@ export default function DailyWallpaperCard({
                 a.target = "_blank";
                 a.click();
               }}
-              className="inline-flex items-center gap-1 px-3 py-1.5 bg-white text-gray-900 rounded-lg text-xs font-medium hover:bg-gray-100 transition-colors"
+              className="inline-flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">设为壁纸</span>

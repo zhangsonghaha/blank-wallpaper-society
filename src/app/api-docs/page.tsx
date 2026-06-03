@@ -320,7 +320,7 @@ export default function ApiDocsPage() {
               <TabsContent value="apikey">
                 <div className="space-y-4 mt-4">
                   <p className="text-sm text-[var(--color-mute)]">
-                    在请求头中添加 <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">X-API-Key</code> 或在查询参数中添加 <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">api_key</code>：
+                    在请求头中添加 <code className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono">X-API-Key</code> 或在查询参数中添加 <code className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono">api_key</code>：
                   </p>
                   <div className="bg-gray-900 text-gray-100 rounded-lg p-4 font-mono text-sm relative">
                     <button

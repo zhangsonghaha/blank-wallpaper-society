@@ -455,7 +455,7 @@ export default function AdminClient() {
                     </>
                   )}
                   {sidebarCollapsed && (
-                    <div className="absolute left-full ml-2 px-2 py-1 rounded bg-[var(--color-ink)] text-white text-xs opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+                    <div className="absolute left-full ml-2 px-2 py-1 rounded bg-black dark:bg-white text-white dark:text-black text-xs opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
                       {group.title}
                     </div>
                   )}
@@ -517,7 +517,7 @@ export default function AdminClient() {
                         <div className="w-4 h-4">
                           {item.icon}
                         </div>
-                        <div className="absolute left-full ml-2 px-2 py-1 rounded bg-[var(--color-ink)] text-white text-xs opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+                        <div className="absolute left-full ml-2 px-2 py-1 rounded bg-black dark:bg-white text-white dark:text-black text-xs opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
                           {item.title}
                         </div>
                       </button>

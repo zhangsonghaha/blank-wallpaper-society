@@ -111,7 +111,7 @@ export default function SimilarImages({
                     <button
                       key={img.id}
                       onClick={() => onImageClick?.(img)}
-                      className="group relative aspect-[3/4] rounded-xl overflow-hidden bg-gray-100 hover:shadow-md transition-shadow"
+                      className="group relative aspect-[3/4] rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 hover:shadow-md transition-shadow"
                     >
                       <img
                         src={getImgSrc(img)}

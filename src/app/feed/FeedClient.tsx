@@ -165,7 +165,7 @@ export default function FeedClient() {
               disabled={disabled}
               className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-full transition-all whitespace-nowrap ${
                 feedType === ft.id
-                  ? "bg-[var(--color-ink)] text-white"
+                  ? "bg-black dark:bg-white text-white dark:text-black"
                   : disabled
                   ? "bg-[var(--color-surface-card)] text-[var(--color-mute)] cursor-not-allowed"
                   : "bg-[var(--color-surface-card)] text-[var(--color-ink)] hover:bg-[var(--color-secondary-bg)]"

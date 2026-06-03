@@ -127,11 +127,11 @@ function RoleBadge({ role }: { role: string }) {
   const Icon = config.icon;
   return (
     <Badge
-      className="rounded-full gap-1 font-medium border-0"
+      className="rounded-full gap-1 font-medium border-0 relative dark:after:absolute dark:after:inset-0 dark:after:rounded-full dark:after:bg-black/50"
       style={{ color: config.color, backgroundColor: config.bgColor }}
     >
-      <Icon className="w-3 h-3" />
-      {config.label}
+      <Icon className="w-3 h-3 relative z-10" />
+      <span className="relative z-10">{config.label}</span>
     </Badge>
   );
 }

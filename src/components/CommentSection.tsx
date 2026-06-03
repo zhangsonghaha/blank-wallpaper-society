@@ -226,7 +226,7 @@ export default function CommentSection({
                     onClick={() => setSortBy("latest")}
                     className={`px-2.5 py-1 text-[11px] font-medium rounded-full transition-all ${
                       sortBy === "latest"
-                        ? "bg-[var(--color-ink)] text-white"
+                        ? "bg-black dark:bg-white text-white dark:text-black"
                         : "text-[var(--color-mute)] hover:text-[var(--color-ink)]"
                     }`}
                   >
@@ -236,7 +236,7 @@ export default function CommentSection({
                     onClick={() => setSortBy("hot")}
                     className={`px-2.5 py-1 text-[11px] font-medium rounded-full transition-all ${
                       sortBy === "hot"
-                        ? "bg-[var(--color-ink)] text-white"
+                        ? "bg-black dark:bg-white text-white dark:text-black"
                         : "text-[var(--color-mute)] hover:text-[var(--color-ink)]"
                     }`}
                   >

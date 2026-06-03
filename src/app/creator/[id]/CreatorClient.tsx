@@ -186,8 +186,8 @@ export default function CreatorClient({
               <div className="px-6 md:px-8 py-6 bg-[var(--color-surface-card)] rounded-b-2xl">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   <div className="text-center">
-                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-2">
-                      <ImageIcon className="w-5 h-5 text-blue-600" />
+                    <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mx-auto mb-2">
+                      <ImageIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                     </div>
                     <p className="text-2xl font-bold text-[var(--color-ink)]">
                       {stats.totalImages}
@@ -195,8 +195,8 @@ export default function CreatorClient({
                     <p className="text-xs text-[var(--color-mute)]">壁纸</p>
                   </div>
                   <div className="text-center">
-                    <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center mx-auto mb-2">
-                      <UserCheck className="w-5 h-5 text-pink-600" />
+                    <div className="w-10 h-10 rounded-full bg-pink-100 dark:bg-pink-900/30 flex items-center justify-center mx-auto mb-2">
+                      <UserCheck className="w-5 h-5 text-pink-600 dark:text-pink-400" />
                     </div>
                     <p className="text-2xl font-bold text-[var(--color-ink)]">
                       {followersCount}
@@ -204,8 +204,8 @@ export default function CreatorClient({
                     <p className="text-xs text-[var(--color-mute)]">粉丝</p>
                   </div>
                   <div className="text-center">
-                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">
-                      <Eye className="w-5 h-5 text-green-600" />
+                    <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto mb-2">
+                      <Eye className="w-5 h-5 text-green-600 dark:text-green-400" />
                     </div>
                     <p className="text-2xl font-bold text-[var(--color-ink)]">
                       {stats.totalViews.toLocaleString()}
@@ -213,8 +213,8 @@ export default function CreatorClient({
                     <p className="text-xs text-[var(--color-mute)]">浏览</p>
                   </div>
                   <div className="text-center">
-                    <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-2">
-                      <Download className="w-5 h-5 text-purple-600" />
+                    <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mx-auto mb-2">
+                      <Download className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                     </div>
                     <p className="text-2xl font-bold text-[var(--color-ink)]">
                       {stats.totalDownloads.toLocaleString()}

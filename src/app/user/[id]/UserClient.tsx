@@ -322,7 +322,7 @@ export default function UserClient({
                           <span>EXP {levelData.exp}</span>
                           <span>{levelData.nextExp}</span>
                         </div>
-                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                           <motion.div
                             initial={{ width: 0 }}
                             animate={{ width: `${levelData.expProgress * 100}%` }}
@@ -340,8 +340,8 @@ export default function UserClient({
               <div className="px-6 md:px-8 py-6 bg-[var(--color-surface-card)] rounded-b-2xl">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="text-center">
-                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-2">
-                      <ImageIcon className="w-5 h-5 text-blue-600" />
+                    <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mx-auto mb-2">
+                      <ImageIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                     </div>
                     <p className="text-2xl font-bold text-[var(--color-ink)]">
                       {stats.totalImages}
@@ -349,8 +349,8 @@ export default function UserClient({
                     <p className="text-xs text-[var(--color-mute)]">壁纸</p>
                   </div>
                   <div className="text-center">
-                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">
-                      <Eye className="w-5 h-5 text-green-600" />
+                    <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto mb-2">
+                      <Eye className="w-5 h-5 text-green-600 dark:text-green-400" />
                     </div>
                     <p className="text-2xl font-bold text-[var(--color-ink)]">
                       {stats.totalViews.toLocaleString()}
@@ -358,8 +358,8 @@ export default function UserClient({
                     <p className="text-xs text-[var(--color-mute)]">浏览</p>
                   </div>
                   <div className="text-center">
-                    <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-2">
-                      <Heart className="w-5 h-5 text-red-500" />
+                    <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-2">
+                      <Heart className="w-5 h-5 text-red-500 dark:text-red-400" />
                     </div>
                     <p className="text-2xl font-bold text-[var(--color-ink)]">
                       {stats.totalFavorites?.toLocaleString() || 0}
@@ -367,8 +367,8 @@ export default function UserClient({
                     <p className="text-xs text-[var(--color-mute)]">收藏</p>
                   </div>
                   <div className="text-center">
-                    <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-2">
-                      <Download className="w-5 h-5 text-purple-600" />
+                    <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mx-auto mb-2">
+                      <Download className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                     </div>
                     <p className="text-2xl font-bold text-[var(--color-ink)]">
                       {stats.totalDownloads.toLocaleString()}

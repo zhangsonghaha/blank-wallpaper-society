@@ -332,7 +332,7 @@ export default function ChallengesClient() {
               onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 text-sm font-semibold rounded-full transition-all ${
                 activeTab === tab
-                  ? "bg-[var(--color-ink)] text-white"
+                  ? "bg-black dark:bg-white text-white dark:text-black"
                   : "bg-[var(--color-surface-card)] text-[var(--color-ink)] hover:bg-[var(--color-secondary-bg)]"
               }`}
             >
@@ -527,7 +527,7 @@ export default function ChallengesClient() {
             }}
             className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-full transition-all ${
               detailTab === tab
-                ? "bg-[var(--color-ink)] text-white"
+                ? "bg-black dark:bg-white text-white dark:text-black"
                 : "bg-[var(--color-surface-card)] text-[var(--color-ink)] hover:bg-[var(--color-secondary-bg)]"
             }`}
           >
@@ -674,7 +674,7 @@ export default function ChallengesClient() {
                 onClick={() => setSubmitMode("select")}
                 className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-md transition-all ${
                   submitMode === "select"
-                    ? "bg-[var(--color-ink)] text-white shadow-sm"
+                    ? "bg-black dark:bg-white text-white dark:text-black shadow-sm"
                     : "text-[var(--color-ink)] hover:bg-[var(--color-secondary-bg)]"
                 }`}
               >

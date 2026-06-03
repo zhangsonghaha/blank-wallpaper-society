@@ -36,10 +36,10 @@ interface Challenge {
 }
 
 const statusLabels: Record<string, { label: string; color: string }> = {
-  draft: { label: "草稿", color: "bg-gray-200 text-gray-700" },
-  active: { label: "进行中", color: "bg-green-100 text-green-700" },
-  ended: { label: "已结束", color: "bg-yellow-100 text-yellow-700" },
-  settled: { label: "已结算", color: "bg-blue-100 text-blue-700" },
+  draft: { label: "草稿", color: "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-400" },
+  active: { label: "进行中", color: "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400" },
+  ended: { label: "已结束", color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400" },
+  settled: { label: "已结算", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400" },
 };
 
 export default function ChallengesTab() {
@@ -214,7 +214,7 @@ export default function ChallengesTab() {
       ) : (
         <div className="space-y-4">
           {challenges.map((c) => {
-            const statusInfo = statusLabels[c.status] || { label: c.status, color: "bg-gray-200" };
+            const statusInfo = statusLabels[c.status] || { label: c.status, color: "bg-gray-200 dark:bg-gray-700" };
             return (
               <Card key={c.id}>
                 <CardContent className="py-4">
