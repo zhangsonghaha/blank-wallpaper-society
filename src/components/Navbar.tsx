@@ -128,9 +128,9 @@ export default function Navbar() {
           {/* Left: Logo + Nav Links */}
           <div className="flex items-center gap-6">
             <Link href="/" className="flex items-center gap-2 group">
-              <div className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center group-hover:scale-105 transition-transform">
+              <div className="w-8 h-8 rounded-full bg-[var(--color-primary)] dark:bg-white flex items-center justify-center group-hover:scale-105 transition-transform">
                 <svg
-                  className="w-5 h-5 text-white"
+                  className="w-5 h-5 text-white dark:text-black"
                   fill="currentColor"
                   viewBox="0 0 24 24"
                 >
