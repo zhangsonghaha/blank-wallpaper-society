@@ -268,7 +268,7 @@ export default function PricingClient() {
                 className={`relative rounded-2xl border ${plan.borderColor} bg-[var(--color-surface-soft)] p-6 flex flex-col ${plan.popular ? "ring-2 ring-[var(--color-primary)] shadow-xl scale-[1.02]" : "shadow"}`}>
                 {plan.popular && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-[var(--color-primary)] text-white px-3">最受欢迎</Badge>
+                    <Badge className="bg-[var(--color-primary)] text-white dark:bg-white dark:text-black px-3">最受欢迎</Badge>
                   </div>
                 )}
                 <div className="mb-6">

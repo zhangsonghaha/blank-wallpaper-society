@@ -65,7 +65,7 @@ export default function ReportDialog({
                       onClick={() => setReportCategory(cat.value)}
                       className={`px-3 py-2 rounded-xl text-sm font-medium transition-all border ${
                         reportCategory === cat.value
-                          ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
+                          ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black border-[var(--color-primary)]"
                           : "bg-white text-[var(--color-body)] border-[var(--color-hairline)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
                       }`}
                     >

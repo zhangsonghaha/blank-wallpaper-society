@@ -346,7 +346,7 @@ export default function CollectionDetailPage() {
               className={`rounded-full gap-2 ${
                 collection.is_subscribed
                   ? "bg-white text-[var(--color-ink)] border border-[var(--color-hairline)] hover:bg-[var(--color-surface-soft)]"
-                  : "bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)] text-white"
+                  : "bg-[var(--color-primary)] hover:bg-[var(--color-primary-pressed)] text-white dark:bg-white dark:text-black dark:hover:bg-gray-200"
               }`}
             >
               {subscribing ? (

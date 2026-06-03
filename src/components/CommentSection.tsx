@@ -424,7 +424,7 @@ export default function CommentSection({
               <button
                 onClick={handleSubmit}
                 disabled={submitting || !newComment.trim() || status !== "authenticated"}
-                className="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-pressed,#c5001d)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--color-primary)] text-white dark:bg-white dark:text-black hover:bg-[var(--color-primary-pressed,#c5001d)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Send className="w-4 h-4" />
               </button>

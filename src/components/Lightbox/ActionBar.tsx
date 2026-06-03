@@ -86,7 +86,7 @@ export default function ActionBar({
             onClick={(e) => { e.stopPropagation(); handleFavorite(); }}
             className={`px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full text-xs sm:text-sm font-medium transition-colors backdrop-blur-sm ${
               isFavorited
-                ? "bg-[var(--color-primary)] text-white"
+                ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black"
                 : "bg-white/10 text-white hover:bg-white/20"
             }`}
           >
@@ -254,7 +254,7 @@ export default function ActionBar({
                                   <div className="flex items-center gap-2">
                                     <span className="text-[var(--color-ink,#1a1a1a)]">{res.label}</span>
                                     {isRecommended && (
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--color-primary)] text-white font-medium">推荐</span>
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--color-primary)] text-white dark:bg-white dark:text-black font-medium">推荐</span>
                                     )}
                                   </div>
                                   {isDownloading ? (
@@ -310,7 +310,7 @@ export default function ActionBar({
             onClick={(e) => { e.stopPropagation(); handleToggleFollow(); }}
             disabled={loadingFollowStatus}
             className={`px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-1 sm:gap-2 rounded-full text-xs sm:text-sm font-medium transition-colors backdrop-blur-sm ${
-              isFollowing ? "bg-[var(--color-primary)] text-white" : "bg-white/10 text-white hover:bg-white/20"
+              isFollowing ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black" : "bg-white/10 text-white hover:bg-white/20"
             }`}
           >
             {loadingFollowStatus ? (

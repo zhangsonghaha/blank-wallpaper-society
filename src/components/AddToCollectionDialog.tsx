@@ -176,7 +176,7 @@ export default function AddToCollectionDialog({
                         <Check className="w-4 h-4 text-green-600" />
                       </div>
                     ) : (
-                      <div className="w-8 h-8 rounded-full bg-[var(--color-surface-card)] flex items-center justify-center shrink-0 hover:bg-[var(--color-primary)] hover:text-white transition-colors group">
+                      <div className="w-8 h-8 rounded-full bg-[var(--color-surface-card)] flex items-center justify-center shrink-0 hover:bg-[var(--color-primary)] hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors group">
                         <Plus className="w-4 h-4 text-[var(--color-mute)] group-hover:text-white" />
                       </div>
                     )}

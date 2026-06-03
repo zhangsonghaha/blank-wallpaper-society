@@ -143,7 +143,7 @@ export default function PinCard({
               onClick={handleFavorite}
               className={`w-8 h-8 rounded-full flex items-center justify-center shadow-md active:scale-95 transition-transform ${
                 isFavorited
-                  ? "bg-[var(--color-primary)] text-white"
+                  ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black"
                   : "bg-white/90 backdrop-blur-sm text-[var(--color-ink)]"
               }`}
             >
@@ -169,8 +169,8 @@ export default function PinCard({
                     onClick={handleFavorite}
                     className={`px-5 py-2 text-sm font-bold rounded-full shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 ${
                       isFavorited
-                        ? "bg-[var(--color-primary)] text-white"
-                        : "bg-white text-[var(--color-ink)] hover:bg-[var(--color-primary)] hover:text-white"
+                        ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black"
+                        : "bg-white text-[var(--color-ink)] hover:bg-[var(--color-primary)] hover:text-white dark:hover:bg-white dark:hover:text-black"
                     }`}
                   >
                     <span className="flex items-center gap-1.5">

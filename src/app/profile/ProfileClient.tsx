@@ -960,7 +960,7 @@ export default function ProfileClient({
                           alt={user.name}
                           className="object-cover w-full h-full"
                         />
-                        <AvatarFallback className="bg-[var(--color-primary)] text-white text-4xl md:text-5xl font-bold w-full h-full">
+                        <AvatarFallback className="bg-[var(--color-primary)] text-white dark:bg-white dark:text-black text-4xl md:text-5xl font-bold w-full h-full">
                           {userInitial}
                         </AvatarFallback>
                       </Avatar>
@@ -1055,7 +1055,7 @@ export default function ProfileClient({
                               href={value.startsWith("http") ? value : `${platform.prefix}${value}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--color-surface-card)] border border-[var(--color-hairline)] text-xs text-[var(--color-ink)] hover:bg-[var(--color-primary)] hover:text-white transition-colors"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--color-surface-card)] border border-[var(--color-hairline)] text-xs text-[var(--color-ink)] hover:bg-[var(--color-primary)] hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors"
                             >
                               <span>{platform.icon}</span>
                               {platform.label}
@@ -1261,7 +1261,7 @@ export default function ProfileClient({
                       </div>
                     ) : (
                       <Link href="/pricing">
-                        <Badge className="rounded-full text-xs gap-1 bg-[var(--color-primary)] text-white cursor-pointer hover:opacity-90 transition-opacity">
+                        <Badge className="rounded-full text-xs gap-1 bg-[var(--color-primary)] text-white dark:bg-white dark:text-black cursor-pointer hover:opacity-90 transition-opacity">
                           <Sparkles className="w-3 h-3" />
                           升级会员
                         </Badge>
@@ -1869,7 +1869,7 @@ export default function ProfileClient({
                             onClick={() => setUploadFilter(f.key)}
                             className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-colors ${
                               uploadFilter === f.key
-                                ? "bg-[var(--color-primary)] text-white"
+                                ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black"
                                 : "bg-[var(--color-surface-card)] text-[var(--color-mute)] hover:bg-[var(--color-surface-card)]/80"
                             }`}
                           >

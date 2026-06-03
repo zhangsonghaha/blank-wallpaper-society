@@ -104,7 +104,7 @@ export default function PartnersPage() {
           </p>
           <Link
             href="/contact"
-            className="inline-block px-8 py-3 bg-[var(--color-primary)] text-white font-semibold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors"
+            className="inline-block px-8 py-3 bg-[var(--color-primary)] text-white dark:bg-white dark:text-black font-semibold rounded-full hover:bg-[var(--color-primary-pressed)] dark:hover:bg-white dark:hover:text-black transition-colors"
           >
             联系我们
           </Link>

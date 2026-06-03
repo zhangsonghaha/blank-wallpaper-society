@@ -144,7 +144,7 @@ export default function BlogPage() {
               placeholder="输入你的邮箱"
               className="flex-1 h-12 px-4 bg-[var(--color-surface-card)] border border-[var(--color-hairline)] rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-focus-outer)]"
             />
-            <button className="px-6 h-12 bg-[var(--color-primary)] text-white text-sm font-semibold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors shrink-0">
+            <button className="px-6 h-12 bg-[var(--color-primary)] text-white dark:bg-white dark:text-black text-sm font-semibold rounded-full hover:bg-[var(--color-primary-pressed)] dark:hover:bg-white dark:hover:text-black transition-colors shrink-0">
               订阅
             </button>
           </div>

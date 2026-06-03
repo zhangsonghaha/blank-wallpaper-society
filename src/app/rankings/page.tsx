@@ -150,7 +150,7 @@ export default function RankingsPage() {
                 onClick={() => setActiveType(t.value)}
                 className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-full transition-all ${
                   activeType === t.value
-                    ? "bg-[var(--color-primary)] text-white"
+                    ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black"
                     : "bg-[var(--color-surface-card)] text-[var(--color-mute)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary)]/5"
                 }`}
               >

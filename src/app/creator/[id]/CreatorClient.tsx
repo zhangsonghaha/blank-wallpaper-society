@@ -126,7 +126,7 @@ export default function CreatorClient({
                           alt={user.name}
                           className="object-cover w-full h-full"
                         />
-                        <AvatarFallback className="bg-[var(--color-primary)] text-white text-4xl md:text-5xl font-bold w-full h-full">
+                        <AvatarFallback className="bg-[var(--color-primary)] text-white dark:bg-white dark:text-black text-4xl md:text-5xl font-bold w-full h-full">
                           {userInitial}
                         </AvatarFallback>
                       </Avatar>
@@ -145,7 +145,7 @@ export default function CreatorClient({
                         className={`rounded-full gap-1 text-xs ${
                           isFollowing
                             ? "bg-[var(--color-secondary-bg)] text-[var(--color-body)] hover:bg-[var(--color-secondary-pressed)] border border-[var(--color-hairline)]"
-                            : "bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-pressed)]"
+                            : "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black hover:bg-[var(--color-primary-pressed)] dark:hover:bg-gray-200"
                         }`}
                       >
                         {followLoading ? (

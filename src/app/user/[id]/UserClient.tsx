@@ -214,7 +214,7 @@ export default function UserClient({
                           alt={user.name}
                           className="object-cover w-full h-full"
                         />
-                        <AvatarFallback className="bg-[var(--color-primary)] text-white text-4xl md:text-5xl font-bold w-full h-full">
+                        <AvatarFallback className="bg-[var(--color-primary)] text-white dark:bg-white dark:text-black text-4xl md:text-5xl font-bold w-full h-full">
                           {userInitial}
                         </AvatarFallback>
                       </Avatar>
@@ -242,7 +242,7 @@ export default function UserClient({
                           className={`rounded-full gap-1 text-xs ${
                             isFollowing
                               ? "bg-[var(--color-secondary-bg)] text-[var(--color-body)] hover:bg-[var(--color-secondary-pressed)] border border-[var(--color-hairline)]"
-                              : "bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-pressed)]"
+                              : "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black hover:bg-[var(--color-primary-pressed)] dark:hover:bg-gray-200"
                           }`}
                         >
                           {followLoading ? (
@@ -305,7 +305,7 @@ export default function UserClient({
                               href={value.startsWith("http") ? value : `${platform.prefix}${value}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--color-surface-card)] border border-[var(--color-hairline)] text-xs text-[var(--color-ink)] hover:bg-[var(--color-primary)] hover:text-white transition-colors"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--color-surface-card)] border border-[var(--color-hairline)] text-xs text-[var(--color-ink)] hover:bg-[var(--color-primary)] hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors"
                             >
                               <span>{platform.icon}</span>
                               {platform.label}

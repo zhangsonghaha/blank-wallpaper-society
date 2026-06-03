@@ -450,7 +450,7 @@ export default function PrivateMessagePanel() {
                                   <div
                                     className={`px-3 py-2 rounded-2xl text-sm break-words ${
                                       isMine
-                                        ? "bg-[var(--color-primary)] text-white rounded-br-md"
+                                        ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black rounded-br-md"
                                         : "bg-[var(--color-surface-card)] text-[var(--color-ink)] rounded-bl-md"
                                     }`}
                                   >
@@ -501,7 +501,7 @@ export default function PrivateMessagePanel() {
                       <button
                         onClick={handleSend}
                         disabled={!messageInput.trim() || sending}
-                        className="w-9 h-9 flex items-center justify-center rounded-full bg-[var(--color-primary)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity shrink-0"
+                        className="w-9 h-9 flex items-center justify-center rounded-full bg-[var(--color-primary)] text-white dark:bg-white dark:text-black hover:opacity-90 disabled:opacity-40 transition-opacity shrink-0"
                       >
                         {sending ? (
                           <Loader2 className="w-4 h-4 animate-spin" />

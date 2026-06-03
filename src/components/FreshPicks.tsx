@@ -85,7 +85,7 @@ export default function FreshPicks() {
                 {/* 新人标识 */}
                 {img.author_joined && (
                   <div className="absolute top-2 left-2">
-                    <span className="px-1.5 py-0.5 bg-[var(--color-primary)] text-white text-[9px] font-bold rounded-full">
+                    <span className="px-1.5 py-0.5 bg-[var(--color-primary)] dark:bg-white text-white dark:text-black text-[9px] font-bold rounded-full">
                       NEW
                     </span>
                   </div>
@@ -104,7 +104,7 @@ export default function FreshPicks() {
                 >
                   <Avatar className="w-5 h-5">
                     <AvatarImage src={img.author_avatar || ""} />
-                    <AvatarFallback className="text-[8px] bg-[var(--color-primary)] text-white">
+                    <AvatarFallback className="text-[8px] bg-[var(--color-primary)] dark:bg-white text-white dark:text-black">
                       {img.author_name[0]}
                     </AvatarFallback>
                   </Avatar>

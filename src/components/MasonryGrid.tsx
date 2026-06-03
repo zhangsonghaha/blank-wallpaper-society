@@ -593,7 +593,7 @@ export default function MasonryGrid() {
               }}
               className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-full transition-all ${
                 showFavoritesOnly
-                  ? "bg-[var(--color-primary)] text-white"
+                  ? "bg-[var(--color-primary)] dark:bg-white text-white dark:text-black"
                   : favorites.size > 0
                     ? "bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/20"
                     : "bg-[var(--color-surface-card)] text-[var(--color-mute)]"
@@ -811,7 +811,7 @@ export default function MasonryGrid() {
             {showFavoritesOnly ? (
               <button
                 onClick={() => setShowFavoritesOnly(false)}
-                className="px-6 py-2.5 bg-[var(--color-primary)] text-white text-sm font-bold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors active:scale-95"
+                className="px-6 py-2.5 bg-[var(--color-primary)] dark:bg-white text-white dark:text-black text-sm font-bold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors active:scale-95"
               >
                 浏览全部图片
               </button>
@@ -822,14 +822,14 @@ export default function MasonryGrid() {
                   setActiveColor(null);
                   setActiveCategory("all");
                 }}
-                className="px-6 py-2.5 bg-[var(--color-primary)] text-white text-sm font-bold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors active:scale-95"
+                className="px-6 py-2.5 bg-[var(--color-primary)] dark:bg-white text-white dark:text-black text-sm font-bold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors active:scale-95"
               >
                 清除筛选
               </button>
             ) : (
               <a
                 href="/admin"
-                className="inline-block px-6 py-2.5 bg-[var(--color-primary)] text-white text-sm font-bold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors"
+                className="inline-block px-6 py-2.5 bg-[var(--color-primary)] dark:bg-white text-white dark:text-black text-sm font-bold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors"
               >
                 去上传
               </a>

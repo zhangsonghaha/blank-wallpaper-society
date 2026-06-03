@@ -314,7 +314,7 @@ export default function PostEditor({ onPostCreated, editPost, onCancelEdit }: Po
           <button
             onClick={() => setShowLinkInput(!showLinkInput)}
             className={`w-8 h-8 flex items-center justify-center rounded-full transition-colors ${
-              showLinkInput ? "bg-[var(--color-primary)] text-white" : "hover:bg-[var(--color-surface-card)]"
+              showLinkInput ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black" : "hover:bg-[var(--color-surface-card)]"
             }`}
             title="插入链接"
           >
@@ -384,7 +384,7 @@ export default function PostEditor({ onPostCreated, editPost, onCancelEdit }: Po
             className={`flex items-center gap-1.5 px-4 py-1.5 text-sm font-bold rounded-full transition-all ${
               submitting || (!content.trim() && files.length === 0 && !linkUrl.trim())
                 ? "bg-[var(--color-surface-card)] text-[var(--color-ash)] cursor-not-allowed"
-                : "bg-[var(--color-primary)] text-white hover:opacity-90 active:scale-95"
+                : "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black hover:opacity-90 active:scale-95"
             }`}
           >
             {submitting ? (

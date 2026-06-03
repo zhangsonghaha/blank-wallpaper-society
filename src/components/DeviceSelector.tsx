@@ -29,7 +29,7 @@ export default function DeviceSelector({ selected, onSelect }: DeviceSelectorPro
             className={`
               flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all duration-200
               ${isActive
-                ? "bg-[var(--color-primary)] text-white shadow-lg shadow-[var(--color-primary)]/25"
+                ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black shadow-lg shadow-[var(--color-primary)]/25"
                 : "text-white/60 hover:text-white/90 hover:bg-white/10"
               }
             `}

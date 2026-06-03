@@ -200,7 +200,7 @@ export default function ColorSearch({
                   </div>
                   <button
                     onClick={handleCustomColorConfirm}
-                    className="px-3 py-1.5 text-xs font-bold rounded-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-pressed)] transition-colors"
+                    className="px-3 py-1.5 text-xs font-bold rounded-full bg-[var(--color-primary)] text-white dark:bg-white dark:text-black hover:bg-[var(--color-primary-pressed)] transition-colors"
                   >
                     搜索
                   </button>

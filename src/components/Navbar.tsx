@@ -176,7 +176,7 @@ export default function Navbar() {
               >
                 收藏
                 {favoriteCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-[var(--color-primary)] text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-[var(--color-primary)] dark:bg-white text-white dark:text-black text-[9px] font-bold rounded-full flex items-center justify-center">
                     {favoriteCount > 9 ? "9+" : favoriteCount}
                   </span>
                 )}
@@ -445,7 +445,7 @@ export default function Navbar() {
             >
               <Heart className="w-5 h-5 text-[var(--color-ink)]" />
               {favoriteCount > 0 && (
-                <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-[var(--color-primary)] text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-[var(--color-primary)] dark:bg-white text-white dark:text-black text-[9px] font-bold rounded-full flex items-center justify-center">
                   {favoriteCount > 9 ? "9+" : favoriteCount}
                 </span>
               )}
@@ -508,7 +508,7 @@ export default function Navbar() {
                       src={session.user?.image || ""}
                       alt={session.user?.name || ""}
                     />
-                    <AvatarFallback className="bg-[var(--color-primary)] text-white text-sm font-medium">
+                    <AvatarFallback className="bg-[var(--color-primary)] dark:bg-white text-white dark:text-black text-sm font-medium">
                       {userInitial}
                     </AvatarFallback>
                   </Avatar>
@@ -777,7 +777,7 @@ export default function Navbar() {
               >
                 收藏
                 {favoriteCount > 0 && (
-                  <span className="px-2 py-0.5 bg-[var(--color-primary)] text-white text-xs font-bold rounded-full">
+                  <span className="px-2 py-0.5 bg-[var(--color-primary)] dark:bg-white text-white dark:text-black text-xs font-bold rounded-full">
                     {favoriteCount}
                   </span>
                 )}
@@ -788,7 +788,7 @@ export default function Navbar() {
                   <div className="px-4 py-2 flex items-center gap-3">
                     <Avatar className="w-8 h-8">
                       <AvatarImage src={session.user?.image || ""} />
-                      <AvatarFallback className="bg-[var(--color-primary)] text-white text-xs">
+                      <AvatarFallback className="bg-[var(--color-primary)] dark:bg-white text-white dark:text-black text-xs">
                         {userInitial}
                       </AvatarFallback>
                     </Avatar>

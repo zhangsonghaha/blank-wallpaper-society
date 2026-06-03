@@ -283,7 +283,7 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
             {/* 作者信息 */}
             {imageData.uploadedBy && (
               <div className="flex items-center gap-3 p-4 rounded-lg bg-[var(--color-surface-elevated)]">
-                <div className="w-10 h-10 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white font-medium">
+                <div className="w-10 h-10 rounded-full bg-[var(--color-primary)] dark:bg-white flex items-center justify-center text-white dark:text-black font-medium">
                   {imageData.authorAvatar ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={imageData.authorAvatar} alt={imageData.author} className="w-10 h-10 rounded-full object-cover" />

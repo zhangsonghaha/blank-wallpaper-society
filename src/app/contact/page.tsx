@@ -125,7 +125,7 @@ export default function ContactPage() {
 
               <button
                 type="submit"
-                className="w-full h-12 bg-[var(--color-primary)] text-white font-semibold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors"
+                className="w-full h-12 bg-[var(--color-primary)] text-white dark:bg-white dark:text-black font-semibold rounded-full hover:bg-[var(--color-primary-pressed)] dark:hover:bg-white dark:hover:text-black transition-colors"
               >
                 发送消息
               </button>

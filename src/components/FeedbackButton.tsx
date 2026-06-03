@@ -63,7 +63,7 @@ export default function FeedbackButton() {
     <>
       <motion.button
         onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full bg-[var(--color-primary)] text-white shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center"
+        className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full bg-[var(--color-primary)] text-white dark:bg-white dark:text-black shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center"
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
         aria-label="反馈"

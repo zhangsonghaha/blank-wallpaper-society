@@ -335,7 +335,7 @@ export default function AdvancedFilterPanel({
                       onClick={() => setLocalSort(option.value as any)}
                       className={`px-4 py-2 text-sm rounded-xl transition-colors font-medium ${
                         localSort === option.value
-                          ? "bg-[var(--color-primary)] text-white"
+                          ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black"
                           : "bg-[var(--color-surface-card)] text-[var(--color-ink)] hover:bg-[var(--color-secondary-bg)]"
                       }`}
                     >
@@ -358,7 +358,7 @@ export default function AdvancedFilterPanel({
                 </button>
                 <button
                   onClick={applyFilters}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--color-primary)] text-white font-bold hover:bg-[var(--color-primary-pressed)] transition-colors"
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--color-primary)] text-white dark:bg-white dark:text-black font-bold hover:bg-[var(--color-primary-pressed)] transition-colors"
                 >
                   应用筛选
                 </button>

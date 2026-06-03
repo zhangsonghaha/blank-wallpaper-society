@@ -255,7 +255,7 @@ export default function MessagesClient() {
           <p className="text-[var(--color-mute)] mb-4">登录后即可使用私信功能</p>
           <Link
             href="/login"
-            className="px-4 py-2 bg-[var(--color-primary)] text-white rounded-full text-sm hover:opacity-90"
+            className="px-4 py-2 bg-[var(--color-primary)] text-white dark:bg-white dark:text-black rounded-full text-sm hover:opacity-90"
           >
             前往登录
           </Link>
@@ -435,7 +435,7 @@ export default function MessagesClient() {
                                 <div
                                   className={`px-4 py-2.5 rounded-2xl text-sm break-words ${
                                     isMine
-                                      ? "bg-[var(--color-primary)] text-white rounded-br-md"
+                                      ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black rounded-br-md"
                                       : "bg-[var(--color-surface-card)] text-[var(--color-ink)] rounded-bl-md"
                                   }`}
                                 >
@@ -485,7 +485,7 @@ export default function MessagesClient() {
                     <button
                       onClick={handleSend}
                       disabled={!messageInput.trim() || sending}
-                      className="w-11 h-11 flex items-center justify-center rounded-full bg-[var(--color-primary)] text-white hover:opacity-90 disabled:opacity-40 transition-opacity shrink-0"
+                      className="w-11 h-11 flex items-center justify-center rounded-full bg-[var(--color-primary)] text-white dark:bg-white dark:text-black hover:opacity-90 disabled:opacity-40 transition-opacity shrink-0"
                     >
                       {sending ? (
                         <Loader2 className="w-5 h-5 animate-spin" />

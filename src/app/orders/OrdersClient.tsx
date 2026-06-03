@@ -156,7 +156,7 @@ export default function OrdersClient() {
                 onClick={() => { setFilterStatus(s); setPage(1); }}
                 className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
                   filterStatus === s
-                    ? "bg-[var(--color-primary)] text-white"
+                    ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black"
                     : "bg-[var(--color-surface-elevated)] text-[var(--color-mute)] hover:bg-[var(--color-surface-hover)]"
                 }`}
               >

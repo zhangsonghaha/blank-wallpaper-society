@@ -50,7 +50,7 @@ export default function ImageListToolbar({
               onClick={() => setActiveTab("list")}
               className={`px-3 py-1 text-xs rounded-full transition-colors ${
                 activeTab === "list"
-                  ? "bg-[var(--color-primary)] text-white"
+                  ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black"
                   : "text-[var(--color-mute)] hover:text-foreground"
               }`}
             >
@@ -63,7 +63,7 @@ export default function ImageListToolbar({
               }}
               className={`px-3 py-1 text-xs rounded-full transition-colors flex items-center gap-1 ${
                 activeTab === "duplicates"
-                  ? "bg-[var(--color-primary)] text-white"
+                  ? "bg-[var(--color-primary)] text-white dark:bg-white dark:text-black"
                   : "text-[var(--color-mute)] hover:text-foreground"
               }`}
             >

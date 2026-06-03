@@ -91,7 +91,7 @@ export default function TagsPage() {
                 <Link
                   key={tag.name}
                   href={`/?q=${encodeURIComponent(tag.name)}`}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)] text-white px-4 py-2 text-sm font-medium hover:bg-[var(--color-primary-pressed)] transition-colors"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)] text-white dark:bg-white dark:text-black px-4 py-2 text-sm font-medium hover:bg-[var(--color-primary-pressed)] dark:hover:bg-white dark:hover:text-black transition-colors"
                 >
                   <Hash className="w-3.5 h-3.5" />
                   {tag.name}
