@@ -439,7 +439,7 @@ export default function AdminClient() {
                   onClick={() => toggleGroup(group.id)}
                   className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-all group relative ${
                     hasActiveChild && !sidebarCollapsed
-                      ? "bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+                      ? "bg-[var(--color-primary)]/10 dark:bg-white/10 text-[var(--color-primary)] dark:text-white"
                       : "text-[var(--color-mute)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]"
                   }`}
                 >
@@ -481,7 +481,7 @@ export default function AdminClient() {
                             }}
                             className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all text-sm ${
                               activeTab === item.id
-                                ? "bg-[var(--color-primary)] text-white shadow-sm"
+                                ? "bg-[var(--color-primary)] dark:bg-white text-white dark:text-black shadow-sm"
                                 : "text-[var(--color-mute)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]"
                             }`}
                           >
@@ -510,7 +510,7 @@ export default function AdminClient() {
                         }}
                         className={`w-full flex items-center justify-center py-1.5 rounded-lg transition-all group relative ${
                           activeTab === item.id
-                            ? "bg-[var(--color-primary)] text-white"
+                            ? "bg-[var(--color-primary)] dark:bg-white text-white dark:text-black"
                             : "text-[var(--color-mute)] hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-ink)]"
                         }`}
                       >
