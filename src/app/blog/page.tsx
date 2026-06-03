@@ -86,7 +86,7 @@ export default function BlogPage() {
             {blogPosts.map((post) => (
               <article
                 key={post.id}
-                className="group bg-white rounded-2xl border border-[var(--color-hairline)] overflow-hidden hover:shadow-lg transition-shadow"
+                className="group bg-[var(--color-surface-card)] rounded-2xl border border-[var(--color-hairline)] overflow-hidden hover:shadow-lg transition-shadow"
               >
                 <div className="aspect-video bg-[var(--color-surface-card)] flex items-center justify-center">
                   <div className="text-6xl font-bold text-[var(--color-stone)]">
@@ -142,7 +142,7 @@ export default function BlogPage() {
             <input
               type="email"
               placeholder="输入你的邮箱"
-              className="flex-1 h-12 px-4 bg-white border border-[var(--color-hairline)] rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-focus-outer)]"
+              className="flex-1 h-12 px-4 bg-[var(--color-surface-card)] border border-[var(--color-hairline)] rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-focus-outer)]"
             />
             <button className="px-6 h-12 bg-[var(--color-primary)] text-white text-sm font-semibold rounded-full hover:bg-[var(--color-primary-pressed)] transition-colors shrink-0">
               订阅

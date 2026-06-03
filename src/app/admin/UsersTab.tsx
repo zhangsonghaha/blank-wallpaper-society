@@ -141,7 +141,7 @@ function RoleBadge({ role }: { role: string }) {
 function StatusBadge({ status }: { status: string }) {
   if (status === "banned" || status === "suspended") {
     return (
-      <Badge className="rounded-full gap-1 bg-red-100 text-red-700 border-0 font-medium">
+      <Badge className="rounded-full gap-1 bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400 border-0 font-medium">
         <Ban className="w-3 h-3" />
         {status === "suspended" ? "已停用" : "已封禁"}
       </Badge>
@@ -149,7 +149,7 @@ function StatusBadge({ status }: { status: string }) {
   }
   if (status === "pending_deletion") {
     return (
-      <Badge className="rounded-full gap-1 bg-amber-100 text-amber-700 border-0 font-medium">
+      <Badge className="rounded-full gap-1 bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400 border-0 font-medium">
         <Clock className="w-3 h-3" />
         待注销
       </Badge>
@@ -157,14 +157,14 @@ function StatusBadge({ status }: { status: string }) {
   }
   if (status === "deleted") {
     return (
-      <Badge className="rounded-full gap-1 bg-gray-100 text-gray-500 border-0 font-medium">
+      <Badge className="rounded-full gap-1 bg-[var(--color-surface-card)] text-[var(--color-mute)] border-0 font-medium">
         <Trash2 className="w-3 h-3" />
         已注销
       </Badge>
     );
   }
   return (
-    <Badge className="rounded-full gap-1 bg-green-100 text-green-700 border-0 font-medium">
+    <Badge className="rounded-full gap-1 bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400 border-0 font-medium">
       <Unlock className="w-3 h-3" />
       正常
     </Badge>
@@ -405,8 +405,8 @@ export default function UsersTab() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-              <Users className="w-5 h-5 text-blue-600" />
+            <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
+              <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
               <p className="text-xs text-[var(--color-mute)]">用户总数</p>
@@ -418,8 +418,8 @@ export default function UsersTab() {
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-              <Unlock className="w-5 h-5 text-green-600" />
+            <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
+              <Unlock className="w-5 h-5 text-green-600 dark:text-green-400" />
             </div>
             <div>
               <p className="text-xs text-[var(--color-mute)]">活跃用户</p>
@@ -431,8 +431,8 @@ export default function UsersTab() {
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-              <Ban className="w-5 h-5 text-red-500" />
+            <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
+              <Ban className="w-5 h-5 text-red-500 dark:text-red-400" />
             </div>
             <div>
               <p className="text-xs text-[var(--color-mute)]">已封禁</p>
@@ -444,7 +444,7 @@ export default function UsersTab() {
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center">
               <ShieldAlert className="w-5 h-5 text-purple-600" />
             </div>
             <div>
@@ -554,7 +554,7 @@ export default function UsersTab() {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100">
+                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30">
                           <span className="text-sm font-bold text-blue-600">
                             {user.name?.charAt(0)?.toUpperCase() || "U"}
                           </span>
@@ -728,7 +728,7 @@ export default function UsersTab() {
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100">
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30">
                         <span className="text-lg font-bold text-blue-600">
                           {detailUser.name?.charAt(0)?.toUpperCase() || "U"}
                         </span>
@@ -783,8 +783,8 @@ export default function UsersTab() {
 
               {/* 封禁信息 */}
               {(detailUser.status === "banned" || detailUser.status === "suspended") && detailUser.banned_reason && (
-                <div className="p-3 rounded-xl bg-red-50 border border-red-200">
-                  <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 dark:bg-red-900/10 dark:border-red-800">
+                  <p className="text-xs text-red-600 dark:text-red-400 font-medium flex items-center gap-1">
                     <Ban className="w-3 h-3" /> 封禁原因
                   </p>
                   <p className="text-sm text-red-800 mt-1">{detailUser.banned_reason}</p>
@@ -1043,7 +1043,7 @@ export default function UsersTab() {
               此操作将匿名化该用户信息，不可恢复。
             </DialogDescription>
           </DialogHeader>
-          <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800">
+          <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800 dark:bg-red-900/10 dark:border-red-800 dark:text-red-300">
             <p className="font-medium">注意：</p>
             <ul className="list-disc list-inside mt-1 space-y-0.5 text-xs">
               <li>用户昵称、邮箱、头像将被清除</li>
@@ -1097,7 +1097,7 @@ export default function UsersTab() {
                 minLength={6}
               />
             </div>
-            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-800">
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-800 dark:bg-amber-900/10 dark:border-amber-800 dark:text-amber-300">
               <p className="font-medium">注意：</p>
               <ul className="list-disc list-inside mt-1 space-y-0.5 text-xs">
                 <li>重置后用户需要使用新密码登录</li>

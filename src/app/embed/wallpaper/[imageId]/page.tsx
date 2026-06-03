@@ -13,7 +13,7 @@ export default async function EmbedWallpaperPage({
     return (
       <html>
         <body style={{ margin: 0, fontFamily: "system-ui, sans-serif" }}>
-          <div style={{ padding: 20, textAlign: "center", color: "#999" }}>
+          <div style={{ padding: 20, textAlign: "center", color: "var(--color-mute)" }}>
             无效的图片ID
           </div>
         </body>
@@ -37,7 +37,7 @@ export default async function EmbedWallpaperPage({
     return (
       <html>
         <body style={{ margin: 0, fontFamily: "system-ui, sans-serif" }}>
-          <div style={{ padding: 20, textAlign: "center", color: "#999" }}>
+          <div style={{ padding: 20, textAlign: "center", color: "var(--color-mute)" }}>
             图片不存在
           </div>
         </body>

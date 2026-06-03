@@ -26,31 +26,31 @@ const steps: Step[] = [
     icon: Search,
     title: "发现灵感",
     description: "搜索浏览数万张精选高清壁纸，从自然风光到城市建筑，找到属于你的视觉灵感。",
-    color: "bg-blue-50 text-blue-600",
+    color: "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400",
   },
   {
     icon: Heart,
     title: "收藏与下载",
     description: "一键收藏喜爱的壁纸，创建专属合集，支持多种分辨率下载。",
-    color: "bg-red-50 text-red-600",
+    color: "bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400",
   },
   {
     icon: Upload,
     title: "分享你的作品",
     description: "上传你的摄影作品和壁纸创作，让更多人看到你的精彩内容。",
-    color: "bg-green-50 text-green-600",
+    color: "bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400",
   },
   {
     icon: Sparkles,
     title: "AI 生成壁纸",
     description: "使用 AI 创作独一无二的壁纸，输入描述即可生成专属壁纸。",
-    color: "bg-purple-50 text-purple-600",
+    color: "bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400",
   },
   {
     icon: Grid3X3,
     title: "合集与挑战",
     description: "创建主题合集，参与社区挑战赛，与创作者互动交流。",
-    color: "bg-amber-50 text-amber-600",
+    color: "bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400",
   },
 ];
 
@@ -228,7 +228,7 @@ export function OnboardingTaskPanel() {
         {/* 标题 */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400 flex items-center justify-center">
               <Rocket className="w-4 h-4" />
             </div>
             <div>
@@ -239,7 +239,7 @@ export function OnboardingTaskPanel() {
             </div>
           </div>
           {allDone && (
-            <Badge className="bg-green-100 text-green-700">
+            <Badge className="bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400">
               <Trophy className="w-3 h-3 mr-1" />全部完成
             </Badge>
           )}
@@ -269,7 +269,7 @@ export function OnboardingTaskPanel() {
                 }`}
               >
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                  task.completed ? "bg-green-100 text-green-600" : "bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+                  task.completed ? "bg-green-100 text-green-600 dark:bg-green-900/20 dark:text-green-400" : "bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
                 }`}>
                   {task.completed ? <Check className="w-4 h-4" /> : <TaskIcon className="w-4 h-4" />}
                 </div>

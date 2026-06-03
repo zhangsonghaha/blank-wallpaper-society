@@ -284,7 +284,7 @@ export default function PaymentDialog({
                         : "打赏已送达"}
                   </p>
                   {orderType === "membership" && (
-                    <div className="w-full mt-2 p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200">
+                    <div className="w-full mt-2 p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 dark:from-amber-900/10 dark:to-orange-900/10 dark:border-amber-800">
                       <p className="text-sm font-medium text-amber-700 mb-2 flex items-center gap-1.5">
                         <CheckCircle2 className="w-4 h-4" />
                         已解锁会员权益

@@ -153,7 +153,7 @@ export default function CreatorApplicationForm({
       </CardHeader>
       <CardContent>
         {isRejected && status?.verification_rejected_reason && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
             <strong>上次审核未通过：</strong>{status.verification_rejected_reason}
           </div>
         )}

@@ -180,7 +180,7 @@ export default function NotificationBell() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-[var(--color-hairline)] overflow-hidden z-50"
+            className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-[var(--color-surface-card)] rounded-2xl shadow-2xl border border-[var(--color-hairline)] overflow-hidden z-50"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-hairline)]">
@@ -282,7 +282,7 @@ export default function NotificationBell() {
                         )}
                         <button
                           onClick={() => deleteNotification(notification.id)}
-                          className="p-1 rounded-full hover:bg-red-50 text-[var(--color-mute)] hover:text-red-500"
+                          className="p-1 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 text-[var(--color-mute)] hover:text-red-500"
                           title="删除"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

@@ -63,7 +63,7 @@ export default function CookieConsent() {
         >
           <div className="max-w-3xl mx-auto bg-[var(--color-surface-soft)] border border-[var(--color-hairline)] rounded-2xl shadow-xl p-5">
             <div className="flex items-start gap-4">
-              <div className="w-10 h-10 shrink-0 rounded-xl bg-amber-50 flex items-center justify-center">
+              <div className="w-10 h-10 shrink-0 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center">
                 <Cookie className="w-5 h-5 text-amber-600" />
               </div>
               <div className="flex-1 min-w-0">

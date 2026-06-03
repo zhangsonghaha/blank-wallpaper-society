@@ -32,10 +32,10 @@ function getLevelStyle(level: number) {
   if (level >= 4) {
     return {
       bg: "bg-gradient-to-br from-gray-200 via-gray-300 to-gray-400",
-      border: "border-gray-300/60",
+      border: "border-gray-300/60 dark:border-gray-600/60",
       shadow: "shadow-[0_0_8px_rgba(180,180,200,0.3)]",
-      text: "text-gray-700",
-      ring: "ring-2 ring-gray-300/40",
+      text: "text-gray-700 dark:text-gray-300",
+      ring: "ring-2 ring-gray-300/40 dark:ring-gray-600/40",
     };
   }
   return {

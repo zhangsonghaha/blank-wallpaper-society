@@ -111,7 +111,7 @@ export default function DashboardTab() {
                 onClick={(e) => { handleRipple(e); setDays(d); }}
                 className={`relative overflow-hidden px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
                   days === d
-                    ? "bg-white text-[var(--color-ink)] shadow-sm"
+                    ? "bg-[var(--color-surface-card)] text-[var(--color-ink)] shadow-sm"
                     : "text-[var(--color-ash)] hover:text-[var(--color-ink)]"
                 }`}
               >
@@ -126,7 +126,7 @@ export default function DashboardTab() {
               onClick={(e) => { handleRipple(e); setChartType("bar"); }}
               className={`relative overflow-hidden px-2.5 py-1.5 text-xs font-medium rounded-md transition-all ${
                 chartType === "bar"
-                  ? "bg-white text-[var(--color-ink)] shadow-sm"
+                  ? "bg-[var(--color-surface-card)] text-[var(--color-ink)] shadow-sm"
                   : "text-[var(--color-ash)] hover:text-[var(--color-ink)]"
               }`}
             >
@@ -136,7 +136,7 @@ export default function DashboardTab() {
               onClick={(e) => { handleRipple(e); setChartType("line"); }}
               className={`relative overflow-hidden px-2.5 py-1.5 text-xs font-medium rounded-md transition-all ${
                 chartType === "line"
-                  ? "bg-white text-[var(--color-ink)] shadow-sm"
+                  ? "bg-[var(--color-surface-card)] text-[var(--color-ink)] shadow-sm"
                   : "text-[var(--color-ash)] hover:text-[var(--color-ink)]"
               }`}
             >
@@ -169,7 +169,7 @@ export default function DashboardTab() {
 
       {/* 刷新中覆盖层 */}
       {refreshing && data && (
-        <div className="fixed top-20 right-6 z-50 flex items-center gap-2 bg-white shadow-lg rounded-lg px-4 py-2 border">
+        <div className="fixed top-20 right-6 z-50 flex items-center gap-2 bg-[var(--color-surface-card)] shadow-lg rounded-lg px-4 py-2 border">
           <RefreshCw className="w-4 h-4 animate-spin text-[var(--color-pinterest)]" />
           <span className="text-sm text-[var(--color-ink)]">正在刷新数据...</span>
         </div>
@@ -321,7 +321,7 @@ export default function DashboardTab() {
             <Card className="group hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Download className="w-4 h-4 text-[#059669]" />
+                  <Download className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   下载趋势
                 </CardTitle>
                 <CardDescription>近{days}天每日下载量</CardDescription>
@@ -342,7 +342,7 @@ export default function DashboardTab() {
             <Card className="group hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Users className="w-4 h-4 text-[#4F46E5]" />
+                  <Users className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                   用户注册趋势
                 </CardTitle>
                 <CardDescription>近{days}天每日新增注册用户</CardDescription>
@@ -363,7 +363,7 @@ export default function DashboardTab() {
             >
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-[#D97706]" />
+                  <Activity className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                   分类分布
                   <ChevronRight className="w-4 h-4 text-[var(--color-ash)] opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
                 </CardTitle>
@@ -380,7 +380,7 @@ export default function DashboardTab() {
             <Card className="group hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Video className="w-4 h-4 text-[#4F46E5]" />
+                  <Video className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                   媒体类型分布
                 </CardTitle>
                 <CardDescription>图片 vs 视频占比</CardDescription>
@@ -400,7 +400,7 @@ export default function DashboardTab() {
             <Card className="group hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Monitor className="w-4 h-4 text-[#7C3AED]" />
+                  <Monitor className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                   分辨率分布
                 </CardTitle>
                 <CardDescription>各分辨率壁纸占比</CardDescription>
@@ -420,7 +420,7 @@ export default function DashboardTab() {
             <Card className="group hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <HardDrive className="w-4 h-4 text-[#7C3AED]" />
+                  <HardDrive className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                   存储概览
                 </CardTitle>
                 <CardDescription>MinIO 存储使用情况</CardDescription>
@@ -482,7 +482,7 @@ export default function DashboardTab() {
             >
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Users className="w-4 h-4 text-[#4F46E5]" />
+                  <Users className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                   近期注册用户
                   <ChevronRight className="w-4 h-4 text-[var(--color-ash)] opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
                 </CardTitle>

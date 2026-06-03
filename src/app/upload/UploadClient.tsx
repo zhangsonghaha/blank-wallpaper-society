@@ -693,7 +693,7 @@ export default function UploadClient() {
                     className={`rounded-xl overflow-hidden ${
                       fileItem.valid
                         ? "border-[var(--color-hairline)]"
-                        : "border-red-300 bg-red-50/50"
+                        : "border-red-300 bg-red-50/50 dark:border-red-800 dark:bg-red-900/20"
                     }`}
                   >
                     <CardContent className="p-0">
@@ -1007,7 +1007,7 @@ export default function UploadClient() {
                         result.imageStatus === "approved" ? (
                           <Badge
                             variant="outline"
-                            className="shrink-0 text-green-600 border-green-300 bg-green-50"
+                            className="shrink-0 text-green-600 border-green-300 bg-green-50 dark:text-green-400 dark:border-green-800 dark:bg-green-900/20"
                           >
                             <CheckCircle className="w-3 h-3 mr-1" />
                             已通过
@@ -1015,7 +1015,7 @@ export default function UploadClient() {
                         ) : result.imageStatus === "rejected" ? (
                           <Badge
                             variant="outline"
-                            className="shrink-0 text-red-600 border-red-300 bg-red-50"
+                            className="shrink-0 text-red-600 border-red-300 bg-red-50 dark:text-red-400 dark:border-red-800 dark:bg-red-900/20"
                           >
                             <AlertCircle className="w-3 h-3 mr-1" />
                             已拒绝
@@ -1023,7 +1023,7 @@ export default function UploadClient() {
                         ) : (
                           <Badge
                             variant="outline"
-                            className="shrink-0 text-yellow-600 border-yellow-300 bg-yellow-50"
+                            className="shrink-0 text-yellow-600 border-yellow-300 bg-yellow-50 dark:text-yellow-400 dark:border-yellow-800 dark:bg-yellow-900/20"
                           >
                             <Clock className="w-3 h-3 mr-1" />
                             待审核
@@ -1033,7 +1033,7 @@ export default function UploadClient() {
                       {result.status === "duplicate" && (
                         <Badge
                           variant="outline"
-                          className="shrink-0 text-orange-600 border-orange-300 bg-orange-50"
+                          className="shrink-0 text-orange-600 border-orange-300 bg-orange-50 dark:text-orange-400 dark:border-orange-800 dark:bg-orange-900/20"
                         >
                           重复
                         </Badge>

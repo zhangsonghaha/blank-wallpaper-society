@@ -25,7 +25,7 @@ const AI_STYLES: Record<string, { name: string; emoji: string; color: string }> 
   watercolor: { name: "水彩", emoji: "💧", color: "bg-cyan-100 text-cyan-700 border-cyan-200" },
   cyberpunk: { name: "赛博朋克", emoji: "🌃", color: "bg-violet-100 text-violet-700 border-violet-200" },
   nature: { name: "自然风光", emoji: "🏔️", color: "bg-green-100 text-green-700 border-green-200" },
-  minimalist: { name: "极简", emoji: "⬜", color: "bg-gray-100 text-gray-700 border-gray-200" },
+  minimalist: { name: "极简", emoji: "⬜", color: "bg-[var(--color-surface-card)] text-[var(--color-body)] border-[var(--color-hairline)]" },
 };
 
 const SIZE_PRESETS = [
@@ -242,7 +242,7 @@ export default function AiGenerateClient() {
                           className={`relative p-3 rounded-xl border-2 transition-all text-center ${
                             selectedStyle === key
                               ? "border-[var(--color-ink)] shadow-sm"
-                              : "border-transparent hover:border-gray-200"
+                              : "border-transparent hover:border-gray-200 dark:hover:border-[var(--color-hairline)]"
                           }`}
                         >
                           <div className="text-2xl mb-1">{style.emoji}</div>
@@ -274,7 +274,7 @@ export default function AiGenerateClient() {
                             className={`relative p-3 rounded-xl border-2 transition-all text-center ${
                               selectedSize === size.id
                                 ? "border-[var(--color-ink)] shadow-sm"
-                                : "border-transparent hover:border-gray-200"
+                                : "border-transparent hover:border-gray-200 dark:hover:border-[var(--color-hairline)]"
                             }`}
                           >
                             <Icon className="w-6 h-6 mx-auto mb-1 text-[var(--color-ink)]" />
@@ -432,7 +432,7 @@ export default function AiGenerateClient() {
                           loading="lazy"
                         />
                       ) : gen.status === "processing" ? (
-                        <div className="flex flex-col items-center justify-center py-16 bg-gradient-to-br from-purple-50 to-blue-50">
+                        <div className="flex flex-col items-center justify-center py-16 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/10 dark:to-blue-900/10">
                           <Loader2 className="w-8 h-8 animate-spin text-purple-500 mb-2" />
                           <p className="text-xs text-purple-600">生成中...</p>
                         </div>

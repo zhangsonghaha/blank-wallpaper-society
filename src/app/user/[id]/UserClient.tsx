@@ -241,7 +241,7 @@ export default function UserClient({
                           disabled={followLoading}
                           className={`rounded-full gap-1 text-xs ${
                             isFollowing
-                              ? "bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                              ? "bg-[var(--color-secondary-bg)] text-[var(--color-body)] hover:bg-[var(--color-secondary-pressed)] border border-[var(--color-hairline)]"
                               : "bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-pressed)]"
                           }`}
                         >

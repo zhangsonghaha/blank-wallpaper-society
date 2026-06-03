@@ -302,7 +302,7 @@ export default function PostCard({ post, onUpdated, onDeleted }: PostCardProps) 
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white rounded-xl border border-[var(--color-hairline)] shadow-sm overflow-hidden mb-4"
+      className="bg-[var(--color-surface-card)] rounded-xl border border-[var(--color-hairline)] shadow-sm overflow-hidden mb-4"
     >
       {/* 头部：用户信息 + 操作 */}
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
@@ -356,7 +356,7 @@ export default function PostCard({ post, onUpdated, onDeleted }: PostCardProps) 
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-[var(--color-hairline)] overflow-hidden z-10 min-w-[120px]"
+                  className="absolute right-0 top-full mt-1 bg-[var(--color-surface-card)] rounded-lg shadow-lg border border-[var(--color-hairline)] overflow-hidden z-10 min-w-[120px]"
                 >
                   {isOwner && (
                     <button
@@ -376,7 +376,7 @@ export default function PostCard({ post, onUpdated, onDeleted }: PostCardProps) 
                       e.stopPropagation();
                       handleDelete();
                     }}
-                    className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
+                    className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     删除
@@ -550,7 +550,7 @@ export default function PostCard({ post, onUpdated, onDeleted }: PostCardProps) 
                 initial={{ opacity: 0, scale: 0.95, y: 5 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 5 }}
-                className="absolute bottom-full right-0 mb-2 bg-white rounded-lg shadow-lg border border-[var(--color-hairline)] overflow-hidden z-10 min-w-[140px]"
+                className="absolute bottom-full right-0 mb-2 bg-[var(--color-surface-card)] rounded-lg shadow-lg border border-[var(--color-hairline)] overflow-hidden z-10 min-w-[140px]"
               >
                 <button
                   onClick={(e) => {

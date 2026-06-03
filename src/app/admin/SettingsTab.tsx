@@ -602,7 +602,7 @@ export default function SettingsTab() {
         </div>
         <div className="flex items-center gap-2">
           {hasChanges && (
-            <Badge variant="outline" className="rounded-full text-xs text-amber-600 border-amber-300 bg-amber-50">
+            <Badge variant="outline" className="rounded-full text-xs text-amber-600 border-amber-300 bg-amber-50 dark:text-amber-400 dark:border-amber-700 dark:bg-amber-900/10">
               有未保存的修改
             </Badge>
           )}
@@ -674,9 +674,9 @@ export default function SettingsTab() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {Object.entries(healthData.checks).map(([name, check]) => (
                   <div key={name} className={`p-3 rounded-lg border ${
-                    check.status === "ok" ? "border-green-200 bg-green-50/50" :
-                    check.status === "warning" ? "border-yellow-200 bg-yellow-50/50" :
-                    "border-red-200 bg-red-50/50"
+                    check.status === "ok" ? "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-900/10" :
+                    check.status === "warning" ? "border-yellow-200 bg-yellow-50/50 dark:border-yellow-800 dark:bg-yellow-900/10" :
+                    "border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-900/10"
                   }`}>
                     <div className="flex items-center gap-2 mb-1">
                       {check.status === "ok" ? (
@@ -784,7 +784,7 @@ export default function SettingsTab() {
                             <select
                               value={settings[field.key] || ""}
                               onChange={(e) => updateSetting(field.key, e.target.value)}
-                              className="w-full rounded-lg border border-[var(--color-surface-card)] bg-white px-3 py-2 text-sm text-[var(--color-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                              className="w-full rounded-lg border border-[var(--color-surface-card)] bg-[var(--color-surface-card)] px-3 py-2 text-sm text-[var(--color-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                             >
                               {field.options?.map((opt) => (
                                 <option key={opt.value} value={opt.value}>
@@ -911,7 +911,7 @@ export default function SettingsTab() {
                   onClick={handleRebuildIndex}
                   disabled={syncing || rebuilding}
                   variant="outline"
-                  className="rounded-full text-red-600 hover:text-red-700 hover:bg-red-50"
+                  className="rounded-full text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20"
                   size="sm"
                 >
                   <Trash2 className={`w-3.5 h-3.5 mr-1.5 ${rebuilding ? "animate-spin" : ""}`} />
@@ -922,9 +922,9 @@ export default function SettingsTab() {
           )}
 
           {!searchAvailable && (
-            <div className="p-3 rounded-lg bg-amber-50 text-amber-700 text-xs">
+            <div className="p-3 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-900/10 dark:text-amber-400 text-xs">
               <p className="font-medium mb-1">Meilisearch 未配置或不可用</p>
-              <p className="text-amber-600">
+              <p className="text-amber-600 dark:text-amber-400">
                 请确保已设置环境变量 MEILISEARCH_HOST 和 MEILISEARCH_API_KEY，
                 并且 Meilisearch 服务已启动。未配置时搜索将使用数据库 LIKE 查询。
               </p>
@@ -1004,8 +1004,8 @@ export default function SettingsTab() {
           {emailTestResult && (
             <div className={`p-3 rounded-lg border ${
               emailTestResult.success
-                ? "bg-emerald-50 border-emerald-200"
-                : "bg-red-50 border-red-200"
+                ? "bg-emerald-50 border-emerald-200 dark:bg-emerald-900/10 dark:border-emerald-800"
+                : "bg-red-50 border-red-200 dark:bg-red-900/10 dark:border-red-800"
             }`}>
               <div className="flex items-center gap-2 mb-1">
                 {emailTestResult.success ? (
@@ -1032,9 +1032,9 @@ export default function SettingsTab() {
 
           {/* 提示信息 */}
           {settings.email_enabled !== "true" && (
-            <div className="p-3 rounded-lg bg-amber-50 text-amber-700 text-xs">
+            <div className="p-3 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-900/10 dark:text-amber-400 text-xs">
               <p className="font-medium mb-1">邮件服务未启用</p>
-              <p className="text-amber-600">
+              <p className="text-amber-600 dark:text-amber-400">
                 请在上方"邮件服务配置"分组中启用邮件服务，并填写对应的配置信息（SMTP 或 Resend），然后点击发送测试邮件验证配置是否正确。
               </p>
             </div>
@@ -1105,8 +1105,8 @@ export default function SettingsTab() {
           {aiTestResult && (
             <div className={`p-3 rounded-lg border ${
               aiTestResult.success
-                ? "bg-emerald-50 border-emerald-200"
-                : "bg-red-50 border-red-200"
+                ? "bg-emerald-50 border-emerald-200 dark:bg-emerald-900/10 dark:border-emerald-800"
+                : "bg-red-50 border-red-200 dark:bg-red-900/10 dark:border-red-800"
             }`}>
               <div className="flex items-center gap-2 mb-1">
                 {aiTestResult.success ? (
@@ -1158,9 +1158,9 @@ export default function SettingsTab() {
 
           {/* 提示信息 */}
           {!settings.ai_api_key && (
-            <div className="p-3 rounded-lg bg-amber-50 text-amber-700 text-xs">
+            <div className="p-3 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-900/10 dark:text-amber-400 text-xs">
               <p className="font-medium mb-1">AI 生成功能未配置</p>
-              <p className="text-amber-600">
+              <p className="text-amber-600 dark:text-amber-400">
                 请在上方"AI 生成配置"分组中填写 API 地址、密钥和模型名称，然后点击测试连接验证配置是否正确。
               </p>
             </div>

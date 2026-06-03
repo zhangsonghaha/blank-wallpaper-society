@@ -102,21 +102,21 @@ const PLAN_LABELS: Record<string, string> = {
 };
 
 const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
-  payment: { label: "支付购买", color: "bg-blue-100 text-blue-700" },
-  admin_grant: { label: "管理员发放", color: "bg-purple-100 text-purple-700" },
-  redeem_code: { label: "兑换码", color: "bg-green-100 text-green-700" },
+  payment: { label: "支付购买", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400" },
+  admin_grant: { label: "管理员发放", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400" },
+  redeem_code: { label: "兑换码", color: "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400" },
 };
 
 const STATUS_STYLES: Record<string, { label: string; color: string }> = {
-  active: { label: "生效中", color: "bg-green-100 text-green-700" },
-  expired: { label: "已过期", color: "bg-gray-100 text-gray-500" },
-  cancelled: { label: "已取消", color: "bg-red-100 text-red-700" },
+  active: { label: "生效中", color: "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400" },
+  expired: { label: "已过期", color: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400" },
+  cancelled: { label: "已取消", color: "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400" },
 };
 
 const CODE_STATUS_STYLES: Record<string, { label: string; color: string }> = {
-  active: { label: "可用", color: "bg-green-100 text-green-700" },
-  disabled: { label: "已禁用", color: "bg-gray-100 text-gray-500" },
-  expired: { label: "已过期", color: "bg-amber-100 text-amber-700" },
+  active: { label: "可用", color: "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400" },
+  disabled: { label: "已禁用", color: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400" },
+  expired: { label: "已过期", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400" },
 };
 
 /* ==================== 工具函数 ==================== */
@@ -657,7 +657,7 @@ function RedeemCodesSection() {
 
       {/* 生成结果展示 */}
       {showResult && generatedCodes.length > 0 && (
-        <Card className="border-green-200 bg-green-50/50">
+        <Card className="border-green-200 bg-green-50/50 dark:bg-green-900/10 dark:border-green-800">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">兑换码已生成</CardTitle>
             <Button size="sm" variant="outline" onClick={() => setShowResult(false)}>关闭</Button>
@@ -665,7 +665,7 @@ function RedeemCodesSection() {
           <CardContent>
             <div className="flex flex-wrap gap-2">
               {generatedCodes.map((code) => (
-                <div key={code} className="flex items-center gap-1 bg-white border rounded px-2 py-1">
+                <div key={code} className="flex items-center gap-1 bg-[var(--color-surface-card)] border rounded px-2 py-1">
                   <code className="text-sm font-mono">{code}</code>
                   <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => copyCode(code)}>
                     <Copy className="w-3 h-3" />
@@ -924,7 +924,7 @@ function ExpiringSection() {
                     <td className="p-3">{PLAN_LABELS[m.plan] || m.plan}</td>
                     <td className="p-3 text-xs">{formatDate(m.expires_at)}</td>
                     <td className="p-3">
-                      <Badge className={daysLeft <= 3 ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}>
+                      <Badge className={daysLeft <= 3 ? "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400" : "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400"}>
                         {daysLeft}天
                       </Badge>
                     </td>

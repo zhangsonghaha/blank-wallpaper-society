@@ -172,7 +172,7 @@ export default function AddToCollectionDialog({
                     {isAdding ? (
                       <Loader2 className="w-5 h-5 animate-spin text-[var(--color-primary)] shrink-0" />
                     ) : isAdded ? (
-                      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                      <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
                         <Check className="w-4 h-4 text-green-600" />
                       </div>
                     ) : (

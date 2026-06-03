@@ -22,7 +22,7 @@ export default function CalendarEditorPage() {
 
 function CalendarLoading() {
   return (
-    <div className="h-screen flex items-center justify-center bg-white">
+    <div className="h-screen flex items-center justify-center bg-[var(--color-surface-soft)]">
       <div className="animate-spin w-8 h-8 border-2 border-[var(--color-primary,#e60023)] border-t-transparent rounded-full" />
     </div>
   );
@@ -142,9 +142,9 @@ function CalendarEditorContent() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-white overflow-hidden">
+    <div className="h-screen flex flex-col bg-[var(--color-surface-soft)] overflow-hidden">
       {/* 顶部操作栏 */}
-      <div className="h-12 shrink-0 flex items-center justify-between px-4 border-b border-[var(--color-hairline,#e5e5e0)] bg-white">
+      <div className="h-12 shrink-0 flex items-center justify-between px-4 border-b border-[var(--color-hairline,#e5e5e0)] bg-[var(--color-surface-card)]">
         <div className="flex items-center gap-3">
           <button
             onClick={handleBack}
@@ -196,7 +196,7 @@ function CalendarEditorContent() {
         </div>
 
         {/* 右侧日历配置面板 */}
-        <div className="w-80 shrink-0 border-l border-[var(--color-hairline,#e5e5e0)] bg-white flex flex-col overflow-hidden">
+        <div className="w-80 shrink-0 border-l border-[var(--color-hairline,#e5e5e0)] bg-[var(--color-surface-card)] flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b border-[var(--color-hairline,#e5e5e0)]">
             <h2 className="text-sm font-medium text-[var(--color-ink,#1a1a1a)]">日历配置</h2>
             <p className="text-xs text-[var(--color-mute,#62625b)] mt-0.5">自定义你的日历壁纸</p>
@@ -231,7 +231,7 @@ function CalendarEditorContent() {
       </div>
 
       {/* 移动端底部面板 */}
-      <div className="md:hidden shrink-0 border-t border-[var(--color-hairline,#e5e5e0)] bg-white max-h-[50vh] overflow-y-auto">
+      <div className="md:hidden shrink-0 border-t border-[var(--color-hairline,#e5e5e0)] bg-[var(--color-surface-card)] max-h-[50vh] overflow-y-auto">
         <CalendarTool
           calendarConfig={calendarConfig}
           onConfigChange={(config) => config && setCalendarConfig(config)}

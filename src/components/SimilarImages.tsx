@@ -77,11 +77,11 @@ export default function SimilarImages({
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="fixed inset-y-0 right-0 w-[400px] max-w-[90vw] bg-white shadow-2xl z-[110] flex flex-col"
+            className="fixed inset-y-0 right-0 w-[400px] max-w-[90vw] bg-[var(--color-surface-card)] shadow-2xl z-[110] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 shrink-0">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-hairline)] shrink-0">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-[var(--color-primary)]" />
                 <h3 className="text-base font-semibold text-[var(--color-ink)]">
@@ -90,7 +90,7 @@ export default function SimilarImages({
               </div>
               <button
                 onClick={onClose}
-                className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center transition-colors"
+                className="w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-[var(--color-surface-card)] flex items-center justify-center transition-colors"
               >
                 <X className="w-4 h-4 text-[var(--color-mute)]" />
               </button>

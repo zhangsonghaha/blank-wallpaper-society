@@ -39,7 +39,7 @@ export default function EditorPage() {
 
 function EditorLoading() {
   return (
-    <div className="h-screen flex items-center justify-center bg-white">
+    <div className="h-screen flex items-center justify-center bg-[var(--color-surface-soft)]">
       <div className="animate-spin w-8 h-8 border-2 border-[var(--color-primary,#e60023)] border-t-transparent rounded-full" />
     </div>
   );
@@ -305,9 +305,9 @@ function EditorContent() {
   const canRedo = historyIndex < history.length - 1;
 
   return (
-    <div className="h-screen flex flex-col bg-white overflow-hidden">
+    <div className="h-screen flex flex-col bg-[var(--color-surface-soft)] overflow-hidden">
       {/* 顶部操作栏 */}
-      <div className="h-12 shrink-0 flex items-center justify-between px-4 border-b border-[var(--color-hairline,#e5e5e0)] bg-white">
+      <div className="h-12 shrink-0 flex items-center justify-between px-4 border-b border-[var(--color-hairline,#e5e5e0)] bg-[var(--color-surface-card)]">
         <div className="flex items-center gap-2">
           <button
             onClick={handleBack}
@@ -372,7 +372,7 @@ function EditorContent() {
         </div>
 
         {/* 右侧工具面板 */}
-        <div className="w-72 shrink-0 border-l border-[var(--color-hairline,#e5e5e0)] bg-white flex flex-col overflow-hidden hidden md:flex">
+        <div className="w-72 shrink-0 border-l border-[var(--color-hairline,#e5e5e0)] bg-[var(--color-surface-card)] flex flex-col overflow-hidden hidden md:flex">
           {/* 工具选择标签 */}
           <div className="flex border-b border-[var(--color-hairline,#e5e5e0)]">
             {TOOLS.map((tool) => {
@@ -438,7 +438,7 @@ function EditorContent() {
       </div>
 
       {/* 移动端底部工具栏 */}
-      <div className="md:hidden shrink-0 border-t border-[var(--color-hairline,#e5e5e0)] bg-white">
+      <div className="md:hidden shrink-0 border-t border-[var(--color-hairline,#e5e5e0)] bg-[var(--color-surface-card)]">
         <div className="flex">
           {TOOLS.map((tool) => {
             const Icon = tool.icon;

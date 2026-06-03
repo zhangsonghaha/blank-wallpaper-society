@@ -326,7 +326,7 @@ export default function OrdersTab() {
                       size="sm"
                       variant="outline"
                       onClick={() => setRejectTarget(order.id)}
-                      className="border-red-300 text-red-600 hover:bg-red-50"
+                      className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
                     >
                       <XCircle className="w-3.5 h-3.5 mr-1" />
                       拒绝

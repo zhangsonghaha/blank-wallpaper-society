@@ -345,7 +345,7 @@ export default function CrawlTab() {
         );
       default:
         return (
-          <Badge className="bg-gray-100 text-gray-600 hover:bg-gray-100">
+          <Badge className="bg-gray-100 text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400">
             <Clock className="w-3 h-3 mr-1" />
             待命
           </Badge>

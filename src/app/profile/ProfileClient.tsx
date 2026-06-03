@@ -161,10 +161,10 @@ function CreatorVerificationEntry({ userId }: { userId: number }) {
   const statusBadge = (() => {
     if (loading) return <Badge className="rounded-full text-xs bg-gray-100 text-gray-500">加载中</Badge>;
     const s = verificationStatus?.verification_status;
-    if (s === "approved") return <Badge className="rounded-full text-xs gap-1 bg-green-100 text-green-700 border-green-300"><CheckCircle className="w-3 h-3" />已认证</Badge>;
-    if (s === "pending") return <Badge className="rounded-full text-xs gap-1 bg-yellow-100 text-yellow-700 border-yellow-300"><Clock className="w-3 h-3" />审核中</Badge>;
-    if (s === "rejected") return <Badge className="rounded-full text-xs gap-1 bg-red-100 text-red-700 border-red-300"><XCircle className="w-3 h-3" />未通过</Badge>;
-    return <Badge className="rounded-full text-xs gap-1 bg-blue-100 text-blue-700 border-blue-300">未申请</Badge>;
+    if (s === "approved") return <Badge className="rounded-full text-xs gap-1 bg-green-100 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800"><CheckCircle className="w-3 h-3" />已认证</Badge>;
+    if (s === "pending") return <Badge className="rounded-full text-xs gap-1 bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800"><Clock className="w-3 h-3" />审核中</Badge>;
+    if (s === "rejected") return <Badge className="rounded-full text-xs gap-1 bg-red-100 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800"><XCircle className="w-3 h-3" />未通过</Badge>;
+    return <Badge className="rounded-full text-xs gap-1 bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800">未申请</Badge>;
   })();
 
   return (
@@ -333,7 +333,7 @@ function AccountDeletionZone({ userId }: { userId: number }) {
   // 已注销
   if (deletionStatus?.status === "deleted") {
     return (
-      <div className="p-4 rounded-xl bg-gray-100 border border-gray-200 text-sm text-gray-600">
+      <div className="p-4 rounded-xl bg-gray-100 border border-gray-200 text-sm text-gray-600 dark:bg-[var(--color-surface-card)] dark:border-[var(--color-hairline)] dark:text-[var(--color-body)]">
         此账号已注销。
       </div>
     );
@@ -351,7 +351,7 @@ function AccountDeletionZone({ userId }: { userId: number }) {
 
     return (
       <div className="space-y-4 max-w-md">
-        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200">
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 dark:bg-amber-900/10 dark:border-amber-800">
           <p className="text-sm font-medium text-amber-800">
             您的账号注销申请已提交
           </p>
@@ -361,7 +361,7 @@ function AccountDeletionZone({ userId }: { userId: number }) {
         </div>
         <Button
           variant="outline"
-          className="rounded-full gap-1 border-green-300 text-green-700 hover:bg-green-50"
+          className="rounded-full gap-1 border-green-300 text-green-700 hover:bg-green-50 dark:border-green-800 dark:text-green-400 dark:hover:bg-green-900/20"
           onClick={() => setCancelDialogOpen(true)}
         >
           <XCircle className="w-4 h-4" />
@@ -388,7 +388,7 @@ function AccountDeletionZone({ userId }: { userId: number }) {
               <Button
                 disabled={cancelling}
                 onClick={handleCancelDeletion}
-                className="bg-green-600 hover:bg-green-700 rounded-full gap-2"
+                className="bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 rounded-full gap-2"
               >
                 {cancelling ? "处理中..." : "确认取消注销"}
               </Button>
@@ -405,7 +405,7 @@ function AccountDeletionZone({ userId }: { userId: number }) {
       <p className="text-sm text-[var(--color-mute)]">
         注销账号后，您的个人信息将被清除，7天冷静期内可随时取消。请谨慎操作。
       </p>
-      <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800">
+      <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
         <p className="font-medium">注销后将发生以下变更：</p>
         <ul className="list-disc list-inside mt-1 space-y-0.5 text-xs">
           <li>您的昵称、邮箱、头像将被清除</li>
@@ -1128,7 +1128,7 @@ export default function ProfileClient({
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
                   <Card className="rounded-xl border-none bg-[var(--color-surface-card)]">
                     <CardContent className="p-4 text-center">
-                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-2">
+                      <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center mx-auto mb-2">
                         <ImageIcon className="w-5 h-5 text-blue-600" />
                       </div>
                       <p className="text-2xl font-bold text-[var(--color-ink)]">
@@ -1139,7 +1139,7 @@ export default function ProfileClient({
                   </Card>
                   <Card className="rounded-xl border-none bg-[var(--color-surface-card)]">
                     <CardContent className="p-4 text-center">
-                      <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">
+                      <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center mx-auto mb-2">
                         <Eye className="w-5 h-5 text-green-600" />
                       </div>
                       <p className="text-2xl font-bold text-[var(--color-ink)]">
@@ -1150,7 +1150,7 @@ export default function ProfileClient({
                   </Card>
                   <Card className="rounded-xl border-none bg-[var(--color-surface-card)]">
                     <CardContent className="p-4 text-center">
-                      <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-2">
+                      <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center mx-auto mb-2">
                         <Heart className="w-5 h-5 text-red-500" />
                       </div>
                       <p className="text-2xl font-bold text-[var(--color-ink)]">
@@ -1161,7 +1161,7 @@ export default function ProfileClient({
                   </Card>
                   <Card className="rounded-xl border-none bg-[var(--color-surface-card)]">
                     <CardContent className="p-4 text-center">
-                      <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-2">
+                      <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center mx-auto mb-2">
                         <UserPlus className="w-5 h-5 text-purple-600" />
                       </div>
                       <p className="text-2xl font-bold text-[var(--color-ink)]">
@@ -1172,7 +1172,7 @@ export default function ProfileClient({
                   </Card>
                   <Card className="rounded-xl border-none bg-[var(--color-surface-card)]">
                     <CardContent className="p-4 text-center">
-                      <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center mx-auto mb-2">
+                      <div className="w-10 h-10 rounded-full bg-orange-100 dark:bg-orange-900/20 flex items-center justify-center mx-auto mb-2">
                         <UserCheck className="w-5 h-5 text-orange-600" />
                       </div>
                       <p className="text-2xl font-bold text-[var(--color-ink)]">
@@ -1476,7 +1476,7 @@ export default function ProfileClient({
                       <Upload className="w-4 h-4" />
                       上传历史
                       {uploadStats.pending > 0 && (
-                        <span className="ml-1 px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-[10px] font-bold rounded-full">
+                        <span className="ml-1 px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-[10px] font-bold rounded-full dark:bg-yellow-900/20 dark:text-yellow-400">
                           {uploadStats.pending}
                         </span>
                       )}
@@ -1589,7 +1589,7 @@ export default function ProfileClient({
                                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                 />
                               ) : (
-                                <div className="w-full h-full bg-gradient-to-br from-[var(--color-primary)]/20 to-purple-200 flex items-center justify-center">
+                                <div className="w-full h-full bg-gradient-to-br from-[var(--color-primary)]/20 to-purple-200 dark:to-purple-900/30 flex items-center justify-center">
                                   <Grid3X3 className="w-8 h-8 text-[var(--color-primary)]/40" />
                                 </div>
                               )}
@@ -1664,10 +1664,10 @@ export default function ProfileClient({
                                       <Badge
                                         className={`rounded-full text-[10px] ${
                                           key.is_expired
-                                            ? "bg-red-100 text-red-700"
+                                            ? "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400"
                                             : key.is_active
-                                              ? "bg-emerald-100 text-emerald-700"
-                                              : "bg-gray-100 text-gray-500"
+                                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400"
+                                              : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
                                         }`}
                                       >
                                         {key.is_expired ? "已过期" : key.is_active ? "启用" : "禁用"}
@@ -1729,7 +1729,7 @@ export default function ProfileClient({
                                         setDeleteKeyTarget(key);
                                         setDeleteKeyDialogOpen(true);
                                       }}
-                                      className="rounded-lg h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                                      className="rounded-lg h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </Button>
@@ -1916,7 +1916,7 @@ export default function ProfileClient({
                                       setDeleteTarget(img);
                                       setDeleteDialogOpen(true);
                                     }}
-                                    className="p-1 rounded-full bg-red-500/80 hover:bg-red-600 transition-colors"
+                                    className="p-1 rounded-full bg-red-500/80 hover:bg-red-600 dark:bg-red-600/80 dark:hover:bg-red-700 transition-colors"
                                   >
                                     <Trash2 className="w-3 h-3 text-white" />
                                   </button>
@@ -2005,7 +2005,7 @@ export default function ProfileClient({
                     <Button
                       onClick={handleDeleteUpload}
                       disabled={deleting}
-                      className="rounded-full bg-red-500 hover:bg-red-600 gap-1"
+                      className="rounded-full bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 gap-1"
                     >
                       {deleting ? (
                         <>
@@ -2034,7 +2034,7 @@ export default function ProfileClient({
                   </DialogHeader>
                   {newKeyResult ? (
                     <div className="space-y-4">
-                      <div className="p-4 bg-emerald-50 rounded-xl">
+                      <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 rounded-xl">
                         <div className="flex items-center gap-2 mb-2">
                           <CheckCircle className="w-5 h-5 text-emerald-600" />
                           <span className="font-medium text-emerald-700">创建成功</span>
@@ -2046,7 +2046,7 @@ export default function ProfileClient({
                               setCopiedKey(true);
                               setTimeout(() => setCopiedKey(false), 2000);
                             }}
-                            className="absolute top-2 right-2 p-1.5 rounded-md hover:bg-gray-100"
+                            className="absolute top-2 right-2 p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-[var(--color-surface-card)]"
                           >
                             {copiedKey ? (
                               <Check className="w-4 h-4 text-emerald-500" />
@@ -2057,7 +2057,7 @@ export default function ProfileClient({
                           {newKeyResult.key}
                         </div>
                       </div>
-                      <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-lg">
+                      <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/10 rounded-lg">
                         <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
                         <p className="text-xs text-amber-700">
                           请立即复制并保存此 Key，关闭后将无法再次查看完整 Key。
@@ -2217,7 +2217,7 @@ export default function ProfileClient({
                         setDeletingKey(false);
                       }}
                       disabled={deletingKey}
-                      className="rounded-full bg-red-500 hover:bg-red-600 gap-1"
+                      className="rounded-full bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 gap-1"
                     >
                       {deletingKey ? (
                         <>

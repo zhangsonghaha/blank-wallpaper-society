@@ -308,7 +308,7 @@ export default function LogsTab() {
                   return (
                     <div
                       key={idx}
-                      className="flex-1 bg-blue-400 rounded-t"
+                      className="flex-1 bg-blue-400 dark:bg-blue-500 rounded-t"
                       style={{ height: `${Math.max(height, 4)}%` }}
                       title={`${item.date}: ${item.count}次下载`}
                     />

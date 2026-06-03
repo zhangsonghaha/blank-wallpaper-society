@@ -80,7 +80,7 @@ export default function UnsubscribeClient() {
           </div>
 
           {result === "error" && (
-            <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm">{message}</div>
+            <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm dark:bg-red-900/20 dark:text-red-400">{message}</div>
           )}
 
           <div className="space-y-3">
@@ -97,7 +97,7 @@ export default function UnsubscribeClient() {
             )}
             <Button
               variant="outline"
-              className="w-full rounded-xl h-12 justify-start gap-3 border-red-200 text-red-600 hover:bg-red-50"
+              className="w-full rounded-xl h-12 justify-start gap-3 border-red-200 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
               onClick={() => handleUnsubscribe(true)}
               disabled={loading}
             >

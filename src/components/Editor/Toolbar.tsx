@@ -36,7 +36,7 @@ export default function Toolbar({
   return (
     <>
       {/* 顶部操作栏 */}
-      <div className="h-12 flex items-center justify-between px-4 border-b border-[var(--color-hairline,#e5e5e0)] bg-white">
+      <div className="h-12 flex items-center justify-between px-4 border-b border-[var(--color-hairline,#e5e5e0)] bg-[var(--color-surface-card)]">
         <div className="flex items-center gap-2">
           <button
             onClick={onBack}
@@ -84,7 +84,7 @@ export default function Toolbar({
       </div>
 
       {/* 底部/侧边工具选择栏 - 桌面端在右侧，移动端在底部 */}
-      <div className="md:w-64 border-l border-[var(--color-hairline,#e5e5e0)] bg-white flex flex-col overflow-hidden">
+      <div className="md:w-64 border-l border-[var(--color-hairline,#e5e5e0)] bg-[var(--color-surface-card)] flex flex-col overflow-hidden">
         {/* 工具选择标签 */}
         <div className="flex md:flex-col border-b border-[var(--color-hairline,#e5e5e0)] md:border-b-0 md:border-r-0">
           {TOOLS.map((tool) => {

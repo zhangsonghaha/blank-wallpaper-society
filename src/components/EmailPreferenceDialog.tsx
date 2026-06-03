@@ -142,8 +142,8 @@ export default function EmailPreferenceDialog({
           <div className="space-y-4 py-2">
             {/* 退订状态提示 */}
             {preferences.is_unsubscribed && (
-              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
-                <p className="text-sm text-amber-800">
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-900/20 dark:border-amber-800">
+                <p className="text-sm text-amber-800 dark:text-amber-400">
                   您已退订所有邮件。如需重新订阅，请开启下方选项并保存。
                 </p>
               </div>
@@ -176,7 +176,7 @@ export default function EmailPreferenceDialog({
 
             {/* 当前生效状态 */}
             {!preferences.is_unsubscribed && (
-              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200">
+              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800">
                 <div className="flex items-center gap-1.5 mb-1">
                   <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
                   <span className="text-sm font-medium text-emerald-700">当前订阅状态</span>
@@ -186,7 +186,7 @@ export default function EmailPreferenceDialog({
                     SUBSCRIPTION_ITEMS.filter((item) => preferences[item.key]).map((item) => (
                       <span
                         key={item.key}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-700"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400"
                       >
                         {item.label}
                       </span>

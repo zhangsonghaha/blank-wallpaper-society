@@ -219,7 +219,7 @@ export default function ProfileCustomizationDialog({
                         className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${
                           isSelected
                             ? "border-[var(--color-primary)] bg-[var(--color-primary)]"
-                            : "border-gray-300"
+                            : "border-[var(--color-hairline)] dark:border-gray-600"
                         }`}
                       >
                         {isSelected && <CheckCircle className="w-3.5 h-3.5 text-white" />}

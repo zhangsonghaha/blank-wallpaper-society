@@ -72,7 +72,7 @@ export default function RankingsPage() {
       );
     if (rank === 2)
       return (
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-300 to-gray-400 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-gray-400/30">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-300 to-gray-400 dark:from-gray-600 dark:to-gray-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-gray-400/30 dark:shadow-gray-600/30">
           2
         </div>
       );
@@ -288,13 +288,13 @@ function TopThreeCard({
 }) {
   const borderColors = {
     1: "border-yellow-400/60",
-    2: "border-gray-300/60",
+    2: "border-gray-300/60 dark:border-gray-600/60",
     3: "border-amber-600/60",
   };
 
   const medalColors = {
     1: "from-yellow-400 to-yellow-600 shadow-yellow-400/40",
-    2: "from-gray-300 to-gray-500 shadow-gray-400/40",
+    2: "from-gray-300 to-gray-500 shadow-gray-400/40 dark:from-gray-600 dark:to-gray-500 dark:shadow-gray-600/40",
     3: "from-amber-600 to-amber-800 shadow-amber-600/40",
   };
 
@@ -303,7 +303,7 @@ function TopThreeCard({
     "border-[var(--color-hairline)]";
   const medalColor =
     medalColors[item.rank as keyof typeof medalColors] ||
-    "from-gray-300 to-gray-500";
+    "from-gray-300 to-gray-500 dark:from-gray-600 dark:to-gray-500";
 
   return (
     <Link href={`/images/${item.id}`} className="block group">

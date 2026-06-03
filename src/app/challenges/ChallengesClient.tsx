@@ -50,10 +50,10 @@ interface Submission {
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
-  draft: { label: "草稿", color: "bg-gray-100 text-gray-600", icon: Clock },
-  active: { label: "进行中", color: "bg-green-100 text-green-700", icon: CheckCircle },
-  ended: { label: "已结束", color: "bg-yellow-100 text-yellow-700", icon: Clock },
-  settled: { label: "已结算", color: "bg-blue-100 text-blue-700", icon: Crown },
+  draft: { label: "草稿", color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400", icon: Clock },
+  active: { label: "进行中", color: "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400", icon: CheckCircle },
+  ended: { label: "已结束", color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400", icon: Clock },
+  settled: { label: "已结算", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400", icon: Crown },
 };
 
 export default function ChallengesClient() {
@@ -635,9 +635,9 @@ export default function ChallengesClient() {
                   <CardContent className="flex items-center gap-4 py-3">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
                       idx === 0 ? "bg-yellow-400 text-yellow-900" :
-                      idx === 1 ? "bg-gray-300 text-gray-700" :
+                      idx === 1 ? "bg-gray-300 text-gray-700 dark:bg-gray-700 dark:text-gray-200" :
                       idx === 2 ? "bg-amber-600 text-white" :
-                      "bg-gray-100 text-gray-500"
+                      "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
                     }`}>
                       {idx + 1}
                     </div>
@@ -684,8 +684,8 @@ export default function ChallengesClient() {
                 onClick={() => setSubmitMode("upload")}
                 className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-md transition-all ${
                   submitMode === "upload"
-                    ? "bg-green-600 text-white shadow-sm"
-                    : "text-green-600 hover:bg-green-50"
+                    ? "bg-green-600 text-white shadow-sm dark:bg-green-500"
+                    : "text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
                 }`}
               >
                 <Upload className="w-4 h-4" /> 上传新作品
@@ -715,7 +715,7 @@ export default function ChallengesClient() {
                         className={`relative rounded-lg overflow-hidden border-2 transition-colors ${
                           submitImageId === String(img.id)
                             ? "border-[var(--color-ink)]"
-                            : "border-transparent hover:border-gray-300"
+                            : "border-transparent hover:border-gray-300 dark:hover:border-[var(--color-hairline)]"
                         }`}
                       >
                         <img

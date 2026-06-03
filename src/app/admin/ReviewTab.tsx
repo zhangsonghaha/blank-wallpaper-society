@@ -67,9 +67,9 @@ const formatDate = (dateStr: string) => {
 };
 
 const statusConfig: Record<string, { label: string; color: string; bgColor: string; icon: React.ElementType }> = {
-  pending: { label: "待审核", color: "text-amber-700", bgColor: "bg-amber-50 border-amber-200", icon: Clock },
-  approved: { label: "已通过", color: "text-emerald-700", bgColor: "bg-emerald-50 border-emerald-200", icon: CheckCircle2 },
-  rejected: { label: "已拒绝", color: "text-red-700", bgColor: "bg-red-50 border-red-200", icon: XCircle },
+  pending: { label: "待审核", color: "text-amber-700 dark:text-amber-400", bgColor: "bg-amber-50 border-amber-200 dark:bg-amber-900/10 dark:border-amber-800", icon: Clock },
+  approved: { label: "已通过", color: "text-emerald-700 dark:text-emerald-400", bgColor: "bg-emerald-50 border-emerald-200 dark:bg-emerald-900/10 dark:border-emerald-800", icon: CheckCircle2 },
+  rejected: { label: "已拒绝", color: "text-red-700 dark:text-red-400", bgColor: "bg-red-50 border-red-200 dark:bg-red-900/10 dark:border-red-800", icon: XCircle },
 };
 
 /* ==================== 审核队列子组件 ==================== */
@@ -292,7 +292,7 @@ function ReviewQueue() {
                         return (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {flaggedCategories.map(([cat, val]) => (
-                              <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">
+                              <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/10 dark:text-red-400 dark:border-red-800">
                                 {cat} {((val as number) * 100).toFixed(0)}%
                               </span>
                             ))}

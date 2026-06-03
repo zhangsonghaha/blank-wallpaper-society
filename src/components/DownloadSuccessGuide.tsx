@@ -163,7 +163,7 @@ export default function DownloadSuccessGuide({
             </button>
             <div className="text-center">
               <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
-                <Check className="w-6 h-6 text-green-600" />
+                <Check className="w-6 h-6 text-green-600 dark:text-green-400" />
               </div>
               <h3 className="text-lg font-bold text-[var(--color-ink)]">下载成功</h3>
               <p className="text-sm text-[var(--color-mute)] mt-1">{imageTitle}</p>
@@ -195,7 +195,7 @@ export default function DownloadSuccessGuide({
                 >
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${action.bgColor}`}>
                     {action.done ? (
-                      <Check className="w-5 h-5 text-green-500" />
+                      <Check className="w-5 h-5 text-green-500 dark:text-green-400" />
                     ) : (
                       <ActionIcon className={`w-5 h-5 ${action.color}`} />
                     )}

@@ -70,7 +70,7 @@ export default function CropTool({
                 className={`px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
                   isActive
                     ? "bg-[var(--color-primary,#e60023)] text-white border-[var(--color-primary,#e60023)]"
-                    : "bg-white text-[var(--color-body,#33332e)] border-[var(--color-hairline,#e5e5e0)] hover:border-[var(--color-primary,#e60023)] hover:text-[var(--color-primary,#e60023)]"
+                    : "bg-[var(--color-surface-card)] text-[var(--color-body,#33332e)] border-[var(--color-hairline,#e5e5e0)] hover:border-[var(--color-primary,#e60023)] hover:text-[var(--color-primary,#e60023)]"
                 }`}
               >
                 {ar.label}
@@ -109,7 +109,7 @@ export default function CropTool({
             handleReset();
             onCancel();
           }}
-          className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-white border border-[var(--color-hairline,#e5e5e0)] text-[var(--color-body,#33332e)] hover:bg-[var(--color-surface-soft,#f5f5f5)] transition-colors"
+          className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-[var(--color-surface-card)] border border-[var(--color-hairline,#e5e5e0)] text-[var(--color-body,#33332e)] hover:bg-[var(--color-surface-soft,#f5f5f5)] transition-colors"
         >
           <RotateCcw className="w-4 h-4" />
         </button>

@@ -195,7 +195,7 @@ export default function PinCard({
                       e.stopPropagation();
                       setAddToCollectionOpen(true);
                     }}
-                    className="w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-transform"
+                    className="w-9 h-9 bg-[var(--color-surface-card)] rounded-full flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-transform"
                     title="加入合集"
                   >
                     <FolderPlus className="w-4 h-4 text-[var(--color-ink)]" />
@@ -206,7 +206,7 @@ export default function PinCard({
                 <div className="absolute top-3 right-3 flex gap-2">
                   <button
                     onClick={handleShare}
-                    className="w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-transform"
+                    className="w-9 h-9 bg-[var(--color-surface-card)] rounded-full flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-transform"
                     title="分享"
                   >
                     <svg className="w-4 h-4 text-[var(--color-ink)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -218,7 +218,7 @@ export default function PinCard({
                       e.stopPropagation();
                       onClick();
                     }}
-                    className="w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-transform"
+                    className="w-9 h-9 bg-[var(--color-surface-card)] rounded-full flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-transform"
                     title="查看大图"
                   >
                     <svg className="w-4 h-4 text-[var(--color-ink)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -129,7 +129,7 @@ export default function TextTool({
               <select
                 value={selectedText.fontFamily}
                 onChange={(e) => onUpdateText(selectedText.id, { fontFamily: e.target.value })}
-                className="w-full px-2 py-1.5 rounded-lg border border-[var(--color-hairline,#e5e5e0)] text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-primary,#e60023)]"
+                className="w-full px-2 py-1.5 rounded-lg border border-[var(--color-hairline,#e5e5e0)] text-xs bg-[var(--color-surface-card)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary,#e60023)]"
               >
                 {FONT_OPTIONS.map((f) => (
                   <option key={f.value} value={f.value}>
@@ -183,7 +183,7 @@ export default function TextTool({
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${
                 selectedText.bold
                   ? "bg-[var(--color-primary,#e60023)] text-white border-[var(--color-primary,#e60023)]"
-                  : "bg-white text-[var(--color-body,#33332e)] border-[var(--color-hairline,#e5e5e0)]"
+                  : "bg-[var(--color-surface-card)] text-[var(--color-body,#33332e)] border-[var(--color-hairline,#e5e5e0)]"
               }`}
             >
               B
@@ -193,7 +193,7 @@ export default function TextTool({
               className={`px-3 py-1.5 rounded-lg text-xs font-medium italic transition-colors border ${
                 selectedText.italic
                   ? "bg-[var(--color-primary,#e60023)] text-white border-[var(--color-primary,#e60023)]"
-                  : "bg-white text-[var(--color-body,#33332e)] border-[var(--color-hairline,#e5e5e0)]"
+                  : "bg-[var(--color-surface-card)] text-[var(--color-body,#33332e)] border-[var(--color-hairline,#e5e5e0)]"
               }`}
             >
               I
@@ -227,7 +227,7 @@ export default function TextTool({
                 <button
                   key={pos.label}
                   onClick={() => handleQuickPosition(pos)}
-                  className="px-2 py-1.5 rounded-md text-[10px] font-medium bg-white border border-[var(--color-hairline,#e5e5e0)] text-[var(--color-body,#33332e)] hover:border-[var(--color-primary,#e60023)] hover:text-[var(--color-primary,#e60023)] transition-colors"
+                  className="px-2 py-1.5 rounded-md text-[10px] font-medium bg-[var(--color-surface-card)] border border-[var(--color-hairline,#e5e5e0)] text-[var(--color-body,#33332e)] hover:border-[var(--color-primary,#e60023)] hover:text-[var(--color-primary,#e60023)] transition-colors"
                 >
                   {pos.label}
                 </button>

@@ -288,7 +288,7 @@ export default function RoleManagementTab() {
                 className={isSomeChildrenChecked && !isAllChildrenChecked ? "data-[state=checked]:bg-[var(--color-primary)]/50" : ""}
               />
               <span className="font-medium text-sm">{menu.name}</span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-600">
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400">
                 目录
               </Badge>
             </div>
@@ -376,14 +376,14 @@ export default function RoleManagementTab() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                        role.code === "admin" ? "bg-red-100" :
-                        role.code === "moderator" ? "bg-blue-100" :
-                        "bg-gray-100"
+                        role.code === "admin" ? "bg-red-100 dark:bg-red-900/20" :
+                        role.code === "moderator" ? "bg-blue-100 dark:bg-blue-900/20" :
+                        "bg-[var(--color-surface-card)]"
                       }`}>
                         <Shield className={`w-5 h-5 ${
                           role.code === "admin" ? "text-red-600" :
                           role.code === "moderator" ? "text-blue-600" :
-                          "text-gray-600"
+                          "text-[var(--color-mute)]"
                         }`} />
                       </div>
                       <div>
@@ -393,12 +393,12 @@ export default function RoleManagementTab() {
                             {role.code}
                           </Badge>
                           {["admin", "moderator", "user"].includes(role.code) && (
-                            <Badge className="text-[10px] px-1.5 py-0 bg-purple-100 text-purple-700">
+                            <Badge className="text-[10px] px-1.5 py-0 bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400">
                               内置
                             </Badge>
                           )}
                           {!role.is_enabled && (
-                            <Badge className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700">
+                            <Badge className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400">
                               已禁用
                             </Badge>
                           )}
@@ -415,7 +415,7 @@ export default function RoleManagementTab() {
                         <div className="text-sm font-medium text-[var(--color-ink)]">
                           {assignedMenus}/{totalMenus} 菜单
                         </div>
-                        <div className="w-24 h-1.5 bg-gray-100 rounded-full mt-1">
+                        <div className="w-24 h-1.5 bg-[var(--color-secondary-bg)] rounded-full mt-1">
                           <div
                             className="h-full bg-[var(--color-primary)] rounded-full transition-all"
                             style={{ width: `${(assignedMenus / totalMenus) * 100}%` }}
@@ -445,7 +445,7 @@ export default function RoleManagementTab() {
                         </button>
                         <button
                           onClick={() => handleDelete(role)}
-                          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors"
+                          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                           title="删除"
                         >
                           <Trash2 className="w-4 h-4 text-red-400" />

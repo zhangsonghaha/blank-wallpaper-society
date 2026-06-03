@@ -66,7 +66,7 @@ export default function PartnersPage() {
             {partners.map((partner) => (
               <div
                 key={partner.name}
-                className="group bg-white rounded-2xl border border-[var(--color-hairline)] p-8 hover:shadow-lg transition-shadow"
+                className="group bg-[var(--color-surface-card)] rounded-2xl border border-[var(--color-hairline)] p-8 hover:shadow-lg transition-shadow"
               >
                 <div className="w-12 h-12 rounded-xl bg-[var(--color-surface-card)] flex items-center justify-center mb-4 text-2xl font-bold text-[var(--color-stone)]">
                   {partner.name[0]}

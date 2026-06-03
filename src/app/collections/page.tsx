@@ -150,7 +150,7 @@ export default function CollectionsPage() {
             {session && (
               <Button
                 onClick={() => setCreateDialogOpen(true)}
-                className="rounded-full bg-white text-[var(--color-primary)] hover:bg-white/90 gap-2 h-12 px-6 font-bold"
+                className="rounded-full bg-[var(--color-surface-card)] text-[var(--color-primary)] hover:bg-white/90 gap-2 h-12 px-6 font-bold"
               >
                 <Plus className="w-5 h-5" />
                 创建合集
@@ -217,7 +217,7 @@ export default function CollectionsPage() {
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                             />
                           ) : (
-                            <div className="w-full h-full bg-gradient-to-br from-[var(--color-primary)]/20 to-purple-200 flex items-center justify-center">
+                            <div className="w-full h-full bg-gradient-to-br from-[var(--color-primary)]/20 to-purple-200 dark:to-purple-900/30 flex items-center justify-center">
                               <Grid3X3 className="w-12 h-12 text-[var(--color-primary)]/40" />
                             </div>
                           )}

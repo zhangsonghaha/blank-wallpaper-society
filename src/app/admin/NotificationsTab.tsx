@@ -592,7 +592,7 @@ export default function NotificationsTab() {
                     </div>
                   )}
                   {userSearchResults.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-auto">
+                    <div className="absolute z-10 w-full mt-1 bg-[var(--color-surface-card)] border rounded-lg shadow-lg max-h-40 overflow-auto">
                       {userSearchResults.map((user) => (
                         <button
                           key={user.id}

@@ -163,7 +163,7 @@ export default function PostEditor({ onPostCreated, editPost, onCancelEdit }: Po
   const VisibilityIcon = currentVisibility.icon;
 
   return (
-    <div className="bg-white rounded-xl border border-[var(--color-hairline)] shadow-sm overflow-hidden">
+    <div className="bg-[var(--color-surface-card)] rounded-xl border border-[var(--color-hairline)] shadow-sm overflow-hidden">
       {/* 编辑模式标题 */}
       {isEditing && (
         <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-surface-card)] border-b border-[var(--color-hairline)]">
@@ -347,7 +347,7 @@ export default function PostEditor({ onPostCreated, editPost, onCancelEdit }: Po
                   initial={{ opacity: 0, y: -5 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -5 }}
-                  className="absolute bottom-full left-0 mb-1 bg-white rounded-lg shadow-lg border border-[var(--color-hairline)] overflow-hidden z-10"
+                  className="absolute bottom-full left-0 mb-1 bg-[var(--color-surface-card)] rounded-lg shadow-lg border border-[var(--color-hairline)] overflow-hidden z-10"
                 >
                   {VISIBILITY_OPTIONS.map((opt) => {
                     const Icon = opt.icon;

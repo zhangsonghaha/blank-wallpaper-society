@@ -167,7 +167,7 @@ export default function FeedClient() {
                 feedType === ft.id
                   ? "bg-[var(--color-ink)] text-white"
                   : disabled
-                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  ? "bg-[var(--color-surface-card)] text-[var(--color-mute)] cursor-not-allowed"
                   : "bg-[var(--color-surface-card)] text-[var(--color-ink)] hover:bg-[var(--color-secondary-bg)]"
               }`}
             >

@@ -88,7 +88,7 @@ export default function CalendarTool({
               <select
                 value={calendarConfig.year}
                 onChange={(e) => updateConfig({ year: parseInt(e.target.value) })}
-                className="w-full px-2 py-1.5 rounded-lg border border-[var(--color-hairline,#e5e5e0)] text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-primary,#e60023)]"
+                className="w-full px-2 py-1.5 rounded-lg border border-[var(--color-hairline,#e5e5e0)] text-xs bg-[var(--color-surface-card)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary,#e60023)]"
               >
                 {Array.from({ length: 5 }, (_, i) => currentYear - 2 + i).map((y) => (
                   <option key={y} value={y}>{y}年</option>
@@ -100,7 +100,7 @@ export default function CalendarTool({
               <select
                 value={calendarConfig.month}
                 onChange={(e) => updateConfig({ month: parseInt(e.target.value) })}
-                className="w-full px-2 py-1.5 rounded-lg border border-[var(--color-hairline,#e5e5e0)] text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-primary,#e60023)]"
+                className="w-full px-2 py-1.5 rounded-lg border border-[var(--color-hairline,#e5e5e0)] text-xs bg-[var(--color-surface-card)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary,#e60023)]"
               >
                 {MONTHS.map((m, i) => (
                   <option key={i} value={i + 1}>{m}</option>
@@ -120,7 +120,7 @@ export default function CalendarTool({
                   className={`px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
                     calendarConfig.style === s.value
                       ? "bg-[var(--color-primary,#e60023)] text-white border-[var(--color-primary,#e60023)]"
-                      : "bg-white text-[var(--color-body,#33332e)] border-[var(--color-hairline,#e5e5e0)] hover:border-[var(--color-primary,#e60023)]"
+                      : "bg-[var(--color-surface-card)] text-[var(--color-body,#33332e)] border-[var(--color-hairline,#e5e5e0)] hover:border-[var(--color-primary,#e60023)]"
                   }`}
                 >
                   {s.label}
@@ -140,7 +140,7 @@ export default function CalendarTool({
                   className={`px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
                     calendarConfig.position === pos
                       ? "bg-[var(--color-primary,#e60023)] text-white border-[var(--color-primary,#e60023)]"
-                      : "bg-white text-[var(--color-body,#33332e)] border-[var(--color-hairline,#e5e5e0)] hover:border-[var(--color-primary,#e60023)]"
+                      : "bg-[var(--color-surface-card)] text-[var(--color-body,#33332e)] border-[var(--color-hairline,#e5e5e0)] hover:border-[var(--color-primary,#e60023)]"
                   }`}
                 >
                   {pos === "bottom" ? "底部" : "右侧"}

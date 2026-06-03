@@ -91,7 +91,7 @@ export default function ForgotPasswordPage() {
           <CardContent>
             {sent ? (
               <div className="space-y-4">
-                <div className="p-4 bg-emerald-50 rounded-xl text-center">
+                <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 rounded-xl text-center">
                   <Mail className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
                   <p className="text-sm text-emerald-700 font-medium">
                     重置链接已发送

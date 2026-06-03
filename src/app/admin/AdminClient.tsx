@@ -537,7 +537,7 @@ export default function AdminClient() {
         }`}
       >
         {/* 顶部导航栏 */}
-        <header className="h-14 bg-white border-b sticky top-0 z-30 flex items-center justify-between px-4 lg:px-6">
+        <header className="h-14 bg-[var(--color-surface-card)] border-b sticky top-0 z-30 flex items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setMobileMenuOpen(true)}
@@ -552,7 +552,7 @@ export default function AdminClient() {
         </header>
 
         {/* 标签页栏 */}
-        <div className="bg-white border-b h-10 flex items-center px-4 overflow-x-auto hide-scrollbar relative">
+        <div className="bg-[var(--color-surface-card)] border-b h-10 flex items-center px-4 overflow-x-auto hide-scrollbar relative">
           <style jsx global>{`
             .hide-scrollbar::-webkit-scrollbar {
               display: none;
@@ -598,7 +598,7 @@ export default function AdminClient() {
           {/* 右键菜单 */}
           {contextMenu && (
             <div
-              className="fixed z-50 bg-white rounded-lg shadow-xl border py-1 min-w-[160px] animate-in fade-in-0 zoom-in-95"
+              className="fixed z-50 bg-[var(--color-surface-card)] rounded-lg shadow-xl border py-1 min-w-[160px] animate-in fade-in-0 zoom-in-95"
               style={{ left: contextMenu.x, top: contextMenu.y }}
             >
               {contextMenu.tabId !== "dashboard" && (

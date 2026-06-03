@@ -238,7 +238,7 @@ export default function ImageDetailClient({ imageData, imageId }: ImageDetailCli
             <div className="relative rounded-xl overflow-hidden bg-black/5">
               <div
                 className="relative flex items-center justify-center min-h-[400px] lg:min-h-[600px]"
-                style={{ backgroundColor: imageData.dominantColor || "#f0f0f0" }}
+                style={{ backgroundColor: imageData.dominantColor || "var(--color-surface-card)" }}
               >
                 {!imageLoaded && !imageError && (
                   <div className="absolute inset-0 animate-pulse bg-[var(--color-surface-hover)]" />

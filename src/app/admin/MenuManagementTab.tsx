@@ -77,9 +77,9 @@ const typeLabels: Record<string, string> = {
 };
 
 const typeColors: Record<string, string> = {
-  directory: "bg-blue-100 text-blue-700",
-  menu: "bg-green-100 text-green-700",
-  button: "bg-orange-100 text-orange-700",
+  directory: "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400",
+  menu: "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400",
+  button: "bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400",
 };
 
 export default function MenuManagementTab() {
@@ -349,12 +349,12 @@ export default function MenuManagementTab() {
           {/* 状态标签 */}
           <div className="flex items-center gap-1">
             {!menu.is_visible && (
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-yellow-100 text-yellow-700">
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400">
                 隐藏
               </Badge>
             )}
             {!menu.is_enabled && (
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700">
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400">
                 禁用
               </Badge>
             )}
@@ -402,7 +402,7 @@ export default function MenuManagementTab() {
             </button>
             <button
               onClick={() => handleDelete(menu)}
-              className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 transition-colors"
+              className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
               title="删除"
             >
               <Trash2 className="w-3.5 h-3.5 text-red-400" />

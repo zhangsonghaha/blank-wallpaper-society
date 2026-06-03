@@ -43,14 +43,14 @@ export default function TagsPage() {
   };
 
   const colorClasses = [
-    "bg-red-50 text-red-700 hover:bg-red-100 border-red-200",
-    "bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200",
-    "bg-green-50 text-green-700 hover:bg-green-100 border-green-200",
-    "bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200",
-    "bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-200",
-    "bg-pink-50 text-pink-700 hover:bg-pink-100 border-pink-200",
-    "bg-teal-50 text-teal-700 hover:bg-teal-100 border-teal-200",
-    "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200",
+    "bg-red-50 text-red-700 hover:bg-red-100 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 dark:border-red-800",
+    "bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/30 dark:border-blue-800",
+    "bg-green-50 text-green-700 hover:bg-green-100 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30 dark:border-green-800",
+    "bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200 dark:bg-purple-900/20 dark:text-purple-400 dark:hover:bg-purple-900/30 dark:border-purple-800",
+    "bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/30 dark:border-amber-800",
+    "bg-pink-50 text-pink-700 hover:bg-pink-100 border-pink-200 dark:bg-pink-900/20 dark:text-pink-400 dark:hover:bg-pink-900/30 dark:border-pink-800",
+    "bg-teal-50 text-teal-700 hover:bg-teal-100 border-teal-200 dark:bg-teal-900/20 dark:text-teal-400 dark:hover:bg-teal-900/30 dark:border-teal-800",
+    "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/30 dark:border-indigo-800",
   ];
 
   return (

@@ -877,7 +877,7 @@ export default function EmailTemplatesTab() {
               ) : (
                 <iframe
                   srcDoc={previewHtml}
-                  className="w-full min-h-[500px] bg-white"
+                  className="w-full min-h-[500px] bg-[var(--color-surface-card)]"
                   sandbox="allow-same-origin"
                   title="邮件预览"
                 />

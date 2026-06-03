@@ -248,7 +248,7 @@ export default function ApiDocsPage() {
           </p>
           <div className="flex gap-3 mt-8">
             <Link href="/profile">
-              <Button className="rounded-full bg-white text-[var(--color-primary)] hover:bg-white/90 gap-2">
+              <Button className="rounded-full bg-[var(--color-surface-card)] text-[var(--color-primary)] hover:bg-white/90 gap-2">
                 <Key className="w-4 h-4" />
                 获取 API Key
               </Button>
@@ -427,7 +427,7 @@ export default function ApiDocsPage() {
                   <div key={ep.path}>
                     {idx > 0 && <Separator />}
                     <button
-                      className="w-full px-6 py-4 flex items-center gap-3 hover:bg-gray-50/50 transition-colors text-left"
+                      className="w-full px-6 py-4 flex items-center gap-3 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors text-left"
                       onClick={() => toggleEndpoint(`${group.category}-${ep.path}`)}
                     >
                       <Badge className={`${methodColors[ep.method]} rounded text-xs font-mono px-2 py-0.5`}>

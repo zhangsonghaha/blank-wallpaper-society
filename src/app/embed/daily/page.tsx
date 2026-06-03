@@ -21,7 +21,7 @@ export default async function EmbedDailyPage() {
     return (
       <html>
         <body style={{ margin: 0, fontFamily: "system-ui, sans-serif" }}>
-          <div style={{ padding: 20, textAlign: "center", color: "#999" }}>
+          <div style={{ padding: 20, textAlign: "center", color: "var(--color-mute)" }}>
             暂无壁纸
           </div>
         </body>

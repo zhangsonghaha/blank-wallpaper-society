@@ -108,7 +108,7 @@ export default function FAQPage() {
                 {category.questions.map((item, index) => (
                   <details
                     key={index}
-                    className="group bg-white rounded-2xl border border-[var(--color-hairline)] overflow-hidden"
+                    className="group bg-[var(--color-surface-card)] rounded-2xl border border-[var(--color-hairline)] overflow-hidden"
                   >
                     <summary className="flex items-center justify-between p-6 cursor-pointer list-none hover:bg-[var(--color-surface-card)] transition-colors">
                       <span className="font-semibold text-[var(--color-ink)]">

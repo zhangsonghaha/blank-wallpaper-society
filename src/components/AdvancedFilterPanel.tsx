@@ -132,7 +132,7 @@ export default function AdvancedFilterPanel({
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="fixed top-0 right-0 bottom-0 w-full sm:w-[380px] bg-white shadow-2xl z-[60] flex flex-col"
+            className="fixed top-0 right-0 bottom-0 w-full sm:w-[380px] bg-[var(--color-surface-card)] shadow-2xl z-[60] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
