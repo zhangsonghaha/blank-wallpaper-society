@@ -167,6 +167,7 @@ async function buildProviders() {
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true,
   providers: await buildProviders(),
   callbacks: {
     async jwt({ token, user }) {
