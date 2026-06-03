@@ -5,8 +5,8 @@
  * 使用 Redis pub/sub 实现跨实例实时消息推送
  */
 
-import { query } from "@/lib/db";
-import { withTransaction } from "@/lib/db-tx";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import Redis from "ioredis";
 import redis from "@/lib/redis";
 import { sanitizeStrict } from "@/lib/sanitize";
@@ -51,36 +51,48 @@ export async function createOrGetConversation(
   userId1: number,
   userId2: number
 ): Promise<number> {
-  // 不能和自己对话
+  // 不能和自己发起对话
   if (userId1 === userId2) {
     throw new Error("不能和自己发起对话");
   }
 
   // 查找是否已有对话
-  const existing = await query(
-    `SELECT c.id FROM conversations c
-     INNER JOIN conversation_participants cp1 ON c.id = cp1.conversation_id AND cp1.user_id = ?
-     INNER JOIN conversation_participants cp2 ON c.id = cp2.conversation_id AND cp2.user_id = ?
-     WHERE cp1.is_hidden = 0 AND cp2.is_hidden = 0
-     LIMIT 1`,
-    [userId1, userId2]
-  ) as any[];
+  const existing = await db
+    .selectFrom("conversations as c")
+    .innerJoin("conversation_participants as cp1", (join) =>
+      join
+        .onRef("c.id", "=", "cp1.conversation_id")
+        .on("cp1.user_id", "=", userId1)
+    )
+    .innerJoin("conversation_participants as cp2", (join) =>
+      join
+        .onRef("c.id", "=", "cp2.conversation_id")
+        .on("cp2.user_id", "=", userId2)
+    )
+    .where("cp1.is_hidden", "=", 0)
+    .where("cp2.is_hidden", "=", 0)
+    .select("c.id")
+    .executeTakeFirst();
 
-  if (existing.length > 0) {
-    return existing[0].id;
+  if (existing) {
+    return existing.id;
   }
 
   // 创建新对话（事务保证一致性）
-  const conversationId = await withTransaction(async (conn) => {
-    const [result] = await conn.execute(
-      "INSERT INTO conversations () VALUES ()"
-    );
-    const convId = (result as any).insertId;
+  const conversationId = await db.transaction().execute(async (trx) => {
+    const result = await trx
+      .insertInto("conversations")
+      .values({})
+      .executeTakeFirst();
+    const convId = Number(result.insertId);
 
-    await conn.execute(
-      "INSERT INTO conversation_participants (conversation_id, user_id) VALUES (?, ?), (?, ?)",
-      [convId, userId1, convId, userId2]
-    );
+    await trx
+      .insertInto("conversation_participants")
+      .values([
+        { conversation_id: convId, user_id: userId1 },
+        { conversation_id: convId, user_id: userId2 },
+      ])
+      .execute();
 
     return convId;
   });
@@ -96,12 +108,13 @@ export async function sendMessage(
   messageType: "text" | "image" = "text"
 ): Promise<Message> {
   // 验证用户是否属于该对话
-  const participants = await query(
-    "SELECT user_id FROM conversation_participants WHERE conversation_id = ?",
-    [conversationId]
-  ) as any[];
+  const participants = await db
+    .selectFrom("conversation_participants")
+    .where("conversation_id", "=", conversationId)
+    .select("user_id")
+    .execute();
 
-  const isParticipant = participants.some((p: any) => p.user_id === senderId);
+  const isParticipant = participants.some((p) => p.user_id === senderId);
   if (!isParticipant) {
     throw new Error("你不是该对话的参与者");
   }
@@ -117,42 +130,54 @@ export async function sendMessage(
   }
 
   // 插入消息并更新对话时间
-  const result = await withTransaction(async (conn) => {
-    const [msgResult] = await conn.execute(
-      "INSERT INTO messages (conversation_id, sender_id, content, message_type) VALUES (?, ?, ?, ?)",
-      [conversationId, senderId, cleanContent, messageType]
-    );
+  const result = await db.transaction().execute(async (trx) => {
+    const msgResult = await trx
+      .insertInto("messages")
+      .values({
+        conversation_id: conversationId,
+        sender_id: senderId,
+        content: cleanContent,
+        message_type: messageType,
+      })
+      .executeTakeFirst();
 
     // 更新对话的 updated_at（触发 ON UPDATE）
-    await conn.execute(
-      "UPDATE conversations SET updated_at = NOW() WHERE id = ?",
-      [conversationId]
-    );
+    await trx
+      .updateTable("conversations")
+      .set({ updated_at: sql`NOW()` })
+      .where("id", "=", conversationId)
+      .execute();
 
     // 对其他参与者取消隐藏（如果之前隐藏了）
-    await conn.execute(
-      "UPDATE conversation_participants SET is_hidden = 0 WHERE conversation_id = ? AND user_id != ? AND is_hidden = 1",
-      [conversationId, senderId]
-    );
+    await trx
+      .updateTable("conversation_participants")
+      .set({ is_hidden: 0 })
+      .where("conversation_id", "=", conversationId)
+      .where("user_id", "!=", senderId)
+      .where("is_hidden", "=", 1)
+      .execute();
 
-    const msgId = (msgResult as any).insertId;
+    const msgId = Number(msgResult.insertId);
 
     // 获取完整消息
-    const [rows] = await conn.execute(
-      `SELECT m.*, u.name as sender_name, u.avatar as sender_avatar
-       FROM messages m
-       INNER JOIN users u ON m.sender_id = u.id
-       WHERE m.id = ?`,
-      [msgId]
-    );
+    const row = await trx
+      .selectFrom("messages as m")
+      .innerJoin("users as u", "m.sender_id", "u.id")
+      .where("m.id", "=", msgId)
+      .select((eb) => [
+        sql<Message>`m.*`.as("msg"),
+        eb.ref("u.name").as("sender_name"),
+        eb.ref("u.avatar").as("sender_avatar"),
+      ])
+      .executeTakeFirst();
 
-    return (rows as any[])[0];
+    return row as unknown as Message;
   });
 
   // 通过 Redis pub/sub 推送消息给其他参与者
   const otherUserIds = participants
-    .filter((p: any) => p.user_id !== senderId)
-    .map((p: any) => p.user_id);
+    .filter((p) => p.user_id !== senderId)
+    .map((p) => p.user_id);
 
   for (const otherId of otherUserIds) {
     try {
@@ -170,7 +195,7 @@ export async function sendMessage(
     }
   }
 
-  return result as Message;
+  return result;
 }
 
 // === 获取对话列表 ===
@@ -182,42 +207,79 @@ export async function getConversations(
   const offset = (page - 1) * limit;
 
   // 获取用户参与的对话（未隐藏的）
-  const totalResult = await query(
-    `SELECT COUNT(*) as total FROM conversation_participants 
-     WHERE user_id = ? AND is_hidden = 0`,
-    [userId]
-  ) as any[];
-  const total = totalResult[0]?.total || 0;
+  const totalRow = await db
+    .selectFrom("conversation_participants")
+    .where("user_id", "=", userId)
+    .where("is_hidden", "=", 0)
+    .select((eb) => eb.fn.countAll().as("total"))
+    .executeTakeFirst();
+  const total = Number(totalRow?.total ?? 0);
 
-  const rows = await query(
-    `SELECT 
-      c.id, c.created_at, c.updated_at,
-      other_p.user_id as other_user_id,
-      other_u.name as other_user_name,
-      other_u.avatar as other_user_avatar,
-      last_msg.content as last_message_content,
-      last_msg.sender_id as last_message_sender_id,
-      last_msg.created_at as last_message_created_at,
-      unread.unread_count
-    FROM conversations c
-    INNER JOIN conversation_participants my_p ON c.id = my_p.conversation_id AND my_p.user_id = ? AND my_p.is_hidden = 0
-    INNER JOIN conversation_participants other_p ON c.id = other_p.conversation_id AND other_p.user_id != ?
-    INNER JOIN users other_u ON other_p.user_id = other_u.id
-    LEFT JOIN messages last_msg ON c.id = last_msg.conversation_id 
-      AND last_msg.id = (SELECT MAX(id) FROM messages WHERE conversation_id = c.id)
-    LEFT JOIN (
-      SELECT conversation_id, COUNT(*) as unread_count 
-      FROM messages 
-      WHERE is_read = 0 AND sender_id != ? 
-      AND conversation_id IN (SELECT conversation_id FROM conversation_participants WHERE user_id = ?)
-      GROUP BY conversation_id
-    ) unread ON c.id = unread.conversation_id
-    ORDER BY c.updated_at DESC
-    LIMIT ? OFFSET ?`,
-    [userId, userId, userId, userId, limit, offset]
-  ) as any[];
+  const rows = await db
+    .selectFrom("conversations as c")
+    .innerJoin("conversation_participants as my_p", (join) =>
+      join
+        .onRef("c.id", "=", "my_p.conversation_id")
+        .on("my_p.user_id", "=", userId)
+        .on("my_p.is_hidden", "=", 0)
+    )
+    .innerJoin("conversation_participants as other_p", (join) =>
+      join
+        .onRef("c.id", "=", "other_p.conversation_id")
+        .on("other_p.user_id", "!=", userId)
+    )
+    .innerJoin("users as other_u", "other_p.user_id", "other_u.id")
+    .leftJoin("messages as last_msg", (join) =>
+      join
+        .onRef("c.id", "=", "last_msg.conversation_id")
+        .on(
+          "last_msg.id",
+          "=",
+          (eb) =>
+            eb
+              .selectFrom("messages")
+              .select((eb2) => eb2.fn.max("id").as("max_id"))
+              .whereRef("conversation_id", "=", "c.id")
+        )
+    )
+    .select((eb) => [
+      eb.ref("c.id").as("id"),
+      eb.ref("c.created_at").as("created_at"),
+      eb.ref("c.updated_at").as("updated_at"),
+      eb.ref("other_p.user_id").as("other_user_id"),
+      eb.ref("other_u.name").as("other_user_name"),
+      eb.ref("other_u.avatar").as("other_user_avatar"),
+      eb.ref("last_msg.content").as("last_message_content"),
+      eb.ref("last_msg.sender_id").as("last_message_sender_id"),
+      eb.ref("last_msg.created_at").as("last_message_created_at"),
+      eb
+        .selectFrom("messages")
+        .select((eb2) => eb2.fn.countAll().as("cnt"))
+        .where("is_read", "=", 0)
+        .where("sender_id", "!=", userId)
+        .whereRef("conversation_id", "=", "c.id")
+        .as("unread_count"),
+    ])
+    .orderBy("c.updated_at", "desc")
+    .limit(limit)
+    .offset(offset)
+    .execute();
 
-  return { data: rows as Conversation[], total };
+  // Map results: merge conversation columns with joined columns
+  const data = rows.map((row: any) => ({
+    id: row.id ?? row.conversation?.id,
+    created_at: row.created_at ?? row.conversation?.created_at,
+    updated_at: row.updated_at ?? row.conversation?.updated_at,
+    other_user_id: row.other_user_id,
+    other_user_name: row.other_user_name,
+    other_user_avatar: row.other_user_avatar,
+    last_message_content: row.last_message_content,
+    last_message_sender_id: row.last_message_sender_id,
+    last_message_created_at: row.last_message_created_at,
+    unread_count: Number(row.unread_count ?? 0),
+  })) as Conversation[];
+
+  return { data, total };
 }
 
 // === 获取对话中的消息 ===
@@ -229,68 +291,88 @@ export async function getMessages(
   beforeId?: number
 ): Promise<{ data: Message[]; total: number }> {
   // 验证用户属于该对话
-  const participant = await query(
-    "SELECT user_id FROM conversation_participants WHERE conversation_id = ? AND user_id = ?",
-    [conversationId, userId]
-  ) as any[];
+  const participant = await db
+    .selectFrom("conversation_participants")
+    .where("conversation_id", "=", conversationId)
+    .where("user_id", "=", userId)
+    .select("user_id")
+    .execute();
 
   if (participant.length === 0) {
     throw new Error("你不是该对话的参与者");
   }
 
   // 标记所有对方消息为已读
-  await query(
-    `UPDATE messages SET is_read = 1 
-     WHERE conversation_id = ? AND sender_id != ? AND is_read = 0`,
-    [conversationId, userId]
-  );
+  await db
+    .updateTable("messages")
+    .set({ is_read: 1 })
+    .where("conversation_id", "=", conversationId)
+    .where("sender_id", "!=", userId)
+    .where("is_read", "=", 0)
+    .execute();
 
   // 更新用户的最后已读时间
-  await query(
-    "UPDATE conversation_participants SET last_read_at = NOW() WHERE conversation_id = ? AND user_id = ?",
-    [conversationId, userId]
-  );
+  await db
+    .updateTable("conversation_participants")
+    .set({ last_read_at: sql`NOW()` })
+    .where("conversation_id", "=", conversationId)
+    .where("user_id", "=", userId)
+    .execute();
 
   // 获取消息总数
-  const totalResult = await query(
-    "SELECT COUNT(*) as total FROM messages WHERE conversation_id = ?",
-    [conversationId]
-  ) as any[];
-  const total = totalResult[0]?.total || 0;
+  const totalRow = await db
+    .selectFrom("messages")
+    .where("conversation_id", "=", conversationId)
+    .select((eb) => eb.fn.countAll().as("total"))
+    .executeTakeFirst();
+  const total = Number(totalRow?.total ?? 0);
 
   // 获取消息（支持游标加载，beforeId用于向上翻页）
-  let sql = `
-    SELECT m.*, u.name as sender_name, u.avatar as sender_avatar
-    FROM messages m
-    INNER JOIN users u ON m.sender_id = u.id
-    WHERE m.conversation_id = ?
-  `;
-  const params: any[] = [conversationId];
+  let query = db
+    .selectFrom("messages as m")
+    .innerJoin("users as u", "m.sender_id", "u.id")
+    .where("m.conversation_id", "=", conversationId);
 
   if (beforeId) {
-    sql += " AND m.id < ?";
-    params.push(beforeId);
+    query = query.where("m.id", "<", beforeId);
   }
 
-  sql += " ORDER BY m.created_at DESC LIMIT ?";
-  params.push(limit);
-
-  const rows = await query(sql, params) as any[];
+  const rows = await query
+    .select((eb) => [
+      eb.ref("m.id").as("id"),
+      eb.ref("m.conversation_id").as("conversation_id"),
+      eb.ref("m.sender_id").as("sender_id"),
+      eb.ref("m.content").as("content"),
+      eb.ref("m.is_read").as("is_read"),
+      eb.ref("m.message_type").as("message_type"),
+      eb.ref("m.created_at").as("created_at"),
+      eb.ref("u.name").as("sender_name"),
+      eb.ref("u.avatar").as("sender_avatar"),
+    ])
+    .orderBy("m.created_at", "desc")
+    .limit(limit)
+    .execute();
 
   // 返回时反转顺序（最早的在前）
-  return { data: (rows as Message[]).reverse(), total };
+  return { data: (rows as unknown as Message[]).reverse(), total };
 }
 
 // === 获取未读消息总数 ===
 export async function getUnreadMessageCount(userId: number): Promise<number> {
-  const result = await query(
-    `SELECT COUNT(*) as count FROM messages m
-     INNER JOIN conversation_participants cp ON m.conversation_id = cp.conversation_id AND cp.user_id = ? AND cp.is_hidden = 0
-     WHERE m.sender_id != ? AND m.is_read = 0`,
-    [userId, userId]
-  ) as any[];
+  const row = await db
+    .selectFrom("messages as m")
+    .innerJoin("conversation_participants as cp", (join) =>
+      join
+        .onRef("m.conversation_id", "=", "cp.conversation_id")
+        .on("cp.user_id", "=", userId)
+        .on("cp.is_hidden", "=", 0)
+    )
+    .where("m.sender_id", "!=", userId)
+    .where("m.is_read", "=", 0)
+    .select((eb) => eb.fn.countAll().as("count"))
+    .executeTakeFirst();
 
-  return result[0]?.count || 0;
+  return Number(row?.count ?? 0);
 }
 
 // === 隐藏对话（软删除） ===
@@ -298,19 +380,23 @@ export async function hideConversation(
   userId: number,
   conversationId: number
 ): Promise<void> {
-  const participant = await query(
-    "SELECT user_id FROM conversation_participants WHERE conversation_id = ? AND user_id = ?",
-    [conversationId, userId]
-  ) as any[];
+  const participant = await db
+    .selectFrom("conversation_participants")
+    .where("conversation_id", "=", conversationId)
+    .where("user_id", "=", userId)
+    .select("user_id")
+    .execute();
 
   if (participant.length === 0) {
     throw new Error("你不是该对话的参与者");
   }
 
-  await query(
-    "UPDATE conversation_participants SET is_hidden = 1 WHERE conversation_id = ? AND user_id = ?",
-    [conversationId, userId]
-  );
+  await db
+    .updateTable("conversation_participants")
+    .set({ is_hidden: 1 })
+    .where("conversation_id", "=", conversationId)
+    .where("user_id", "=", userId)
+    .execute();
 }
 
 // === 订阅用户的私信频道（用于 SSE） ===

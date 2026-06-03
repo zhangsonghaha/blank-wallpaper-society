@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { hammingDistance } from "@/lib/phash";
 
@@ -18,9 +18,12 @@ export async function GET() {
     }
 
     // 查询所有有 pHash 的图片
-    const images = await query(
-      "SELECT id, title, url, thumbnail_url, phash, created_at FROM images WHERE phash IS NOT NULL ORDER BY created_at ASC"
-    ) as any[];
+    const images = await db
+      .selectFrom("images")
+      .select(["id", "title", "url", "thumbnail_url", "phash", "created_at"])
+      .where("phash", "is not", null)
+      .orderBy("created_at", "asc")
+      .execute();
 
     // 使用并查集（Union-Find）分组
     const parent: Map<number, number> = new Map();
@@ -47,7 +50,7 @@ export async function GET() {
         if (
           images[i].phash &&
           images[j].phash &&
-          hammingDistance(images[i].phash, images[j].phash) <= PHASH_THRESHOLD
+          hammingDistance(images[i].phash!, images[j].phash!) <= PHASH_THRESHOLD
         ) {
           union(images[i].id, images[j].id);
         }
@@ -72,7 +75,7 @@ export async function GET() {
         let maxDistance = 0;
         for (let i = 0; i < group.length; i++) {
           for (let j = i + 1; j < group.length; j++) {
-            const dist = hammingDistance(group[i].phash, group[j].phash);
+            const dist = hammingDistance(group[i].phash!, group[j].phash!);
             if (dist > maxDistance) maxDistance = dist;
           }
         }
@@ -123,15 +126,14 @@ export async function DELETE(request: NextRequest) {
     }
 
     // 批量删除
-    const placeholders = ids.map(() => "?").join(",");
-    const result = await query(
-      `DELETE FROM images WHERE id IN (${placeholders})`,
-      ids
-    );
+    const deletedCount = await db
+      .deleteFrom("images")
+      .where("id", "in", ids)
+      .execute();
 
     return NextResponse.json({
-      message: `成功删除 ${(result as any).affectedRows} 张重复图片`,
-      deletedCount: (result as any).affectedRows,
+      message: `成功删除 ${deletedCount} 张重复图片`,
+      deletedCount,
     });
   } catch (error: any) {
     console.error("DELETE /api/admin/duplicates error:", error);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 
 // GET /api/challenges/[id] - 获取活动详情（含投稿列表和排行榜）
@@ -18,38 +19,53 @@ export async function GET(
     }
 
     // 获取活动详情
-    const challengeRows = await query(
-      `SELECT c.*, u.name as creator_name,
-              (SELECT COUNT(*) FROM challenge_submissions cs WHERE cs.challenge_id = c.id) as submission_count,
-              (SELECT COUNT(*) FROM challenge_votes cv WHERE cv.challenge_id = c.id) as vote_count
-       FROM challenges c
-       LEFT JOIN users u ON c.created_by = u.id
-       WHERE c.id = ?`,
-      [challengeId]
-    ) as any[];
+    const challengeRows = await db
+      .selectFrom("challenges as c")
+      .leftJoin("users as u", "u.id", "c.created_by")
+      .select([
+        "c.id", "c.title", "c.description", "c.banner_url", "c.category",
+        "c.start_time", "c.end_time", "c.max_submissions", "c.votes_per_day",
+        "c.prize_exp", "c.prize_description", "c.status", "c.created_by",
+        "c.created_at", "c.updated_at",
+        sql<string | null>`u.name`.as("creator_name"),
+        sql<number>`(SELECT COUNT(*) FROM challenge_submissions cs WHERE cs.challenge_id = c.id)`.as("submission_count"),
+        sql<number>`(SELECT COUNT(*) FROM challenge_votes cv WHERE cv.challenge_id = c.id)`.as("vote_count"),
+      ])
+      .where("c.id", "=", challengeId)
+      .execute();
 
     if (challengeRows.length === 0) {
       return NextResponse.json({ error: "活动不存在" }, { status: 404 });
     }
 
-    const challenge = challengeRows[0];
+    const challenge = challengeRows[0] as any;
 
     if (action === "leaderboard") {
       // 排行榜：按投票数排序
-      const leaderboard = await query(
-        `SELECT cs.id as submission_id, cs.image_id, cs.user_id, u.name as user_name, u.avatar as user_avatar,
-                i.title, i.url, i.thumbnail_url, i.width, i.height,
-                COUNT(cv.id) as vote_count
-         FROM challenge_submissions cs
-         LEFT JOIN challenge_votes cv ON cs.id = cv.submission_id
-         LEFT JOIN users u ON cs.user_id = u.id
-         LEFT JOIN images i ON cs.image_id = i.id
-         WHERE cs.challenge_id = ? AND cs.status IN ('approved', 'pending')
-         GROUP BY cs.id
-         ORDER BY vote_count DESC, cs.created_at ASC
-         LIMIT 50`,
-        [challengeId]
-      );
+      const leaderboard = await db
+        .selectFrom("challenge_submissions as cs")
+        .leftJoin("challenge_votes as cv", "cv.submission_id", "cs.id")
+        .leftJoin("users as u", "u.id", "cs.user_id")
+        .leftJoin("images as i", "i.id", "cs.image_id")
+        .select([
+          sql<number>`cs.id`.as("submission_id"),
+          "cs.image_id", "cs.user_id",
+          sql<string>`u.name`.as("user_name"),
+          sql<string | null>`u.avatar`.as("user_avatar"),
+          sql<string>`i.title`.as("title"),
+          sql<string>`i.url`.as("url"),
+          sql<string | null>`i.thumbnail_url`.as("thumbnail_url"),
+          sql<number | null>`i.width`.as("width"),
+          sql<number | null>`i.height`.as("height"),
+          sql<number>`COUNT(cv.id)`.as("vote_count"),
+        ])
+        .where("cs.challenge_id", "=", challengeId)
+        .where("cs.status", "in", ["approved", "pending"])
+        .groupBy("cs.id")
+        .orderBy("vote_count", "desc")
+        .orderBy("cs.created_at", "asc")
+        .limit(50)
+        .execute();
 
       return NextResponse.json({
         data: {
@@ -64,19 +80,28 @@ export async function GET(
     const limit = parseInt(searchParams.get("limit") || "12");
     const offset = (page - 1) * limit;
 
-    const submissions = await query(
-      `SELECT cs.id, cs.user_id, cs.image_id, cs.created_at, cs.status as sub_status,
-              u.name as user_name, u.avatar as user_avatar,
-              i.title, i.url, i.thumbnail_url, i.width, i.height,
-              (SELECT COUNT(*) FROM challenge_votes cv WHERE cv.submission_id = cs.id) as vote_count
-       FROM challenge_submissions cs
-       LEFT JOIN users u ON cs.user_id = u.id
-       LEFT JOIN images i ON cs.image_id = i.id
-       WHERE cs.challenge_id = ? AND cs.status IN ('approved', 'pending')
-       ORDER BY cs.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [challengeId, limit, offset]
-    );
+    const submissions = await db
+      .selectFrom("challenge_submissions as cs")
+      .leftJoin("users as u", "u.id", "cs.user_id")
+      .leftJoin("images as i", "i.id", "cs.image_id")
+      .select([
+        "cs.id", "cs.user_id", "cs.image_id", "cs.created_at",
+        sql<string | null>`cs.status`.as("sub_status"),
+        sql<string>`u.name`.as("user_name"),
+        sql<string | null>`u.avatar`.as("user_avatar"),
+        sql<string>`i.title`.as("title"),
+        sql<string>`i.url`.as("url"),
+        sql<string | null>`i.thumbnail_url`.as("thumbnail_url"),
+        sql<number | null>`i.width`.as("width"),
+        sql<number | null>`i.height`.as("height"),
+        sql<number>`(SELECT COUNT(*) FROM challenge_votes cv WHERE cv.submission_id = cs.id)`.as("vote_count"),
+      ])
+      .where("cs.challenge_id", "=", challengeId)
+      .where("cs.status", "in", ["approved", "pending"])
+      .orderBy("cs.created_at", "desc")
+      .limit(limit)
+      .offset(offset)
+      .execute();
 
     // 检查当前用户是否已投稿
     const session = await auth();
@@ -84,21 +109,26 @@ export async function GET(
     let userVotesToday = 0;
     if (session?.user) {
       const userId = (session.user as any).id;
-      const mySubs = await query(
-        "SELECT COUNT(*) as count FROM challenge_submissions WHERE challenge_id = ? AND user_id = ?",
-        [challengeId, userId]
-      ) as any[];
-      userSubmissionCount = mySubs[0]?.count || 0;
+      const mySubs = await db
+        .selectFrom("challenge_submissions")
+        .select((eb) => [eb.fn.countAll().as("count")])
+        .where("challenge_id", "=", challengeId)
+        .where("user_id", "=", userId)
+        .execute();
+      userSubmissionCount = Number(mySubs[0]?.count ?? 0);
 
-      const myVotes = await query(
-        "SELECT COUNT(*) as count FROM challenge_votes WHERE challenge_id = ? AND user_id = ? AND DATE(created_at) = CURDATE()",
-        [challengeId, userId]
-      ) as any[];
-      userVotesToday = myVotes[0]?.count || 0;
+      const myVotes = await db
+        .selectFrom("challenge_votes")
+        .select((eb) => [eb.fn.countAll().as("count")])
+        .where("challenge_id", "=", challengeId)
+        .where("user_id", "=", userId)
+        .where(sql`DATE(created_at)`, "=", sql`CURDATE()`)
+        .execute();
+      userVotesToday = Number(myVotes[0]?.count ?? 0);
     }
 
-    const maxSubmissions = parseInt(challenge.max_submissions) || 3;
-    const votesPerDay = parseInt(challenge.votes_per_day) || 5;
+    const maxSubmissions = parseInt(String(challenge.max_submissions)) || 3;
+    const votesPerDay = parseInt(String(challenge.votes_per_day)) || 5;
 
     return NextResponse.json({
       data: {
@@ -140,7 +170,11 @@ export async function PUT(
     }
 
     // 检查活动是否存在
-    const existing = await query("SELECT id FROM challenges WHERE id = ?", [challengeId]) as any[];
+    const existing = await db
+      .selectFrom("challenges")
+      .select(["id"])
+      .where("id", "=", challengeId)
+      .execute();
     if (existing.length === 0) {
       return NextResponse.json({ error: "活动不存在" }, { status: 404 });
     }
@@ -161,33 +195,34 @@ export async function PUT(
     }
 
     // 构建动态更新字段
-    const updates: string[] = [];
-    const values: any[] = [];
+    const updateData: Record<string, any> = {};
 
-    if (title !== undefined) { updates.push("title = ?"); values.push(title.trim()); }
-    if (description !== undefined) { updates.push("description = ?"); values.push(description || null); }
-    if (category !== undefined) { updates.push("category = ?"); values.push(category || null); }
-    if (startTime !== undefined) { updates.push("start_time = ?"); values.push(startTime); }
-    if (endTime !== undefined) { updates.push("end_time = ?"); values.push(endTime); }
-    if (maxSubmissions !== undefined) { updates.push("max_submissions = ?"); values.push(maxSubmissions); }
-    if (votesPerDay !== undefined) { updates.push("votes_per_day = ?"); values.push(votesPerDay); }
-    if (prizeExp !== undefined) { updates.push("prize_exp = ?"); values.push(prizeExp); }
-    if (prizeDescription !== undefined) { updates.push("prize_description = ?"); values.push(prizeDescription || null); }
+    if (title !== undefined) updateData.title = title.trim();
+    if (description !== undefined) updateData.description = description || null;
+    if (category !== undefined) updateData.category = category || null;
+    if (startTime !== undefined) updateData.start_time = startTime;
+    if (endTime !== undefined) updateData.end_time = endTime;
+    if (maxSubmissions !== undefined) updateData.max_submissions = maxSubmissions;
+    if (votesPerDay !== undefined) updateData.votes_per_day = votesPerDay;
+    if (prizeExp !== undefined) updateData.prize_exp = prizeExp;
+    if (prizeDescription !== undefined) updateData.prize_description = prizeDescription || null;
     if (status !== undefined) {
       const validStatuses = ["draft", "active", "ended", "settled"];
       if (!validStatuses.includes(status)) {
         return NextResponse.json({ error: "无效的状态值" }, { status: 400 });
       }
-      updates.push("status = ?");
-      values.push(status);
+      updateData.status = status;
     }
 
-    if (updates.length === 0) {
+    if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: "没有需要更新的字段" }, { status: 400 });
     }
 
-    values.push(challengeId);
-    await query(`UPDATE challenges SET ${updates.join(", ")} WHERE id = ?`, values);
+    await db
+      .updateTable("challenges")
+      .set(updateData)
+      .where("id", "=", challengeId)
+      .executeTakeFirst();
 
     return NextResponse.json({ message: "活动更新成功" });
   } catch (error: any) {

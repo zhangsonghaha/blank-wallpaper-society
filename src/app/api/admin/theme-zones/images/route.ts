@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // GET /api/admin/theme-zones/images?zone_key=xxx - 获取指定专区的手动图片列表
 export async function GET(request: NextRequest) {
@@ -15,18 +16,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "缺少 zone_key 参数" }, { status: 400 });
     }
 
-    const images = await query(
-      `SELECT 
+    const images = await sql<{
+      id: number; image_id: number; sort_order: number; added_at: string;
+      title: string; thumbnail_url: string; url: string; width: number; height: number; category: string;
+    }>`SELECT 
         tzi.id, tzi.image_id, tzi.sort_order, tzi.added_at,
         i.title, i.thumbnail_url, i.url, i.width, i.height, i.category
       FROM theme_zone_images tzi
       JOIN images i ON tzi.image_id = i.id
-      WHERE tzi.zone_key = ?
-      ORDER BY tzi.sort_order ASC, tzi.added_at DESC`,
-      [zoneKey]
-    );
+      WHERE tzi.zone_key = ${zoneKey}
+      ORDER BY tzi.sort_order ASC, tzi.added_at DESC`.execute(db);
 
-    return NextResponse.json({ data: images });
+    return NextResponse.json({ data: images.rows });
   } catch (error: any) {
     console.error("GET /api/admin/theme-zones/images error:", error);
     return NextResponse.json({ error: error.message || "获取失败" }, { status: 500 });
@@ -51,14 +52,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 批量插入，忽略重复
-    const values = image_ids.map((id: number) => [zone_key, id]);
-    const placeholders = image_ids.map(() => "(?, ?)").join(", ");
-
-    await query(
-      `INSERT IGNORE INTO theme_zone_images (zone_key, image_id) VALUES ${placeholders}`,
-      values.flat()
-    );
+    // 批量插入，忽略重复 — 使用 raw SQL for INSERT IGNORE
+    const tuples = image_ids.map((id: number) => sql`(${zone_key}, ${id})`);
+    await sql`INSERT IGNORE INTO theme_zone_images (zone_key, image_id) VALUES ${sql.join(tuples)}`.execute(db);
 
     return NextResponse.json({ success: true, added: image_ids.length });
   } catch (error: any) {
@@ -85,11 +81,10 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const placeholders = image_ids.map(() => "?").join(", ");
-    await query(
-      `DELETE FROM theme_zone_images WHERE zone_key = ? AND image_id IN (${placeholders})`,
-      [zone_key, ...image_ids]
-    );
+    await db.deleteFrom("theme_zone_images")
+      .where("zone_key", "=", zone_key)
+      .where("image_id", "in", image_ids as number[])
+      .execute();
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

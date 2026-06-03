@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // GET /api/auth/oauth-status - 检查 OAuth 登录是否可用
 export async function GET() {
   try {
-    const settings = (await query(
-      "SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN (?, ?, ?, ?)",
-      ["google_client_id", "google_client_secret", "github_client_id", "github_client_secret"]
-    )) as any[];
+    const settings = await db
+      .selectFrom("system_settings")
+      .select(["setting_key", "setting_value"])
+      .where("setting_key", "in", [
+        "google_client_id",
+        "google_client_secret",
+        "github_client_id",
+        "github_client_secret",
+      ])
+      .execute();
 
     const settingMap = new Map<string, string>();
-    settings.forEach((s: any) => settingMap.set(s.setting_key, s.setting_value || ""));
+    settings.forEach((s) => settingMap.set(s.setting_key, s.setting_value || ""));
 
     const googleAvailable =
       !!(process.env.GOOGLE_CLIENT_ID || settingMap.get("google_client_id")) &&

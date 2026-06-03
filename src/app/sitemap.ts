@@ -1,5 +1,5 @@
 import { MetadataRoute } from "next";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://imagegallery.app";
@@ -40,9 +40,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // 动态图片页面
   try {
-    const images = (await query(
-      "SELECT id, updated_at FROM images WHERE status = 'approved' ORDER BY updated_at DESC LIMIT 500"
-    )) as any[];
+    const images = await db
+      .selectFrom("images")
+      .select(["id", "updated_at"])
+      .where("status", "=", "approved")
+      .orderBy("updated_at", "desc")
+      .limit(500)
+      .execute();
 
     const imagePages: MetadataRoute.Sitemap = images.map((img) => ({
       url: `${baseUrl}/images/${img.id}`,
@@ -52,9 +56,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }));
 
     // 动态合集页面
-    const collections = (await query(
-      "SELECT id, updated_at FROM collections WHERE is_public = 1 ORDER BY updated_at DESC LIMIT 100"
-    )) as any[];
+    const collections = await db
+      .selectFrom("collections")
+      .select(["id", "updated_at"])
+      .where("is_public", "=", 1)
+      .orderBy("updated_at", "desc")
+      .limit(100)
+      .execute();
 
     const collectionPages: MetadataRoute.Sitemap = collections.map((col) => ({
       url: `${baseUrl}/collections/${col.id}`,

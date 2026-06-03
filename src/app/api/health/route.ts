@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import redis from "@/lib/redis";
 import { getMinioClient, BUCKET_NAME } from "@/lib/minio";
 
@@ -14,10 +15,10 @@ interface HealthCheckResult {
 
 /**
  * GET /api/health - 健康检查端点
- * 
+ *
  * 用于负载均衡器、K8s 探针、监控服务、管理后台等检测应用是否健康
  * 检查项：数据库、Redis、MinIO
- * 
+ *
  * 返回：
  * - 200: 所有检查通过
  * - 503: 任一检查失败
@@ -29,7 +30,7 @@ export async function GET() {
   // === 数据库连接检查 ===
   try {
     const dbStart = Date.now();
-    await query("SELECT 1 AS health_check");
+    await sql`SELECT 1 AS health_check`.execute(db);
     checks.database = {
       status: "ok",
       latency: Date.now() - dbStart,

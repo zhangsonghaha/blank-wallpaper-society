@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query, safeQuery } from "@/lib/db";
+import { db, safeExecute } from "@/lib/db";
+import { sql } from "kysely";
 import { indexImage, deleteImage, dbRowToSearchData } from "@/lib/meilisearch";
 import { notifyReviewResult } from "@/lib/notification";
 import { logAudit } from "@/lib/audit-log";
@@ -30,27 +31,34 @@ export async function GET(request: NextRequest) {
     }
 
     // 获取总数（独立容错）
-    const countResult = await safeQuery(
-      "SELECT COUNT(*) as total FROM images WHERE status = ?",
-      [status],
-      [{ total: 0 }]
+    const countResult = await safeExecute(
+      () => db.selectFrom("images")
+        .where("status", "=", status)
+        .select((eb) => eb.fn.countAll().as("total"))
+        .executeTakeFirst(),
+      { total: 0 }
     );
-    const total = Number((countResult as any[])?.[0]?.total ?? 0);
+    const total = Number(countResult?.total ?? 0);
 
     // 获取图片列表，关联审核人信息（独立容错）
-    const rows = await safeQuery(
-      `SELECT i.*, u.name as reviewer_name
+    const rows = await safeExecute(
+      () => sql<{
+        id: number; title: string; url: string; thumbnail_url: string; status: string;
+        created_at: string; reviewed_by: number; reviewed_at: string; reject_reason: string;
+        uploaded_by: number; width: number; height: number; category: string; tags: string;
+        reviewer_name: string;
+      }>`SELECT i.*, u.name as reviewer_name
        FROM images i
        LEFT JOIN users u ON i.reviewed_by = u.id
-       WHERE i.status = ?
+       WHERE i.status = ${status}
        ORDER BY i.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [status, limit, offset],
-      []
+       LIMIT ${limit} OFFSET ${offset}`.execute(db),
+      { rows: [] } as { rows: any[] },
+      "review-list"
     );
 
     return NextResponse.json({
-      data: Array.isArray(rows) ? rows : [],
+      data: Array.isArray(rows.rows) ? rows.rows : [],
       total,
       page,
       limit,
@@ -103,38 +111,42 @@ export async function PATCH(request: NextRequest) {
     }
 
     // 检查图片是否存在
-    const existing = await query("SELECT id, status, title, uploaded_by FROM images WHERE id = ?", [
-      imageId,
-    ]);
-    if ((existing as any[]).length === 0) {
+    const existing = await db.selectFrom("images")
+      .where("id", "=", imageId)
+      .select(["id", "status", "title", "uploaded_by"])
+      .execute();
+    if (existing.length === 0) {
       return NextResponse.json({ error: "图片不存在" }, { status: 404 });
     }
 
-    const imageInfo = (existing as any[])[0];
+    const imageInfo = existing[0];
 
     const adminId = (session.user as any).id;
     const newStatus = action === "approve" ? "approved" : "rejected";
 
-    await query(
-      `UPDATE images SET status = ?, reviewed_by = ?, reviewed_at = NOW(), reject_reason = ? WHERE id = ?`,
-      [
-        newStatus,
-        adminId,
-        action === "reject" ? rejectReason.trim() : null,
-        imageId,
-      ]
-    );
+    await db.updateTable("images")
+      .set({
+        status: newStatus,
+        reviewed_by: adminId,
+        reviewed_at: sql`NOW()`,
+        reject_reason: action === "reject" ? rejectReason.trim() : null,
+      })
+      .where("id", "=", imageId)
+      .execute();
 
     // 自动同步 Meilisearch 索引
     try {
       if (action === "approve") {
-        // 审核通过 → 索引该图片
-        const imageRows = await query("SELECT * FROM images WHERE id = ?", [imageId]);
-        if ((imageRows as any[]).length > 0) {
-          indexImage(dbRowToSearchData((imageRows as any[])[0])).catch(() => {});
+        // 审核通过 -> 索引该图片
+        const imageRows = await db.selectFrom("images")
+          .where("id", "=", imageId)
+          .selectAll()
+          .execute();
+        if (imageRows.length > 0) {
+          indexImage(dbRowToSearchData(imageRows[0])).catch(() => {});
         }
       } else {
-        // 审核拒绝 → 从索引中删除
+        // 审核拒绝 -> 从索引中删除
         deleteImage(imageId).catch(() => {});
       }
     } catch {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import crypto from "crypto";
 import { verifyAltchaSolution } from "@/lib/altcha";
 import { getClientIp, checkForgotPasswordRate, recordForgotPasswordAttempt } from "@/lib/login-security";
@@ -44,9 +44,11 @@ export async function POST(request: NextRequest) {
     recordForgotPasswordAttempt(ip);
 
     // 查找用户
-    const users = (await query("SELECT id, name, email FROM users WHERE email = ?", [
-      email,
-    ])) as any[];
+    const users = await db
+      .selectFrom("users")
+      .select(["id", "name", "email"])
+      .where("email", "=", email)
+      .execute();
 
     if (users.length === 0) {
       // 安全考虑：不透露邮箱是否存在
@@ -62,16 +64,21 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1小时后过期
 
     // 删除该用户之前的未使用令牌
-    await query(
-      "DELETE FROM password_reset_tokens WHERE user_id = ? AND used_at IS NULL",
-      [user.id]
-    );
+    await db
+      .deleteFrom("password_reset_tokens")
+      .where("user_id", "=", user.id)
+      .where("used_at", "is", null)
+      .execute();
 
     // 插入新令牌
-    await query(
-      "INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES (?, ?, ?)",
-      [user.id, token, expiresAt]
-    );
+    await db
+      .insertInto("password_reset_tokens")
+      .values({
+        user_id: user.id,
+        token: token,
+        expires_at: expiresAt,
+      })
+      .execute();
 
     // 构建重置链接
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";

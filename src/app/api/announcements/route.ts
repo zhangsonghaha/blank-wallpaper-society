@@ -1,28 +1,28 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // GET - 获取已发布的公告列表（用户端）
 export async function GET() {
   try {
-    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const now = new Date();
 
-    const list = await query(
-      `SELECT id, title, content, type, priority, start_time, end_time, created_at
-       FROM sys_announcements
-       WHERE is_published = 1
-         AND (start_time IS NULL OR start_time <= ?)
-         AND (end_time IS NULL OR end_time >= ?)
-       ORDER BY 
-         CASE priority 
-           WHEN 'urgent' THEN 0 
-           WHEN 'high' THEN 1 
-           WHEN 'normal' THEN 2 
-           WHEN 'low' THEN 3 
-         END ASC,
-         created_at DESC
-       LIMIT 10`,
-      [now, now]
-    ) as any[];
+    const list = await db
+      .selectFrom("sys_announcements")
+      .select(["id", "title", "content", "type", "priority", "start_time", "end_time", "created_at"])
+      .where("is_published", "=", 1)
+      .where((eb) => eb.or([
+        eb("start_time", "is", null),
+        eb("start_time", "<=", now),
+      ]))
+      .where((eb) => eb.or([
+        eb("end_time", "is", null),
+        eb("end_time", ">=", now),
+      ]))
+      .orderBy(sql`CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 END`, "asc")
+      .orderBy("created_at", "desc")
+      .limit(10)
+      .execute();
 
     return NextResponse.json({
       success: true,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit-log";
 
@@ -38,13 +39,12 @@ export async function GET() {
       return NextResponse.json({ error: "无权访问" }, { status: 403 });
     }
 
-    const providers = (await query(
-      "SELECT * FROM ai_model_providers ORDER BY created_at DESC"
-    )) as ProviderRow[];
+    const providers = await db.selectFrom("ai_model_providers")
+      .selectAll()
+      .orderBy("created_at", "desc")
+      .execute();
 
-    const models = (await query(
-      "SELECT m.*, p.name AS provider_name, p.type AS provider_type, p.base_url AS provider_base_url FROM ai_models m LEFT JOIN ai_model_providers p ON m.provider_id = p.id ORDER BY m.model_type, m.created_at DESC"
-    )) as (ModelRow & { provider_name: string; provider_type: string; provider_base_url: string })[];
+    const models = await sql<ModelRow & { provider_name: string; provider_type: string; provider_base_url: string }>`SELECT m.*, p.name AS provider_name, p.type AS provider_type, p.base_url AS provider_base_url FROM ai_models m LEFT JOIN ai_model_providers p ON m.provider_id = p.id ORDER BY m.model_type, m.created_at DESC`.execute(db);
 
     // 脱敏 api_key
     const safeProviders = providers.map((p) => ({
@@ -52,7 +52,7 @@ export async function GET() {
       api_key: p.api_key ? p.api_key.slice(0, 8) + "****" + p.api_key.slice(-4) : "",
     }));
 
-    return NextResponse.json({ providers: safeProviders, models });
+    return NextResponse.json({ providers: safeProviders, models: models.rows });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const action = body.action; // "add_provider" | "add_model" | "test_and_add" | "set_default"
+    const action = body.action;
 
     if (action === "add_provider") {
       const { name, type, base_url, api_key, enabled } = body;
@@ -75,10 +75,15 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "名称、Base URL和API Key为必填" }, { status: 400 });
       }
 
-      const result = await query(
-        "INSERT INTO ai_model_providers (name, type, base_url, api_key, enabled) VALUES (?, ?, ?, ?, ?)",
-        [name, type || "openai", base_url, api_key, enabled !== undefined ? enabled : 1]
-      ) as any;
+      const result = await db.insertInto("ai_model_providers")
+        .values({
+          name,
+          type: type || "openai",
+          base_url,
+          api_key,
+          enabled: enabled !== undefined ? enabled : 1,
+        })
+        .executeTakeFirst();
 
       logAudit({
         operatorId: (session.user as any).id,
@@ -87,7 +92,7 @@ export async function POST(request: NextRequest) {
         ip: request.headers.get("x-forwarded-for") || undefined,
       }).catch(() => {});
 
-      return NextResponse.json({ message: "提供商已创建", id: result.insertId });
+      return NextResponse.json({ message: "提供商已创建", id: Number(result.insertId) });
     }
 
     if (action === "add_model") {
@@ -96,18 +101,17 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "提供商和模型ID为必填" }, { status: 400 });
       }
 
-      const result = await query(
-        "INSERT INTO ai_models (provider_id, model_id, display_name, model_type, enabled, max_tokens, extra_config) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [
+      const result = await db.insertInto("ai_models")
+        .values({
           provider_id,
           model_id,
-          display_name || model_id,
-          model_type || "chat",
-          enabled !== undefined ? enabled : 1,
-          max_tokens || 4096,
-          extra_config ? JSON.stringify(extra_config) : null,
-        ]
-      ) as any;
+          display_name: display_name || model_id,
+          model_type: model_type || "chat",
+          enabled: enabled !== undefined ? enabled : 1,
+          max_tokens: max_tokens || 4096,
+          extra_config: extra_config ? JSON.stringify(extra_config) : null,
+        })
+        .executeTakeFirst();
 
       logAudit({
         operatorId: (session.user as any).id,
@@ -116,20 +120,19 @@ export async function POST(request: NextRequest) {
         ip: request.headers.get("x-forwarded-for") || undefined,
       }).catch(() => {});
 
-      return NextResponse.json({ message: "模型已添加", id: result.insertId });
+      return NextResponse.json({ message: "模型已添加", id: Number(result.insertId) });
     }
 
     if (action === "test_and_add") {
-      // 测试API Key并自动发现可用模型，一键添加
       const { provider_id } = body;
       if (!provider_id) {
         return NextResponse.json({ error: "缺少提供商ID" }, { status: 400 });
       }
 
-      const providers = (await query(
-        "SELECT * FROM ai_model_providers WHERE id = ?",
-        [provider_id]
-      )) as ProviderRow[];
+      const providers = await db.selectFrom("ai_model_providers")
+        .where("id", "=", provider_id)
+        .selectAll()
+        .execute();
 
       if (providers.length === 0) {
         return NextResponse.json({ error: "提供商不存在" }, { status: 404 });
@@ -141,7 +144,7 @@ export async function POST(request: NextRequest) {
       try {
         let discoveredModels: { id: string; type: "chat" | "image" | "embedding" }[] = [];
 
-        if (provider.type === "stability") {
+        if ((provider as any).type === "stability") {
           const res = await fetch(`${baseUrl}/engines/list`, {
             headers: { Authorization: `Bearer ${provider.api_key}` },
             signal: AbortSignal.timeout(15000),
@@ -159,7 +162,6 @@ export async function POST(request: NextRequest) {
             type: "image" as const,
           }));
         } else {
-          // OpenAI 兼容 API
           const res = await fetch(`${baseUrl}/models`, {
             headers: { Authorization: `Bearer ${provider.api_key}` },
             signal: AbortSignal.timeout(15000),
@@ -174,7 +176,6 @@ export async function POST(request: NextRequest) {
           const data = await res.json();
           const modelList: string[] = (data.data || []).map((m: any) => m.id);
 
-          // 智能分类模型
           discoveredModels = modelList.map((id: string) => {
             const lower = id.toLowerCase();
             if (
@@ -194,22 +195,28 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // 添加发现的模型（跳过已存在的）
         let addedCount = 0;
         let skippedCount = 0;
         for (const model of discoveredModels) {
-          const existing = (await query(
-            "SELECT id FROM ai_models WHERE provider_id = ? AND model_id = ?",
-            [provider_id, model.id]
-          )) as any[];
+          const existing = await db.selectFrom("ai_models")
+            .where("provider_id", "=", provider_id)
+            .where("model_id", "=", model.id)
+            .select(["id"])
+            .execute();
           if (existing.length > 0) {
             skippedCount++;
             continue;
           }
-          await query(
-            "INSERT INTO ai_models (provider_id, model_id, display_name, model_type, enabled, max_tokens) VALUES (?, ?, ?, ?, 1, ?)",
-            [provider_id, model.id, model.id, model.type, model.type === "chat" ? 4096 : model.type === "image" ? 0 : 2048]
-          );
+          await db.insertInto("ai_models")
+            .values({
+              provider_id,
+              model_id: model.id,
+              display_name: model.id,
+              model_type: model.type,
+              enabled: 1,
+              max_tokens: model.type === "chat" ? 4096 : model.type === "image" ? 0 : 2048,
+            })
+            .execute();
           addedCount++;
         }
 
@@ -243,14 +250,20 @@ export async function POST(request: NextRequest) {
       }
 
       // 清除同类型其他默认
-      await query("UPDATE ai_models SET is_default = 0 WHERE model_type = ?", [model_type]);
+      await db.updateTable("ai_models")
+        .set({ is_default: 0 })
+        .where("model_type", "=", model_type)
+        .execute();
       // 设置新默认
-      await query("UPDATE ai_models SET is_default = 1 WHERE id = ?", [model_id]);
+      await db.updateTable("ai_models")
+        .set({ is_default: 1 })
+        .where("id", "=", model_id)
+        .execute();
 
       // 如果指定了bot_config_id，也更新bot_configs
       if (bot_config_id) {
         const field = model_type === "chat" ? "default_chat_model_id" : "default_image_model_id";
-        await query(`UPDATE bot_configs SET ${field} = ? WHERE id = ?`, [model_id, bot_config_id]);
+        await sql`UPDATE bot_configs SET ${sql.ref(field)} = ${model_id} WHERE id = ${bot_config_id}`.execute(db);
       }
 
       logAudit({
@@ -264,7 +277,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "test_api_key") {
-      // 测试API Key是否可用
       const { base_url, api_key, type } = body;
       if (!base_url || !api_key) {
         return NextResponse.json({ error: "Base URL和API Key为必填" }, { status: 400 });
@@ -318,35 +330,34 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const target = body.target; // "provider" | "model"
+    const target = body.target;
 
     if (target === "provider") {
       const { id, name, type, base_url, api_key, enabled } = body;
       if (!id) return NextResponse.json({ error: "缺少ID" }, { status: 400 });
 
-      const existing = (await query("SELECT id FROM ai_model_providers WHERE id = ?", [id])) as any[];
+      const existing = await db.selectFrom("ai_model_providers").where("id", "=", id).select(["id"]).execute();
       if (existing.length === 0) return NextResponse.json({ error: "提供商不存在" }, { status: 404 });
 
-      // 如果不传 api_key，保留原有值
       if (!api_key) {
-        const row = (await query("SELECT api_key FROM ai_model_providers WHERE id = ?", [id])) as any[];
+        const row = await db.selectFrom("ai_model_providers").where("id", "=", id).select(["api_key"]).execute();
         if (row.length > 0 && row[0].api_key) {
           // 不更新 api_key
-          await query(
-            "UPDATE ai_model_providers SET name = ?, type = ?, base_url = ?, enabled = ? WHERE id = ?",
-            [name, type, base_url, enabled !== undefined ? enabled : 1, id]
-          );
+          await db.updateTable("ai_model_providers")
+            .set({ name, type, base_url, enabled: enabled !== undefined ? enabled : 1 })
+            .where("id", "=", id)
+            .execute();
         } else {
-          await query(
-            "UPDATE ai_model_providers SET name = ?, type = ?, base_url = ?, api_key = ?, enabled = ? WHERE id = ?",
-            [name, type, base_url, api_key || "", enabled !== undefined ? enabled : 1, id]
-          );
+          await db.updateTable("ai_model_providers")
+            .set({ name, type, base_url, api_key: api_key || "", enabled: enabled !== undefined ? enabled : 1 })
+            .where("id", "=", id)
+            .execute();
         }
       } else {
-        await query(
-          "UPDATE ai_model_providers SET name = ?, type = ?, base_url = ?, api_key = ?, enabled = ? WHERE id = ?",
-          [name, type, base_url, api_key, enabled !== undefined ? enabled : 1, id]
-        );
+        await db.updateTable("ai_model_providers")
+          .set({ name, type, base_url, api_key, enabled: enabled !== undefined ? enabled : 1 })
+          .where("id", "=", id)
+          .execute();
       }
 
       return NextResponse.json({ message: "提供商已更新" });
@@ -356,21 +367,20 @@ export async function PATCH(request: NextRequest) {
       const { id, model_id, display_name, model_type, enabled, max_tokens, extra_config } = body;
       if (!id) return NextResponse.json({ error: "缺少ID" }, { status: 400 });
 
-      const existing = (await query("SELECT id FROM ai_models WHERE id = ?", [id])) as any[];
+      const existing = await db.selectFrom("ai_models").where("id", "=", id).select(["id"]).execute();
       if (existing.length === 0) return NextResponse.json({ error: "模型不存在" }, { status: 404 });
 
-      await query(
-        "UPDATE ai_models SET model_id = ?, display_name = ?, model_type = ?, enabled = ?, max_tokens = ?, extra_config = ? WHERE id = ?",
-        [
+      await db.updateTable("ai_models")
+        .set({
           model_id,
-          display_name || model_id,
-          model_type || "chat",
-          enabled !== undefined ? enabled : 1,
-          max_tokens || 4096,
-          extra_config ? JSON.stringify(extra_config) : null,
-          id,
-        ]
-      );
+          display_name: display_name || model_id,
+          model_type: model_type || "chat",
+          enabled: enabled !== undefined ? enabled : 1,
+          max_tokens: max_tokens || 4096,
+          extra_config: extra_config ? JSON.stringify(extra_config) : null,
+        })
+        .where("id", "=", id)
+        .execute();
 
       return NextResponse.json({ message: "模型已更新" });
     }
@@ -390,7 +400,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const target = searchParams.get("target"); // "provider" | "model"
+    const target = searchParams.get("target");
     const id = searchParams.get("id");
 
     if (!id || !target) {
@@ -398,13 +408,12 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (target === "provider") {
-      // 关联模型会级联删除
-      await query("DELETE FROM ai_model_providers WHERE id = ?", [Number(id)]);
+      await db.deleteFrom("ai_model_providers").where("id", "=", Number(id)).execute();
       return NextResponse.json({ message: "提供商及关联模型已删除" });
     }
 
     if (target === "model") {
-      await query("DELETE FROM ai_models WHERE id = ?", [Number(id)]);
+      await db.deleteFrom("ai_models").where("id", "=", Number(id)).execute();
       return NextResponse.json({ message: "模型已删除" });
     }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { getObject, objectExists, putBuffer } from "@/lib/minio";
 import { getResizedKey, RESOLUTION_MAP } from "@/lib/resolutions";
 import sharp from "sharp";
@@ -43,21 +44,22 @@ export async function POST(request: NextRequest) {
     }
 
     // 查询图片信息
-    const placeholders = imageIds.map(() => "?").join(",");
-    const rows = (await query(
-      `SELECT * FROM images WHERE id IN (${placeholders})`,
-      imageIds
-    )) as any[];
+    const rows = await db
+      .selectFrom("images")
+      .selectAll()
+      .where("id", "in", imageIds)
+      .execute();
 
     if (rows.length === 0) {
       return NextResponse.json({ error: "未找到指定图片" }, { status: 404 });
     }
 
     // 增加下载计数
-    await query(
-      `UPDATE images SET download_count = download_count + 1 WHERE id IN (${placeholders})`,
-      imageIds
-    );
+    await db
+      .updateTable("images")
+      .set({ download_count: sql`download_count + 1` })
+      .where("id", "in", imageIds)
+      .executeTakeFirst();
 
     // 创建zip流
     const archive = archiver("zip", { zlib: { level: 6 } });

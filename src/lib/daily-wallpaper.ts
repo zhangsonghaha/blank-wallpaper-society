@@ -1,4 +1,4 @@
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 /** 日期字符串的简单 hash，用于生成稳定的随机种子 */
 function hashCode(str: string): number {
@@ -146,15 +146,15 @@ export async function getDailyWallpaper(dateStr?: string): Promise<DailyWallpape
   }
 
   // 查询所有审核通过的图片，按综合评分排序
-  const images = (await query(
-    `SELECT id, title, description, url, thumbnail_url, width, height, 
-       category, tags, author, view_count, download_count, 
-       favorite_count, created_at, dominant_color, media_type, video_url
-     FROM images 
-     WHERE status = 'approved'
-     ORDER BY COALESCE(favorite_count, 0) * 5 + COALESCE(download_count, 0) * 2 + COALESCE(view_count, 0) * 0.1 DESC
-     LIMIT 500`
-  )) as any[];
+  const images = await db.selectFrom("images")
+    .where("status", "=", "approved")
+    .select([
+      "id", "title", "description", "url", "thumbnail_url", "width", "height",
+      "category", "tags", "author", "view_count", "download_count",
+      "favorite_count", "created_at", "dominant_color", "media_type", "video_url",
+    ])
+    .limit(500)
+    .execute();
 
   // 确保至少有图片
   if (images.length === 0) {

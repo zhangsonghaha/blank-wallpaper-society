@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { uploadFile } from "@/lib/minio";
 import { sanitizeComment, sanitizeStrict } from "@/lib/sanitize";
@@ -83,47 +84,75 @@ export async function POST(request: NextRequest) {
     }
 
     // 插入帖子
-    const result = await query(
-      `INSERT INTO posts (user_id, content, visibility, attachments_count) VALUES (?, ?, ?, ?)`,
-      [userId, content.trim(), visibility, attachments.length]
-    );
+    const result = await db
+      .insertInto("posts")
+      .values({
+        user_id: userId,
+        content: content.trim(),
+        visibility: visibility as "public" | "followers" | "private",
+        attachments_count: attachments.length,
+      })
+      .executeTakeFirst();
 
-    const postId = (result as any).insertId;
+    const postId = Number(result.insertId);
 
     // 插入附件
     for (const att of attachments) {
-      await query(
-        `INSERT INTO post_attachments (post_id, type, url, thumbnail_url, width, height, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [postId, att.type, att.url, att.thumbnail_url || null, att.width || 0, att.height || 0, att.sort_order || 0]
-      );
+      await db
+        .insertInto("post_attachments")
+        .values({
+          post_id: postId,
+          type: att.type as "image" | "video",
+          url: att.url,
+          thumbnail_url: att.thumbnail_url || null,
+          width: att.width || 0,
+          height: att.height || 0,
+          sort_order: att.sort_order || 0,
+        })
+        .executeTakeFirst();
     }
 
     // 插入链接预览
     if (linkUrl) {
-      await query(
-        `INSERT INTO post_link_previews (post_id, url, title, description, image_url, site_name) VALUES (?, ?, ?, ?, ?, ?)`,
-        [postId, linkUrl, linkTitle, linkDescription, linkImageUrl, linkSiteName]
-      );
+      await db
+        .insertInto("post_link_previews")
+        .values({
+          post_id: postId,
+          url: linkUrl,
+          title: linkTitle,
+          description: linkDescription,
+          image_url: linkImageUrl,
+          site_name: linkSiteName,
+        })
+        .executeTakeFirst();
     }
 
     // 查询完整帖子数据返回
-    const newPost = await query(
-      `SELECT p.*, u.name as author_name, u.avatar as author_avatar
-       FROM posts p
-       LEFT JOIN users u ON p.user_id = u.id
-       WHERE p.id = ?`,
-      [postId]
-    ) as any[];
+    const newPost = await db
+      .selectFrom("posts as p")
+      .leftJoin("users as u", "u.id", "p.user_id")
+      .select([
+        "p.id", "p.user_id", "p.content", "p.visibility", "p.is_pinned",
+        "p.likes_count", "p.comments_count", "p.attachments_count",
+        "p.created_at", "p.updated_at",
+        sql<string>`u.name`.as("author_name"),
+        sql<string | null>`u.avatar`.as("author_avatar"),
+      ])
+      .where("p.id", "=", postId)
+      .execute();
 
-    const postAttachments = await query(
-      `SELECT * FROM post_attachments WHERE post_id = ? ORDER BY sort_order`,
-      [postId]
-    ) as any[];
+    const postAttachments = await db
+      .selectFrom("post_attachments")
+      .selectAll()
+      .where("post_id", "=", postId)
+      .orderBy("sort_order")
+      .execute();
 
-    const postLinks = await query(
-      `SELECT * FROM post_link_previews WHERE post_id = ?`,
-      [postId]
-    ) as any[];
+    const postLinks = await db
+      .selectFrom("post_link_previews")
+      .selectAll()
+      .where("post_id", "=", postId)
+      .execute();
 
     return NextResponse.json({
       message: "发布成功",
@@ -157,29 +186,42 @@ export async function GET(request: NextRequest) {
 
     // 获取单个帖子
     if (postId) {
-      const posts = await query(
-        `SELECT p.*, u.name as author_name, u.avatar as author_avatar
-         FROM posts p
-         LEFT JOIN users u ON p.user_id = u.id
-         WHERE p.id = ?`,
-        [parseInt(postId)]
-      ) as any[];
+      const posts = await db
+        .selectFrom("posts as p")
+        .leftJoin("users as u", "u.id", "p.user_id")
+        .select([
+          "p.id", "p.user_id", "p.content", "p.visibility", "p.is_pinned",
+          "p.likes_count", "p.comments_count", "p.attachments_count",
+          "p.created_at", "p.updated_at",
+          sql<string>`u.name`.as("author_name"),
+          sql<string | null>`u.avatar`.as("author_avatar"),
+        ])
+        .where("p.id", "=", parseInt(postId))
+        .execute();
 
       if (posts.length === 0) {
         return NextResponse.json({ error: "帖子不存在" }, { status: 404 });
       }
 
-      const post = posts[0];
-      const attachments = await query(
-        `SELECT * FROM post_attachments WHERE post_id = ? ORDER BY sort_order`,
-        [post.id]
-      ) as any[];
-      const links = await query(
-        `SELECT * FROM post_link_previews WHERE post_id = ?`,
-        [post.id]
-      ) as any[];
+      const post = posts[0] as any;
+      const attachments = await db
+        .selectFrom("post_attachments")
+        .selectAll()
+        .where("post_id", "=", post.id)
+        .orderBy("sort_order")
+        .execute();
+      const links = await db
+        .selectFrom("post_link_previews")
+        .selectAll()
+        .where("post_id", "=", post.id)
+        .execute();
       const likeStatus = userId
-        ? await query(`SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?`, [post.id, userId]) as any[]
+        ? await db
+            .selectFrom("post_likes")
+            .select(["id"])
+            .where("post_id", "=", post.id)
+            .where("user_id", "=", userId)
+            .execute()
         : [];
 
       return NextResponse.json({
@@ -192,63 +234,84 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 构建查询
-    let whereClause = "WHERE 1=1";
-    const queryParams: any[] = [];
+    // 构建查询 — count query
+    let countQuery = db
+      .selectFrom("posts as p")
+      .select((eb) => [eb.fn.countAll().as("total")]);
+
+    // 构建查询 — list query
+    let listQuery = db
+      .selectFrom("posts as p")
+      .leftJoin("users as u", "u.id", "p.user_id")
+      .select([
+        "p.id", "p.user_id", "p.content", "p.visibility", "p.is_pinned",
+        "p.likes_count", "p.comments_count", "p.attachments_count",
+        "p.created_at", "p.updated_at",
+        sql<string>`u.name`.as("author_name"),
+        sql<string | null>`u.avatar`.as("author_avatar"),
+      ]);
 
     if (userIdFilter) {
-      whereClause += " AND p.user_id = ?";
-      queryParams.push(parseInt(userIdFilter));
+      countQuery = countQuery.where("p.user_id", "=", parseInt(userIdFilter));
+      listQuery = listQuery.where("p.user_id", "=", parseInt(userIdFilter));
     } else {
       // 非指定用户的查询：只看公开帖子，或自己的帖子
       if (userId) {
-        whereClause += " AND (p.visibility = 'public' OR p.user_id = ?)";
-        queryParams.push(userId);
+        countQuery = countQuery.where((eb) =>
+          eb.or([
+            eb("p.visibility", "=", "public"),
+            eb("p.user_id", "=", userId),
+          ])
+        );
+        listQuery = listQuery.where((eb) =>
+          eb.or([
+            eb("p.visibility", "=", "public"),
+            eb("p.user_id", "=", userId),
+          ])
+        );
       } else {
-        whereClause += " AND p.visibility = 'public'";
+        countQuery = countQuery.where("p.visibility", "=", "public");
+        listQuery = listQuery.where("p.visibility", "=", "public");
       }
     }
 
-    // 计数 - 使用与列表查询相同的参数
-    const countRows = await query(
-      `SELECT COUNT(*) AS total FROM posts p ${whereClause}`,
-      queryParams
-    ) as any[];
-    const total = countRows[0]?.total || 0;
+    // 计数
+    const countRows = await countQuery.execute();
+    const total = Number(countRows[0]?.total ?? 0);
 
-    // 查询帖子列表 - 复制参数数组，追加 limit 和 offset
-    const listParams = [...queryParams];
-    const posts = await query(
-      `SELECT p.*, u.name as author_name, u.avatar as author_avatar
-       FROM posts p
-       LEFT JOIN users u ON p.user_id = u.id
-       ${whereClause}
-       ORDER BY p.is_pinned DESC, p.created_at DESC
-       LIMIT ${Number(limit)} OFFSET ${Number(offset)}`,
-      listParams
-    ) as any[];
+    // 查询帖子列表
+    const posts = await listQuery
+      .orderBy("p.is_pinned", "desc")
+      .orderBy("p.created_at", "desc")
+      .limit(limit)
+      .offset(offset)
+      .execute();
 
     // 批量获取附件、链接、点赞状态
     if (posts.length > 0) {
       const postIds = posts.map((p: any) => p.id);
-      const placeholders = postIds.map(() => "?").join(",");
 
-      const allAttachments = await query(
-        `SELECT * FROM post_attachments WHERE post_id IN (${placeholders}) ORDER BY sort_order`,
-        postIds
-      ) as any[];
+      const allAttachments = await db
+        .selectFrom("post_attachments")
+        .selectAll()
+        .where("post_id", "in", postIds)
+        .orderBy("sort_order")
+        .execute();
 
-      const allLinks = await query(
-        `SELECT * FROM post_link_previews WHERE post_id IN (${placeholders})`,
-        postIds
-      ) as any[];
+      const allLinks = await db
+        .selectFrom("post_link_previews")
+        .selectAll()
+        .where("post_id", "in", postIds)
+        .execute();
 
       let likedPostIds = new Set<number>();
       if (userId) {
-        const likes = await query(
-          `SELECT post_id FROM post_likes WHERE user_id = ? AND post_id IN (${placeholders})`,
-          [userId, ...postIds]
-        ) as any[];
+        const likes = await db
+          .selectFrom("post_likes")
+          .select(["post_id"])
+          .where("user_id", "=", userId)
+          .where("post_id", "in", postIds)
+          .execute();
         likedPostIds = new Set(likes.map((l: any) => l.post_id));
       }
 

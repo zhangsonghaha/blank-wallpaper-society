@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // GET /api/embed - 获取嵌入数据（壁纸展示 / 每日壁纸）
 export async function GET(request: NextRequest) {
@@ -12,24 +12,37 @@ export async function GET(request: NextRequest) {
 
     if (type === "wallpaper" && imageId) {
       // 单张壁纸嵌入数据
-      const rows = await query(
-        `SELECT i.id, i.title, i.url, i.thumbnail_url, i.width, i.height, i.author,
-                u.name as author_name
-         FROM images i
-         LEFT JOIN users u ON i.uploaded_by = u.id
-         WHERE i.id = ? AND i.status = 'approved'`,
-        [imageId]
-      ) as any[];
+      const rows = await db
+        .selectFrom("images as i")
+        .leftJoin("users as u", "u.id", "i.uploaded_by")
+        .select([
+          "i.id",
+          "i.title",
+          "i.url",
+          "i.thumbnail_url",
+          "i.width",
+          "i.height",
+          "i.author",
+          "u.name as author_name",
+        ])
+        .where("i.id", "=", parseInt(imageId))
+        .where("i.status", "=", "approved")
+        .execute();
 
       if (rows.length === 0) {
         return NextResponse.json({ error: "图片不存在" }, { status: 404 });
       }
 
       // 记录展示统计
-      await query(
-        "INSERT INTO embed_stats (image_id, embed_type, referrer, event_type) VALUES (?, 'wallpaper', ?, 'impression')",
-        [imageId, request.headers.get("referer") || ""]
-      );
+      await db
+        .insertInto("embed_stats")
+        .values({
+          image_id: parseInt(imageId),
+          embed_type: "wallpaper",
+          referrer: request.headers.get("referer") || "",
+          event_type: "impression",
+        })
+        .executeTakeFirst();
 
       return NextResponse.json({
         data: {
@@ -44,25 +57,39 @@ export async function GET(request: NextRequest) {
     if (type === "daily") {
       // 每日壁纸嵌入数据
       const today = new Date().toISOString().split("T")[0];
-      const dailyRows = await query(
-        `SELECT i.id, i.title, i.url, i.thumbnail_url, i.width, i.height, i.author,
-                u.name as author_name
-         FROM images i
-         LEFT JOIN users u ON i.uploaded_by = u.id
-         WHERE i.status = 'approved'
-         ORDER BY i.download_count DESC, i.view_count DESC
-         LIMIT 1`
-      ) as any[];
+      const dailyRows = await db
+        .selectFrom("images as i")
+        .leftJoin("users as u", "u.id", "i.uploaded_by")
+        .select([
+          "i.id",
+          "i.title",
+          "i.url",
+          "i.thumbnail_url",
+          "i.width",
+          "i.height",
+          "i.author",
+          "u.name as author_name",
+        ])
+        .where("i.status", "=", "approved")
+        .orderBy("i.download_count", "desc")
+        .orderBy("i.view_count", "desc")
+        .limit(1)
+        .execute();
 
       if (dailyRows.length === 0) {
         return NextResponse.json({ error: "暂无壁纸" }, { status: 404 });
       }
 
       // 记录展示统计
-      await query(
-        "INSERT INTO embed_stats (image_id, embed_type, referrer, event_type) VALUES (?, 'daily', ?, 'impression')",
-        [dailyRows[0].id, request.headers.get("referer") || ""]
-      );
+      await db
+        .insertInto("embed_stats")
+        .values({
+          image_id: dailyRows[0].id,
+          embed_type: "daily",
+          referrer: request.headers.get("referer") || "",
+          event_type: "impression",
+        })
+        .executeTakeFirst();
 
       return NextResponse.json({
         data: {
@@ -91,10 +118,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "缺少imageId" }, { status: 400 });
     }
 
-    await query(
-      "INSERT INTO embed_stats (image_id, embed_type, referrer, event_type) VALUES (?, ?, ?, 'click')",
-      [imageId, embedType || "wallpaper", referrer || ""]
-    );
+    await db
+      .insertInto("embed_stats")
+      .values({
+        image_id: imageId,
+        embed_type: embedType || "wallpaper",
+        referrer: referrer || "",
+        event_type: "click",
+      })
+      .executeTakeFirst();
 
     return NextResponse.json({ message: "记录成功" });
   } catch (error: any) {

@@ -3,7 +3,8 @@
  * 营销活动管理、订阅偏好、发送与统计
  */
 
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { sendEmail, isEmailConfigured } from "@/lib/email";
 import crypto from "crypto";
 
@@ -11,37 +12,44 @@ import crypto from "crypto";
 
 /** 确保用户有订阅记录（注册/首次发送时调用） */
 export async function ensureSubscription(userId: number, email: string) {
-  const existing = (await query(
-    "SELECT id FROM email_subscriptions WHERE user_id = ? AND email = ?",
-    [userId, email]
-  )) as any[];
+  const existing = await db.selectFrom("email_subscriptions")
+    .where("user_id", "=", userId)
+    .where("email", "=", email)
+    .select("id")
+    .execute();
 
   if (existing.length > 0) return existing[0];
 
   const unsubToken = crypto.randomBytes(32).toString("hex");
-  const result = await query(
-    `INSERT INTO email_subscriptions (user_id, email, unsub_token, weekly_digest, activity_notice, creator_update)
-     VALUES (?, ?, ?, 1, 1, 0)`,
-    [userId, email, unsubToken]
-  );
-  return { id: (result as any).insertId };
+  const result = await db.insertInto("email_subscriptions")
+    .values({
+      user_id: userId,
+      email,
+      unsub_token: unsubToken,
+      weekly_digest: 1,
+      activity_notice: 1,
+      creator_update: 0,
+    })
+    .executeTakeFirst();
+  return { id: Number(result.insertId) };
 }
 
 /** 获取用户订阅偏好 */
 export async function getSubscription(userId: number) {
-  const rows = (await query(
-    "SELECT * FROM email_subscriptions WHERE user_id = ? LIMIT 1",
-    [userId]
-  )) as any[];
+  const rows = await db.selectFrom("email_subscriptions")
+    .where("user_id", "=", userId)
+    .selectAll()
+    .limit(1)
+    .execute();
   return rows[0] || null;
 }
 
 /** 通过退订token获取订阅记录 */
 export async function getSubscriptionByToken(token: string) {
-  const rows = (await query(
-    "SELECT * FROM email_subscriptions WHERE unsub_token = ?",
-    [token]
-  )) as any[];
+  const rows = await db.selectFrom("email_subscriptions")
+    .where("unsub_token", "=", token)
+    .selectAll()
+    .execute();
   return rows[0] || null;
 }
 
@@ -52,25 +60,32 @@ export async function updateSubscription(userId: number, prefs: {
   creator_update?: boolean;
   is_unsubscribed?: boolean;
 }) {
-  const sets: string[] = [];
-  const params: any[] = [];
-  if (prefs.weekly_digest !== undefined) { sets.push("weekly_digest = ?"); params.push(prefs.weekly_digest ? 1 : 0); }
-  if (prefs.activity_notice !== undefined) { sets.push("activity_notice = ?"); params.push(prefs.activity_notice ? 1 : 0); }
-  if (prefs.creator_update !== undefined) { sets.push("creator_update = ?"); params.push(prefs.creator_update ? 1 : 0); }
-  if (prefs.is_unsubscribed !== undefined) { sets.push("is_unsubscribed = ?"); params.push(prefs.is_unsubscribed ? 1 : 0); }
-  if (sets.length === 0) return;
-  params.push(userId);
-  await query(`UPDATE email_subscriptions SET ${sets.join(", ")} WHERE user_id = ?`, params);
+  const fields: Record<string, unknown> = {};
+  if (prefs.weekly_digest !== undefined) fields.weekly_digest = prefs.weekly_digest ? 1 : 0;
+  if (prefs.activity_notice !== undefined) fields.activity_notice = prefs.activity_notice ? 1 : 0;
+  if (prefs.creator_update !== undefined) fields.creator_update = prefs.creator_update ? 1 : 0;
+  if (prefs.is_unsubscribed !== undefined) fields.is_unsubscribed = prefs.is_unsubscribed ? 1 : 0;
+  if (Object.keys(fields).length === 0) return;
+  await db.updateTable("email_subscriptions")
+    .set(fields as any)
+    .where("user_id", "=", userId)
+    .execute();
 }
 
 /** 全局退订 */
 export async function unsubscribeAll(token: string) {
   const sub = await getSubscriptionByToken(token);
   if (!sub) return false;
-  await query(
-    "UPDATE email_subscriptions SET is_unsubscribed = 1, unsubscribed_at = NOW(), weekly_digest = 0, activity_notice = 0, creator_update = 0 WHERE id = ?",
-    [sub.id]
-  );
+  await db.updateTable("email_subscriptions")
+    .set({
+      is_unsubscribed: 1,
+      unsubscribed_at: sql`NOW()`,
+      weekly_digest: 0,
+      activity_notice: 0,
+      creator_update: 0,
+    })
+    .where("id", "=", sub.id)
+    .execute();
   return true;
 }
 
@@ -78,10 +93,10 @@ export async function unsubscribeAll(token: string) {
 export async function unsubscribeByType(token: string, type: 'weekly_digest' | 'activity_notice' | 'creator_update') {
   const sub = await getSubscriptionByToken(token);
   if (!sub) return false;
-  await query(
-    `UPDATE email_subscriptions SET ${type} = 0 WHERE id = ?`,
-    [sub.id]
-  );
+  await db.updateTable("email_subscriptions")
+    .set({ [type]: 0 } as any)
+    .where("id", "=", sub.id)
+    .execute();
   return true;
 }
 
@@ -97,12 +112,19 @@ export async function createCampaign(data: {
   scheduledAt?: string;
   createdBy?: number;
 }) {
-  const result = await query(
-    `INSERT INTO email_campaigns (subject, template_key, body_html, body_text, campaign_type, status, scheduled_at, created_by)
-     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?)`,
-    [data.subject, data.templateKey || null, data.bodyHtml, data.bodyText || null, data.campaignType, data.scheduledAt || null, data.createdBy || null]
-  );
-  return (result as any).insertId;
+  const result = await db.insertInto("email_campaigns")
+    .values({
+      subject: data.subject,
+      template_key: data.templateKey || null,
+      body_html: data.bodyHtml,
+      body_text: data.bodyText || null,
+      campaign_type: data.campaignType,
+      status: "draft",
+      scheduled_at: data.scheduledAt ? new Date(data.scheduledAt) : null,
+      created_by: data.createdBy || null,
+    })
+    .executeTakeFirst();
+  return Number(result.insertId);
 }
 
 /** 更新营销活动 */
@@ -113,32 +135,41 @@ export async function updateCampaign(id: number, data: {
   scheduledAt?: string;
   status?: string;
 }) {
-  const sets: string[] = [];
-  const params: any[] = [];
-  if (data.subject !== undefined) { sets.push("subject = ?"); params.push(data.subject); }
-  if (data.bodyHtml !== undefined) { sets.push("body_html = ?"); params.push(data.bodyHtml); }
-  if (data.bodyText !== undefined) { sets.push("body_text = ?"); params.push(data.bodyText); }
-  if (data.scheduledAt !== undefined) { sets.push("scheduled_at = ?"); params.push(data.scheduledAt); }
-  if (data.status !== undefined) { sets.push("status = ?"); params.push(data.status); }
-  if (sets.length === 0) return;
-  params.push(id);
-  await query(`UPDATE email_campaigns SET ${sets.join(", ")} WHERE id = ?`, params);
+  const fields: Record<string, unknown> = {};
+  if (data.subject !== undefined) fields.subject = data.subject;
+  if (data.bodyHtml !== undefined) fields.body_html = data.bodyHtml;
+  if (data.bodyText !== undefined) fields.body_text = data.bodyText;
+  if (data.scheduledAt !== undefined) fields.scheduled_at = data.scheduledAt;
+  if (data.status !== undefined) fields.status = data.status;
+  if (Object.keys(fields).length === 0) return;
+  await db.updateTable("email_campaigns")
+    .set(fields as any)
+    .where("id", "=", id)
+    .execute();
 }
 
 /** 获取营销活动列表 */
 export async function getCampaigns(page = 1, limit = 20) {
   const offset = (page - 1) * limit;
-  const [countResult] = (await query("SELECT COUNT(*) as total FROM email_campaigns")) as any[];
-  const rows = (await query(
-    "SELECT * FROM email_campaigns ORDER BY created_at DESC LIMIT ? OFFSET ?",
-    [limit, offset]
-  )) as any[];
-  return { data: rows, total: countResult?.total || 0 };
+  const countResult = await db.selectFrom("email_campaigns")
+    .select((eb) => eb.fn.countAll().as("total"))
+    .executeTakeFirst();
+  const total = Number(countResult?.total || 0);
+  const rows = await db.selectFrom("email_campaigns")
+    .selectAll()
+    .orderBy("created_at", "desc")
+    .limit(limit)
+    .offset(offset)
+    .execute();
+  return { data: rows, total };
 }
 
 /** 获取营销活动详情 */
 export async function getCampaign(id: number) {
-  const rows = (await query("SELECT * FROM email_campaigns WHERE id = ?", [id])) as any[];
+  const rows = await db.selectFrom("email_campaigns")
+    .where("id", "=", id)
+    .selectAll()
+    .execute();
   return rows[0] || null;
 }
 
@@ -154,24 +185,23 @@ export async function sendCampaign(campaignId: number) {
   if (!configured) throw new Error("邮件服务未配置");
 
   // 获取目标订阅者
-  const subscribers = (await query(
-    `SELECT es.user_id, es.email, es.unsub_token
-     FROM email_subscriptions es
-     WHERE es.is_unsubscribed = 0
-       AND (
-         (es.weekly_digest = 1 AND ? = 'weekly_digest')
-         OR (es.activity_notice = 1 AND ? = 'activity_notice')
-         OR (es.creator_update = 1 AND ? = 'creator_update')
-         OR (? = 'system')
-       )`,
-    [campaign.campaign_type, campaign.campaign_type, campaign.campaign_type, campaign.campaign_type]
-  )) as any[];
+  const campaignType = campaign.campaign_type as string;
+  const subscribers = await db.selectFrom("email_subscriptions as es")
+    .select(["es.user_id", "es.email", "es.unsub_token"])
+    .where("es.is_unsubscribed", "=", 0)
+    .where(sql<boolean>`(
+      (es.weekly_digest = 1 AND ${campaignType} = 'weekly_digest')
+      OR (es.activity_notice = 1 AND ${campaignType} = 'activity_notice')
+      OR (es.creator_update = 1 AND ${campaignType} = 'creator_update')
+      OR (${campaignType} = 'system')
+    )`)
+    .execute();
 
   // 更新活动状态
-  await query(
-    "UPDATE email_campaigns SET status = 'sending', target_count = ?, sent_count = 0 WHERE id = ?",
-    [subscribers.length, campaignId]
-  );
+  await db.updateTable("email_campaigns")
+    .set({ status: "sending", target_count: subscribers.length, sent_count: 0 })
+    .where("id", "=", campaignId)
+    .execute();
 
   let sentCount = 0;
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
@@ -203,29 +233,36 @@ export async function sendCampaign(campaignId: number) {
       });
 
       // 记录发送日志
-      await query(
-        "INSERT INTO email_campaign_logs (campaign_id, user_id, email, status) VALUES (?, ?, ?, 'sent')",
-        [campaignId, sub.user_id, sub.email]
-      );
+      await db.insertInto("email_campaign_logs")
+        .values({ campaign_id: campaignId, user_id: sub.user_id, email: sub.email, status: "sent" })
+        .execute();
 
       sentCount++;
       // 每10封更新一次进度
       if (sentCount % 10 === 0) {
-        await query("UPDATE email_campaigns SET sent_count = ? WHERE id = ?", [sentCount, campaignId]);
+        await db.updateTable("email_campaigns")
+          .set({ sent_count: sentCount })
+          .where("id", "=", campaignId)
+          .execute();
       }
     } catch (error: any) {
-      await query(
-        "INSERT INTO email_campaign_logs (campaign_id, user_id, email, status, error_message) VALUES (?, ?, ?, 'failed', ?)",
-        [campaignId, sub.user_id, sub.email, error.message?.substring(0, 500)]
-      );
+      await db.insertInto("email_campaign_logs")
+        .values({
+          campaign_id: campaignId,
+          user_id: sub.user_id,
+          email: sub.email,
+          status: "failed",
+          error_message: error.message?.substring(0, 500) ?? null,
+        })
+        .execute();
     }
   }
 
   // 更新最终状态
-  await query(
-    "UPDATE email_campaigns SET status = 'completed', sent_count = ?, sent_at = NOW() WHERE id = ?",
-    [sentCount, campaignId]
-  );
+  await db.updateTable("email_campaigns")
+    .set({ status: "completed", sent_count: sentCount, sent_at: sql`NOW()` })
+    .where("id", "=", campaignId)
+    .execute();
 
   return { sentCount, totalSubscribers: subscribers.length };
 }
@@ -233,16 +270,19 @@ export async function sendCampaign(campaignId: number) {
 /** 生成每周精选邮件内容 */
 export async function generateWeeklyDigestHtml(): Promise<{ subject: string; html: string; text: string }> {
   // 获取本周热门壁纸
-  const topImages = (await query(
-    `SELECT id, title, url, thumbnail_url, view_count, download_count
-     FROM images WHERE status = 'approved' AND media_type != 'video'
-       AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-     ORDER BY download_count DESC, view_count DESC LIMIT 6`
-  )) as any[];
+  const topImages = await db.selectFrom("images")
+    .select(["id", "title", "url", "thumbnail_url", "view_count", "download_count"])
+    .where("status", "=", "approved")
+    .where("media_type", "!=", "video")
+    .where("created_at", ">=", sql<Date>`DATE_SUB(NOW(), INTERVAL 7 DAY)`)
+    .orderBy("download_count", "desc")
+    .orderBy("view_count", "desc")
+    .limit(6)
+    .execute();
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
-  const imageCards = topImages.map((img: any) => `
+  const imageCards = topImages.map((img) => `
     <div style="display:inline-block;width:31%;margin:1%;vertical-align:top;">
       <a href="${baseUrl}/images/${img.id}" style="text-decoration:none;">
         <img src="${img.thumbnail_url || img.url}" alt="${img.title}" style="width:100%;border-radius:8px;" />
@@ -269,7 +309,7 @@ export async function generateWeeklyDigestHtml(): Promise<{ subject: string; htm
     </div>
   `;
 
-  const text = `本周精选壁纸\n\n${topImages.map((img: any) => `- ${img.title} (${img.download_count}下载)`).join("\n")}\n\n查看更多: ${baseUrl}`;
+  const text = `本周精选壁纸\n\n${topImages.map((img) => `- ${img.title} (${img.download_count}下载)`).join("\n")}\n\n查看更多: ${baseUrl}`;
 
   return {
     subject: "本周精选壁纸 - 壁纸社区",

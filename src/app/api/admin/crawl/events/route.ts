@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
 // GET /api/admin/crawl/events - SSE 实时推送爬虫任务进度
@@ -28,22 +28,28 @@ export async function GET(request: NextRequest) {
 
         try {
           // 获取正在运行的任务
-          const runningTasks = await query(
-            `SELECT id, source, crawl_mode, status, requested_count, success_count, fail_count,
-                    started_at, duration_seconds
-             FROM crawl_logs
-             WHERE status IN ('running', 'pending')
-             ORDER BY started_at DESC LIMIT 5`
-          );
+          const runningTasks = await db
+            .selectFrom("crawl_logs")
+            .select([
+              "id", "source", "crawl_mode", "status", "requested_count",
+              "success_count", "fail_count", "started_at", "duration_seconds",
+            ])
+            .where("status", "in", ["running", "pending"])
+            .orderBy("started_at", "desc")
+            .limit(5)
+            .execute();
 
           // 获取最近完成的任务
-          const recentCompleted = await query(
-            `SELECT id, source, crawl_mode, status, requested_count, success_count, fail_count,
-                    dedup_skipped, duration_seconds, finished_at
-             FROM crawl_logs
-             WHERE status IN ('completed', 'failed')
-             ORDER BY finished_at DESC LIMIT 5`
-          );
+          const recentCompleted = await db
+            .selectFrom("crawl_logs")
+            .select([
+              "id", "source", "crawl_mode", "status", "requested_count",
+              "success_count", "fail_count", "dedup_skipped", "duration_seconds", "finished_at",
+            ])
+            .where("status", "in", ["completed", "failed"])
+            .orderBy("finished_at", "desc")
+            .limit(5)
+            .execute();
 
           const event = {
             type: "status_update",

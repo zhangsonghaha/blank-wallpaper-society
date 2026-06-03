@@ -1,6 +1,6 @@
 import crypto from "crypto";
-import { query, safeQuery } from "@/lib/db";
-import { withTransaction } from "@/lib/db-tx";
+import { db, safeExecute } from "@/lib/db";
+import { sql } from "kysely";
 import { hashPassword } from "@/lib/password";
 
 /**
@@ -21,10 +21,11 @@ const COOLING_OFF_DAYS = 7;
  */
 export async function requestAccountDeletion(userId: number): Promise<{ scheduledAt: Date }> {
   // 检查用户状态
-  const users = (await query(
-    "SELECT id, status, name, email FROM users WHERE id = ?",
-    [userId]
-  )) as any[];
+  const users = await db
+    .selectFrom("users")
+    .select(["id", "status", "name", "email"])
+    .where("id", "=", userId)
+    .execute();
 
   if (users.length === 0) {
     throw new Error("用户不存在");
@@ -52,25 +53,30 @@ export async function requestAccountDeletion(userId: number): Promise<{ schedule
   const now = new Date();
   const scheduledAt = new Date(now.getTime() + COOLING_OFF_DAYS * 24 * 60 * 60 * 1000);
 
-  await withTransaction(async (conn) => {
-    await conn.execute(
-      `UPDATE users SET 
-        deletion_requested_at = NOW(), 
-        deletion_scheduled_at = ?, 
-        status = 'pending_deletion' 
-      WHERE id = ?`,
-      [scheduledAt, userId]
-    );
+  await db.transaction().execute(async (trx) => {
+    await trx
+      .updateTable("users")
+      .set({
+        deletion_requested_at: now,
+        deletion_scheduled_at: scheduledAt,
+        status: "pending_deletion",
+      })
+      .where("id", "=", userId)
+      .execute();
 
     // 记录操作日志
-    await conn.execute(
-      `INSERT INTO account_deletion_logs (user_id, action, details) VALUES (?, 'requested', ?)`,
-      [userId, JSON.stringify({
-        userName: user.name,
-        userEmail: user.email,
-        scheduledAt: scheduledAt.toISOString(),
-      })]
-    );
+    await trx
+      .insertInto("account_deletion_logs")
+      .values({
+        user_id: userId,
+        action: "requested",
+        details: JSON.stringify({
+          userName: user.name,
+          userEmail: user.email,
+          scheduledAt: scheduledAt.toISOString(),
+        }),
+      })
+      .execute();
   });
 
   return { scheduledAt };
@@ -82,10 +88,11 @@ export async function requestAccountDeletion(userId: number): Promise<{ schedule
  * - 清除注销字段，恢复 status = 'active'
  */
 export async function cancelAccountDeletion(userId: number): Promise<void> {
-  const users = (await query(
-    "SELECT id, status FROM users WHERE id = ?",
-    [userId]
-  )) as any[];
+  const users = await db
+    .selectFrom("users")
+    .select(["id", "status"])
+    .where("id", "=", userId)
+    .execute();
 
   if (users.length === 0) {
     throw new Error("用户不存在");
@@ -95,21 +102,26 @@ export async function cancelAccountDeletion(userId: number): Promise<void> {
     throw new Error("账号未在注销流程中，无法取消");
   }
 
-  await withTransaction(async (conn) => {
-    await conn.execute(
-      `UPDATE users SET 
-        deletion_requested_at = NULL, 
-        deletion_scheduled_at = NULL, 
-        status = 'active' 
-      WHERE id = ?`,
-      [userId]
-    );
+  await db.transaction().execute(async (trx) => {
+    await trx
+      .updateTable("users")
+      .set({
+        deletion_requested_at: null,
+        deletion_scheduled_at: null,
+        status: "active",
+      })
+      .where("id", "=", userId)
+      .execute();
 
     // 记录操作日志
-    await conn.execute(
-      `INSERT INTO account_deletion_logs (user_id, action, details) VALUES (?, 'cancelled', ?)`,
-      [userId, JSON.stringify({ cancelledAt: new Date().toISOString() })]
-    );
+    await trx
+      .insertInto("account_deletion_logs")
+      .values({
+        user_id: userId,
+        action: "cancelled",
+        details: JSON.stringify({ cancelledAt: new Date().toISOString() }),
+      })
+      .execute();
   });
 }
 
@@ -121,10 +133,11 @@ export async function cancelAccountDeletion(userId: number): Promise<void> {
  */
 export async function executeAccountDeletion(userId: number): Promise<void> {
   // 检查用户状态
-  const users = (await query(
-    "SELECT id, status, name, email FROM users WHERE id = ?",
-    [userId]
-  )) as any[];
+  const users = await db
+    .selectFrom("users")
+    .select(["id", "status", "name", "email"])
+    .where("id", "=", userId)
+    .execute();
 
   if (users.length === 0) {
     throw new Error("用户不存在");
@@ -144,72 +157,77 @@ export async function executeAccountDeletion(userId: number): Promise<void> {
   const hashedPassword = await hashPassword(randomPassword);
 
   // 使用事务保护整个注销流程，确保数据一致性
-  await withTransaction(async (conn) => {
+  await db.transaction().execute(async (trx) => {
     // 1. 匿名化用户信息
-    await conn.execute(
-      `UPDATE users SET 
-        name = ?, 
-        email = ?, 
-        avatar = NULL, 
-        password = ?, 
-        status = 'deleted',
-        deletion_requested_at = NULL,
-        deletion_scheduled_at = NULL
-      WHERE id = ?`,
-      [deletedName, deletedEmail, hashedPassword, userId]
-    );
+    await trx
+      .updateTable("users")
+      .set({
+        name: deletedName,
+        email: deletedEmail,
+        avatar: null,
+        password: hashedPassword,
+        status: "deleted",
+        deletion_requested_at: null,
+        deletion_scheduled_at: null,
+      })
+      .where("id", "=", userId)
+      .execute();
 
     // 2. 删除用户收藏
-    await conn.execute("DELETE FROM favorites WHERE user_id = ?", [userId]);
+    await trx.deleteFrom("favorites").where("user_id", "=", userId).execute();
 
-    // 3. 匿名化评论
-    await conn.execute(
-      "UPDATE comments SET content = '该评论已被删除', user_id = NULL WHERE user_id = ?",
-      [userId]
-    );
+    // 3. 匿名化评论（user_id 为 NOT NULL 列，用 raw SQL 绕过类型限制）
+    await sql`UPDATE comments SET content = '该评论已被删除', user_id = NULL WHERE user_id = ${userId}`.execute(trx);
 
     // 4. 删除 OAuth 关联
-    await conn.execute("DELETE FROM oauth_accounts WHERE user_id = ?", [userId]);
+    await trx.deleteFrom("oauth_accounts").where("user_id", "=", userId).execute();
 
     // 5. 删除通知设置
-    await conn.execute("DELETE FROM notification_settings WHERE user_id = ?", [userId]);
+    await trx.deleteFrom("notification_settings").where("user_id", "=", userId).execute();
 
     // 6. 删除用户成就
-    await conn.execute("DELETE FROM user_achievements WHERE user_id = ?", [userId]);
+    await trx.deleteFrom("user_achievements").where("user_id", "=", userId).execute();
 
     // 7. 删除用户等级
-    await conn.execute("DELETE FROM user_levels WHERE user_id = ?", [userId]);
+    await trx.deleteFrom("user_levels").where("user_id", "=", userId).execute();
 
     // 8. 停用 API Keys
-    await conn.execute(
-      "UPDATE api_keys SET status = 'revoked' WHERE user_id = ?",
-      [userId]
-    );
+    await trx
+      .updateTable("api_keys")
+      .set({ is_active: 0 })
+      .where("user_id", "=", userId)
+      .execute();
 
     // 9. 删除密码重置令牌
-    await conn.execute("DELETE FROM password_reset_tokens WHERE user_id = ?", [userId]);
+    await trx.deleteFrom("password_reset_tokens").where("user_id", "=", userId).execute();
 
     // 10. 删除关注关系
-    await conn.execute("DELETE FROM user_follows WHERE follower_id = ? OR following_id = ?", [userId, userId]);
+    await trx
+      .deleteFrom("user_follows")
+      .where((eb) =>
+        eb.or([eb("follower_id", "=", userId), eb("following_id", "=", userId)])
+      )
+      .execute();
 
     // 11. 删除用户通知
-    await conn.execute("DELETE FROM notifications WHERE user_id = ?", [userId]);
+    await trx.deleteFrom("notifications").where("user_id", "=", userId).execute();
 
-    // 12. 合集改为匿名
-    await conn.execute(
-      "UPDATE collections SET user_id = NULL WHERE user_id = ?",
-      [userId]
-    );
+    // 12. 合集改为匿名（user_id 为 NOT NULL 列，用 raw SQL 绕过类型限制）
+    await sql`UPDATE collections SET user_id = NULL WHERE user_id = ${userId}`.execute(trx);
 
     // 13. 记录操作日志
-    await conn.execute(
-      `INSERT INTO account_deletion_logs (user_id, action, details) VALUES (?, 'completed', ?)`,
-      [userId, JSON.stringify({
-        originalName,
-        originalEmail,
-        completedAt: new Date().toISOString(),
-      })]
-    );
+    await trx
+      .insertInto("account_deletion_logs")
+      .values({
+        user_id: userId,
+        action: "completed",
+        details: JSON.stringify({
+          originalName,
+          originalEmail,
+          completedAt: new Date().toISOString(),
+        }),
+      })
+      .execute();
   });
 }
 
@@ -221,10 +239,11 @@ export async function suspendAccount(
   operatorId: number,
   reason: string
 ): Promise<void> {
-  const users = (await query(
-    "SELECT id, status, role FROM users WHERE id = ?",
-    [userId]
-  )) as any[];
+  const users = await db
+    .selectFrom("users")
+    .select(["id", "status", "role"])
+    .where("id", "=", userId)
+    .execute();
 
   if (users.length === 0) {
     throw new Error("用户不存在");
@@ -243,28 +262,39 @@ export async function suspendAccount(
   }
 
   // 如果用户在注销流程中，取消注销并封禁
-  await query(
-    `UPDATE users SET 
-      status = 'suspended', 
-      banned_reason = ?, 
-      banned_at = NOW(),
-      deletion_requested_at = NULL,
-      deletion_scheduled_at = NULL
-    WHERE id = ?`,
-    [reason, userId]
-  );
+  await db
+    .updateTable("users")
+    .set({
+      status: "suspended",
+      banned_reason: reason,
+      banned_at: sql`NOW()`,
+      deletion_requested_at: null,
+      deletion_scheduled_at: null,
+    })
+    .where("id", "=", userId)
+    .execute();
 
   // 记录操作日志
-  await query(
-    `INSERT INTO account_deletion_logs (user_id, action, details, operator_id) VALUES (?, 'admin_suspended', ?, ?)`,
-    [userId, JSON.stringify({ reason, fromStatus: users[0].status }), operatorId]
-  );
+  await db
+    .insertInto("account_deletion_logs")
+    .values({
+      user_id: userId,
+      action: "admin_suspended",
+      details: JSON.stringify({ reason, fromStatus: users[0].status }),
+      operator_id: operatorId,
+    })
+    .execute();
 
   // 同时记录到管理操作日志
-  await query(
-    `INSERT INTO admin_operation_logs (operator_id, target_user_id, operation, detail) VALUES (?, ?, 'ban_user', ?)`,
-    [operatorId, userId, JSON.stringify({ reason, fromStatus: users[0].status })]
-  );
+  await db
+    .insertInto("admin_operation_logs")
+    .values({
+      operator_id: operatorId,
+      target_user_id: userId,
+      operation: "ban_user",
+      detail: JSON.stringify({ reason, fromStatus: users[0].status }),
+    })
+    .execute();
 }
 
 /**
@@ -274,10 +304,11 @@ export async function unsuspendAccount(
   userId: number,
   operatorId: number
 ): Promise<void> {
-  const users = (await query(
-    "SELECT id, status FROM users WHERE id = ?",
-    [userId]
-  )) as any[];
+  const users = await db
+    .selectFrom("users")
+    .select(["id", "status"])
+    .where("id", "=", userId)
+    .execute();
 
   if (users.length === 0) {
     throw new Error("用户不存在");
@@ -287,20 +318,26 @@ export async function unsuspendAccount(
     throw new Error("账号未被封禁");
   }
 
-  await query(
-    `UPDATE users SET 
-      status = 'active', 
-      banned_reason = NULL, 
-      banned_at = NULL
-    WHERE id = ?`,
-    [userId]
-  );
+  await db
+    .updateTable("users")
+    .set({
+      status: "active",
+      banned_reason: null,
+      banned_at: null,
+    })
+    .where("id", "=", userId)
+    .execute();
 
   // 记录到管理操作日志
-  await query(
-    `INSERT INTO admin_operation_logs (operator_id, target_user_id, operation, detail) VALUES (?, ?, 'unban_user', ?)`,
-    [operatorId, userId, JSON.stringify({ fromStatus: "suspended", toStatus: "active" })]
-  );
+  await db
+    .insertInto("admin_operation_logs")
+    .values({
+      operator_id: operatorId,
+      target_user_id: userId,
+      operation: "unban_user",
+      detail: JSON.stringify({ fromStatus: "suspended", toStatus: "active" }),
+    })
+    .execute();
 }
 
 /**
@@ -311,10 +348,11 @@ export async function deleteAccountByAdmin(
   operatorId: number,
   reason: string
 ): Promise<void> {
-  const users = (await query(
-    "SELECT id, status, role, name, email FROM users WHERE id = ?",
-    [userId]
-  )) as any[];
+  const users = await db
+    .selectFrom("users")
+    .select(["id", "status", "role", "name", "email"])
+    .where("id", "=", userId)
+    .execute();
 
   if (users.length === 0) {
     throw new Error("用户不存在");
@@ -337,73 +375,118 @@ export async function deleteAccountByAdmin(
   const randomPassword = crypto.randomBytes(32).toString("hex");
   const hashedPassword = await hashPassword(randomPassword);
 
-  await query(
-    `UPDATE users SET 
-      name = ?, 
-      email = ?, 
-      avatar = NULL, 
-      password = ?, 
-      status = 'deleted',
-      deletion_requested_at = NULL,
-      deletion_scheduled_at = NULL,
-      banned_reason = ?,
-      banned_at = NOW()
-    WHERE id = ?`,
-    [deletedName, deletedEmail, hashedPassword, `管理员删除: ${reason}`, userId]
-  );
+  await db
+    .updateTable("users")
+    .set({
+      name: deletedName,
+      email: deletedEmail,
+      avatar: null,
+      password: hashedPassword,
+      status: "deleted",
+      deletion_requested_at: null,
+      deletion_scheduled_at: null,
+      banned_reason: `管理员删除: ${reason}`,
+      banned_at: sql`NOW()`,
+    })
+    .where("id", "=", userId)
+    .execute();
 
   // 删除用户收藏
-  await safeQuery("DELETE FROM favorites WHERE user_id = ?", [userId]);
+  await safeExecute(
+    () => db.deleteFrom("favorites").where("user_id", "=", userId).execute(),
+    [],
+    "delete-favorites"
+  );
 
-  // 匿名化评论
-  await safeQuery(
-    "UPDATE comments SET content = '该评论已被删除', user_id = NULL WHERE user_id = ?",
-    [userId]
+  // 匿名化评论（user_id 为 NOT NULL 列，用 raw SQL 绕过类型限制）
+  await safeExecute(
+    () => sql`UPDATE comments SET content = '该评论已被删除', user_id = NULL WHERE user_id = ${userId}`.execute(db),
+    { rows: [] },
+    "anonymize-comments"
   );
 
   // 删除 OAuth 关联
-  await safeQuery("DELETE FROM oauth_accounts WHERE user_id = ?", [userId]);
+  await safeExecute(
+    () => db.deleteFrom("oauth_accounts").where("user_id", "=", userId).execute(),
+    [],
+    "delete-oauth"
+  );
 
   // 停用 API Keys
-  await safeQuery(
-    "UPDATE api_keys SET status = 'revoked' WHERE user_id = ?",
-    [userId]
+  await safeExecute(
+    () =>
+      db
+        .updateTable("api_keys")
+        .set({ is_active: 0 })
+        .where("user_id", "=", userId)
+        .execute(),
+    [],
+    "revoke-api-keys"
   );
 
   // 删除密码重置令牌
-  await safeQuery("DELETE FROM password_reset_tokens WHERE user_id = ?", [userId]);
+  await safeExecute(
+    () => db.deleteFrom("password_reset_tokens").where("user_id", "=", userId).execute(),
+    [],
+    "delete-reset-tokens"
+  );
 
   // 删除关注关系
-  await safeQuery("DELETE FROM user_follows WHERE follower_id = ? OR following_id = ?", [userId, userId]);
+  await safeExecute(
+    () =>
+      db
+        .deleteFrom("user_follows")
+        .where((eb) =>
+          eb.or([eb("follower_id", "=", userId), eb("following_id", "=", userId)])
+        )
+        .execute(),
+    [],
+    "delete-follows"
+  );
 
   // 删除用户通知
-  await safeQuery("DELETE FROM notifications WHERE user_id = ?", [userId]);
+  await safeExecute(
+    () => db.deleteFrom("notifications").where("user_id", "=", userId).execute(),
+    [],
+    "delete-notifications"
+  );
 
-  // 合集改为匿名
-  await safeQuery(
-    "UPDATE collections SET user_id = NULL WHERE user_id = ?",
-    [userId]
+  // 合集改为匿名（user_id 为 NOT NULL 列，用 raw SQL 绕过类型限制）
+  await safeExecute(
+    () => sql`UPDATE collections SET user_id = NULL WHERE user_id = ${userId}`.execute(db),
+    { rows: [] },
+    "anonymize-collections"
   );
 
   // 记录操作日志
-  await query(
-    `INSERT INTO account_deletion_logs (user_id, action, details, operator_id) VALUES (?, 'admin_deleted', ?, ?)`,
-    [userId, JSON.stringify({
-      reason,
-      originalName,
-      originalEmail,
-    }), operatorId]
-  );
+  await db
+    .insertInto("account_deletion_logs")
+    .values({
+      user_id: userId,
+      action: "admin_deleted",
+      details: JSON.stringify({
+        reason,
+        originalName,
+        originalEmail,
+      }),
+      operator_id: operatorId,
+    })
+    .execute();
 
   // 同时记录到管理操作日志
-  await query(
-    `INSERT INTO admin_operation_logs (operator_id, target_user_id, operation, detail) VALUES (?, ?, 'delete_user', ?)`,
-    [operatorId, userId, JSON.stringify({
-      reason,
-      originalName,
-      originalEmail,
-    })]
-  );
+  await db
+    .insertInto("admin_operation_logs")
+    .values({
+      operator_id: operatorId,
+      target_user_id: userId,
+      operation: "delete_user",
+      detail: JSON.stringify({
+        reason,
+        originalName,
+        originalEmail,
+      }),
+    })
+    .execute();
 }
 
 /**
@@ -414,18 +497,23 @@ export async function getAccountDeletionStatus(userId: number): Promise<{
   deletionRequestedAt: string | null;
   deletionScheduledAt: string | null;
 } | null> {
-  const users = (await query(
-    "SELECT status, deletion_requested_at, deletion_scheduled_at FROM users WHERE id = ?",
-    [userId]
-  )) as any[];
+  const users = await db
+    .selectFrom("users")
+    .select(["status", "deletion_requested_at", "deletion_scheduled_at"])
+    .where("id", "=", userId)
+    .execute();
 
   if (users.length === 0) {
     return null;
   }
 
   return {
-    status: users[0].status,
-    deletionRequestedAt: users[0].deletion_requested_at,
-    deletionScheduledAt: users[0].deletion_scheduled_at,
+    status: users[0].status || "unknown",
+    deletionRequestedAt: users[0].deletion_requested_at
+      ? new Date(users[0].deletion_requested_at).toISOString()
+      : null,
+    deletionScheduledAt: users[0].deletion_scheduled_at
+      ? new Date(users[0].deletion_scheduled_at).toISOString()
+      : null,
   };
 }

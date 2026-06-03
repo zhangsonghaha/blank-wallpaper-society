@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // GET /api/tags - 获取标签列表
 export async function GET(request: NextRequest) {
@@ -9,9 +9,13 @@ export async function GET(request: NextRequest) {
 
     if (type === "cloud" || type === "popular") {
       // 从 images 表中提取标签，统计使用次数
-      const tagStats = (await query(
-        `SELECT tags FROM images WHERE tags IS NOT NULL AND tags != '' AND status = 'approved'`
-      )) as any[];
+      const tagStats = await db
+        .selectFrom("images")
+        .select("tags")
+        .where("tags", "is not", null)
+        .where("tags", "!=", "")
+        .where("status", "=", "approved")
+        .execute();
 
       // 解析并统计标签
       const tagMap = new Map<string, number>();
@@ -27,7 +31,7 @@ export async function GET(request: NextRequest) {
               });
             }
           } catch {
-            row.tags.split(",").forEach((t: string) => {
+            (row.tags as string).split(",").forEach((t: string) => {
               const trimmed = t.trim().toLowerCase();
               if (trimmed) {
                 tagMap.set(trimmed, (tagMap.get(trimmed) || 0) + 1);
@@ -64,9 +68,12 @@ export async function GET(request: NextRequest) {
     }
 
     // 从 tags 表获取（如果已同步）
-    const tags = (await query(
-      "SELECT * FROM tags ORDER BY image_count DESC LIMIT 100"
-    )) as any[];
+    const tags = await db
+      .selectFrom("tags")
+      .selectAll()
+      .orderBy("image_count", "desc")
+      .limit(100)
+      .execute();
 
     return NextResponse.json({ data: tags });
   } catch (error: any) {

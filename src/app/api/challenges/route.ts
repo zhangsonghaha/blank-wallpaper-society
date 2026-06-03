@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 
 // GET /api/challenges - 获取活动列表
@@ -11,43 +12,57 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "10");
     const offset = (page - 1) * limit;
 
-    let sql = `SELECT c.*, u.name as creator_name,
-                      (SELECT COUNT(*) FROM challenge_submissions cs WHERE cs.challenge_id = c.id) as submission_count,
-                      (SELECT COUNT(*) FROM challenge_votes cv WHERE cv.challenge_id = c.id) as vote_count
-               FROM challenges c
-               LEFT JOIN users u ON c.created_by = u.id`;
-    const params: any[] = [];
-
-    if (status !== "all") {
-      sql += ` WHERE c.status = ?`;
-      params.push(status);
-    }
-
-    sql += ` ORDER BY c.created_at DESC LIMIT ? OFFSET ?`;
-    params.push(limit, offset);
-
     // 自动流转状态：draft → active → ended
     const now = new Date();
-    await query(
-      `UPDATE challenges SET status = 'active' WHERE status = 'draft' AND start_time <= ? AND end_time > ?`,
-      [now, now]
-    );
-    await query(
-      `UPDATE challenges SET status = 'ended' WHERE status = 'active' AND end_time <= ?`,
-      [now]
-    );
+    await db
+      .updateTable("challenges")
+      .set({ status: "active" })
+      .where("status", "=", "draft")
+      .where("start_time", "<=", now)
+      .where("end_time", ">", now)
+      .executeTakeFirst();
+    await db
+      .updateTable("challenges")
+      .set({ status: "ended" })
+      .where("status", "=", "active")
+      .where("end_time", "<=", now)
+      .executeTakeFirst();
 
-    const rows = await query(sql, params);
+    // Build challenge list query
+    let query = db
+      .selectFrom("challenges as c")
+      .leftJoin("users as u", "u.id", "c.created_by")
+      .select([
+        "c.id", "c.title", "c.description", "c.banner_url", "c.category",
+        "c.start_time", "c.end_time", "c.max_submissions", "c.votes_per_day",
+        "c.prize_exp", "c.prize_description", "c.status", "c.created_by",
+        "c.created_at", "c.updated_at",
+        sql<string | null>`u.name`.as("creator_name"),
+        sql<number>`(SELECT COUNT(*) FROM challenge_submissions cs WHERE cs.challenge_id = c.id)`.as("submission_count"),
+        sql<number>`(SELECT COUNT(*) FROM challenge_votes cv WHERE cv.challenge_id = c.id)`.as("vote_count"),
+      ]);
+
+    if (status !== "all") {
+      query = query.where("c.status", "=", status as "active" | "draft" | "ended" | "settled");
+    }
+
+    const rows = await query
+      .orderBy("c.created_at", "desc")
+      .limit(limit)
+      .offset(offset)
+      .execute();
 
     // 获取总数
-    let countSql = `SELECT COUNT(*) as total FROM challenges`;
-    const countParams: any[] = [];
+    let countQuery = db
+      .selectFrom("challenges")
+      .select((eb) => [eb.fn.countAll().as("total")]);
+
     if (status !== "all") {
-      countSql += ` WHERE status = ?`;
-      countParams.push(status);
+      countQuery = countQuery.where("status", "=", status as "active" | "draft" | "ended" | "settled");
     }
-    const countResult = await query(countSql, countParams) as any[];
-    const total = countResult[0]?.total || 0;
+
+    const countResult = await countQuery.execute();
+    const total = Number(countResult[0]?.total ?? 0);
 
     return NextResponse.json({
       data: rows,
@@ -92,27 +107,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "结束时间必须晚于开始时间" }, { status: 400 });
     }
 
-    const result = await query(
-      `INSERT INTO challenges (title, description, banner_url, category, start_time, end_time,
-        max_submissions, votes_per_day, prize_exp, prize_description, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        title.trim(),
-        description || null,
-        bannerUrl || null,
-        category || null,
-        startTime,
-        endTime,
-        maxSubmissions || 3,
-        votesPerDay || 5,
-        prizeExp || 100,
-        prizeDescription || null,
-        userId,
-      ]
-    );
+    const result = await db
+      .insertInto("challenges")
+      .values({
+        title: title.trim(),
+        description: description || null,
+        banner_url: bannerUrl || null,
+        category: category || null,
+        start_time: startTime,
+        end_time: endTime,
+        max_submissions: maxSubmissions || 3,
+        votes_per_day: votesPerDay || 5,
+        prize_exp: prizeExp || 100,
+        prize_description: prizeDescription || null,
+        created_by: userId,
+      })
+      .executeTakeFirst();
 
     return NextResponse.json(
-      { data: { id: (result as any).insertId }, message: "活动创建成功" },
+      { data: { id: Number(result.insertId) }, message: "活动创建成功" },
       { status: 201 }
     );
   } catch (error: any) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { sanitizeStrict } from "@/lib/sanitize";
 
@@ -32,15 +32,21 @@ export async function POST(request: NextRequest) {
     const safeScreenshotUrl = screenshotUrl ? String(screenshotUrl).slice(0, 500) : null;
     const userAgent = request.headers.get("user-agent")?.slice(0, 500) || null;
 
-    const result = await query(
-      `INSERT INTO feedback (user_id, content, category, page_url, screenshot_url, user_agent)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [userId, safeContent, safeCategory, safePageUrl, safeScreenshotUrl, userAgent]
-    );
+    const result = await db
+      .insertInto("feedback")
+      .values({
+        user_id: userId,
+        content: safeContent,
+        category: safeCategory,
+        page_url: safePageUrl,
+        screenshot_url: safeScreenshotUrl,
+        user_agent: userAgent,
+      })
+      .executeTakeFirst();
 
     return NextResponse.json({
       success: true,
-      id: (result as any).insertId,
+      id: Number(result.insertId),
       message: "感谢你的反馈！我们会尽快处理。",
     }, { status: 201 });
   } catch (error: any) {
@@ -70,34 +76,40 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "20");
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = [];
-    const params: any[] = [];
+    // Build query with dynamic conditions
+    let query = db
+      .selectFrom("feedback as f")
+      .leftJoin("users as u", "u.id", "f.user_id")
+      .selectAll("f")
+      .select(["u.name as user_name", "u.email as user_email"]);
 
     if (status && ["pending", "in_progress", "resolved", "closed"].includes(status)) {
-      conditions.push("f.status = ?");
-      params.push(status);
+      query = query.where("f.status", "=", status as any);
     }
     if (category && ["bug", "feature", "improvement", "other"].includes(category)) {
-      conditions.push("f.category = ?");
-      params.push(category);
+      query = query.where("f.category", "=", category as any);
     }
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
     const [feedback, countResult] = await Promise.all([
-      query(
-        `SELECT f.*, u.name as user_name, u.email as user_email
-         FROM feedback f
-         LEFT JOIN users u ON f.user_id = u.id
-         ${whereClause}
-         ORDER BY f.created_at DESC
-         LIMIT ? OFFSET ?`,
-        [...params, limit, offset]
-      ),
-      query(`SELECT COUNT(*) as total FROM feedback f ${whereClause}`, params),
+      query
+        .orderBy("f.created_at", "desc")
+        .limit(limit)
+        .offset(offset)
+        .execute(),
+      // Build count query separately
+      (async () => {
+        let countQ = db.selectFrom("feedback as f").select((eb) => [eb.fn.count<number>("f.id").as("total")]);
+        if (status && ["pending", "in_progress", "resolved", "closed"].includes(status)) {
+          countQ = countQ.where("f.status", "=", status as any);
+        }
+        if (category && ["bug", "feature", "improvement", "other"].includes(category)) {
+          countQ = countQ.where("f.category", "=", category as any);
+        }
+        return countQ.executeTakeFirst();
+      })(),
     ]);
 
-    const total = (countResult as any[])[0]?.total || 0;
+    const total = Number(countResult?.total ?? 0);
 
     return NextResponse.json({
       data: feedback,

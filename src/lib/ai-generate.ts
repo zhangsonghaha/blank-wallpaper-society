@@ -1,4 +1,5 @@
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { uploadFile } from "@/lib/minio";
 
 // === AI 配置（数据库优先回退） ===
@@ -21,14 +22,23 @@ export async function getAiConfig(): Promise<AiConfig> {
 
   try {
     // 优先从 ai_models + ai_model_providers 表获取默认图片生成模型
-    const imageModelRows = (await query(
-      `SELECT m.model_id, m.is_default, p.type AS provider_type, p.api_key, p.base_url, p.enabled AS provider_enabled
-       FROM ai_models m
-       LEFT JOIN ai_model_providers p ON m.provider_id = p.id
-       WHERE m.model_type = 'image' AND m.enabled = 1 AND p.enabled = 1
-       ORDER BY m.is_default DESC, m.id ASC
-       LIMIT 1`
-    )) as any[];
+    const imageModelRows = await db.selectFrom("ai_models as m")
+      .leftJoin("ai_model_providers as p", "m.provider_id", "p.id")
+      .where("m.model_type", "=", "image")
+      .where("m.enabled", "=", 1)
+      .where("p.enabled", "=", 1)
+      .select([
+        "m.model_id",
+        "m.is_default",
+        sql<string>`p.type`.as("provider_type"),
+        sql<string>`p.api_key`.as("api_key"),
+        sql<string>`p.base_url`.as("base_url"),
+        sql<number>`p.enabled`.as("provider_enabled"),
+      ])
+      .orderBy("m.is_default", "desc")
+      .orderBy("m.id", "asc")
+      .limit(1)
+      .execute();
 
     if (imageModelRows.length > 0 && imageModelRows[0].api_key) {
       const row = imageModelRows[0];
@@ -41,13 +51,13 @@ export async function getAiConfig(): Promise<AiConfig> {
     }
 
     // 回退到 system_settings 表
-    const settings = (await query(
-      "SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN (?, ?, ?, ?, ?)",
-      ["ai_provider", "ai_api_key", "ai_api_base_url", "ai_model", "ai_enabled"]
-    )) as any[];
+    const settings = await db.selectFrom("system_settings")
+      .select(["setting_key", "setting_value"])
+      .where("setting_key", "in", ["ai_provider", "ai_api_key", "ai_api_base_url", "ai_model", "ai_enabled"])
+      .execute();
 
     const settingMap = new Map<string, string>();
-    settings.forEach((s: any) => settingMap.set(s.setting_key, s.setting_value || ""));
+    settings.forEach((s) => settingMap.set(s.setting_key, s.setting_value || ""));
 
     // 数据库值作为回退（环境变量优先）
     if (!provider || provider === "openai") {
@@ -232,12 +242,18 @@ export async function generateWallpaper(params: {
   }
 
   // 创建生成记录
-  const result = await query(
-    `INSERT INTO ai_generations (user_id, prompt, style, width, height, status, model)
-     VALUES (?, ?, ?, ?, ?, 'processing', ?)`,
-    [userId, prompt, style, width, height, config.provider === "stability" ? "stability" : model]
-  );
-  const generationId = (result as any).insertId;
+  const result = await db.insertInto("ai_generations")
+    .values({
+      user_id: userId,
+      prompt,
+      style,
+      width,
+      height,
+      status: "processing",
+      model: config.provider === "stability" ? "stability" : model,
+    })
+    .executeTakeFirst();
+  const generationId = Number(result.insertId);
 
   try {
     let imageUrl: string;
@@ -253,10 +269,10 @@ export async function generateWallpaper(params: {
       );
       imageUrl = uploadResult.url;
 
-      await query(
-        "UPDATE ai_generations SET tokens_used = 1 WHERE id = ?",
-        [generationId]
-      );
+      await db.updateTable("ai_generations")
+        .set({ tokens_used: 1 })
+        .where("id", "=", generationId)
+        .execute();
     } else {
       // OpenAI / 兼容 API: 返回URL
       const genResult = await generateWithDallE(prompt, width, height, config);
@@ -273,25 +289,25 @@ export async function generateWallpaper(params: {
       );
       imageUrl = uploadResult.url;
 
-      await query(
-        "UPDATE ai_generations SET tokens_used = ? WHERE id = ?",
-        [genResult.tokensUsed, generationId]
-      );
+      await db.updateTable("ai_generations")
+        .set({ tokens_used: genResult.tokensUsed })
+        .where("id", "=", generationId)
+        .execute();
     }
 
     // 更新生成记录为完成
-    await query(
-      "UPDATE ai_generations SET status = 'completed', result_url = ?, completed_at = NOW() WHERE id = ?",
-      [imageUrl, generationId]
-    );
+    await db.updateTable("ai_generations")
+      .set({ status: "completed", result_url: imageUrl, completed_at: sql`NOW()` })
+      .where("id", "=", generationId)
+      .execute();
 
     return { generationId, imageUrl };
   } catch (error: any) {
     // 更新生成记录为失败
-    await query(
-      "UPDATE ai_generations SET status = 'failed', error_message = ?, completed_at = NOW() WHERE id = ?",
-      [error.message, generationId]
-    );
+    await db.updateTable("ai_generations")
+      .set({ status: "failed", error_message: error.message, completed_at: sql`NOW()` })
+      .where("id", "=", generationId)
+      .execute();
     throw error;
   }
 }
@@ -322,18 +338,21 @@ export async function getUserGenerations(
   limit: number = 20,
   offset: number = 0
 ) {
-  const rows = await query(
-    `SELECT * FROM ai_generations WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-    [userId, limit, offset]
-  );
+  const rows = await db.selectFrom("ai_generations")
+    .where("user_id", "=", userId)
+    .selectAll()
+    .orderBy("created_at", "desc")
+    .limit(limit)
+    .offset(offset)
+    .execute();
 
-  const countResult = await query(
-    "SELECT COUNT(*) as total FROM ai_generations WHERE user_id = ?",
-    [userId]
-  ) as any[];
+  const countResult = await db.selectFrom("ai_generations")
+    .where("user_id", "=", userId)
+    .select((eb) => eb.fn.countAll().as("total"))
+    .executeTakeFirst();
 
   return {
     data: rows,
-    total: countResult[0]?.total || 0,
+    total: Number(countResult?.total || 0),
   };
 }

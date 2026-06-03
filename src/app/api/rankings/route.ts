@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // 缓存：内存缓存1小时
 let rankingsCache: Record<string, { data: any[]; timestamp: number }> = {};
@@ -57,46 +58,56 @@ export async function GET(request: NextRequest) {
 
     if (type === "favorites") {
       // 收藏排行：用 images 表的 favorite_count 字段
-      const sql = `
-        SELECT 
-          i.id, i.title, i.description, i.url, i.thumbnail_url, 
-          i.width, i.height, i.author, i.tags, i.category,
-          i.download_count, i.view_count,
-          i.favorite_count
-        FROM images i
-        WHERE i.status = 'approved' AND i.favorite_count > 0
-        ORDER BY i.favorite_count DESC, i.download_count DESC
-        LIMIT 50
-      `;
-      rows = (await query(sql)) as any[];
+      rows = await db
+        .selectFrom("images as i")
+        .select([
+          "i.id",
+          "i.title",
+          "i.description",
+          "i.url",
+          "i.thumbnail_url",
+          "i.width",
+          "i.height",
+          "i.author",
+          "i.tags",
+          "i.category",
+          "i.download_count",
+          "i.view_count",
+          "i.favorite_count",
+        ])
+        .where("i.status", "=", "approved")
+        .where("i.favorite_count", ">", 0)
+        .orderBy("i.favorite_count", "desc")
+        .orderBy("i.download_count", "desc")
+        .limit(50)
+        .execute() as any[];
     } else {
       // 下载/浏览排行：用日志表
       const logTable = getLogTable(type);
       const dateCondition = getDateCondition(period);
 
-      const sql = `
-        SELECT 
-          i.id, i.title, i.description, i.url, i.thumbnail_url, 
+      rows = (await sql`
+        SELECT
+          i.id, i.title, i.description, i.url, i.thumbnail_url,
           i.width, i.height, i.author, i.tags, i.category,
           i.download_count, i.view_count,
           l.log_count
         FROM images i
         INNER JOIN (
           SELECT image_id, COUNT(*) AS log_count
-          FROM ${logTable}
-          WHERE 1=1 ${dateCondition}
+          FROM ${sql.raw(logTable)}
+          WHERE 1=1 ${sql.raw(dateCondition)}
           GROUP BY image_id
           ORDER BY log_count DESC
           LIMIT 50
         ) l ON l.image_id = i.id
         WHERE i.status = 'approved'
         ORDER BY l.log_count DESC
-      `;
-      rows = (await query(sql)) as any[];
+      `.execute(db)).rows as any[];
     }
 
     // 格式化结果，添加排名
-    const rankings = rows.map((row, index) => ({
+    const rankings = rows.map((row: any, index: number) => ({
       rank: index + 1,
       id: row.id,
       title: row.title,

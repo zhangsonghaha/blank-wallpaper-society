@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
 // GET /api/notifications/settings - 获取当前用户的通知设置
@@ -11,10 +11,11 @@ export async function GET() {
     }
 
     const userId = (session.user as any).id;
-    const rows = await query(
-      "SELECT * FROM notification_settings WHERE user_id = ?",
-      [userId]
-    ) as any[];
+    const rows = await db
+      .selectFrom("notification_settings")
+      .selectAll()
+      .where("user_id", "=", userId)
+      .execute();
 
     if (rows.length === 0) {
       // 返回默认设置
@@ -64,51 +65,48 @@ export async function PATCH(request: NextRequest) {
       "email_system",
       "email_review",
       "email_achievement",
-    ];
+    ] as const;
 
-    const updates: string[] = [];
-    const values: any[] = [];
+    const updateObj: Record<string, number> = {};
 
     for (const field of allowedFields) {
       if (field in body) {
-        updates.push(`${field} = ?`);
-        values.push(body[field] ? 1 : 0);
+        updateObj[field] = body[field] ? 1 : 0;
       }
     }
 
-    if (updates.length === 0) {
+    if (Object.keys(updateObj).length === 0) {
       return NextResponse.json({ error: "没有需要更新的字段" }, { status: 400 });
     }
 
     // 检查是否已有记录
-    const existing = await query(
-      "SELECT id FROM notification_settings WHERE user_id = ?",
-      [userId]
-    ) as any[];
+    const existing = await db
+      .selectFrom("notification_settings")
+      .select("id")
+      .where("user_id", "=", userId)
+      .execute();
 
     if (existing.length === 0) {
       // 创建记录
-      const fields = ["user_id", ...updates.map((u) => u.split(" = ")[0])];
-      const placeholders = fields.map(() => "?").join(", ");
-      const fieldValues = [userId, ...values];
-      await query(
-        `INSERT INTO notification_settings (${fields.join(", ")}) VALUES (${placeholders})`,
-        fieldValues
-      );
+      await db
+        .insertInto("notification_settings")
+        .values({ user_id: userId, ...updateObj })
+        .executeTakeFirst();
     } else {
       // 更新记录
-      values.push(userId);
-      await query(
-        `UPDATE notification_settings SET ${updates.join(", ")} WHERE user_id = ?`,
-        values
-      );
+      await db
+        .updateTable("notification_settings")
+        .set(updateObj)
+        .where("user_id", "=", userId)
+        .executeTakeFirst();
     }
 
     // 返回更新后的设置
-    const updated = await query(
-      "SELECT * FROM notification_settings WHERE user_id = ?",
-      [userId]
-    ) as any[];
+    const updated = await db
+      .selectFrom("notification_settings")
+      .selectAll()
+      .where("user_id", "=", userId)
+      .execute();
 
     return NextResponse.json({
       message: "通知设置已更新",

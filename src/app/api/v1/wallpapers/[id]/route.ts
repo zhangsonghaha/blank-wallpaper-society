@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { authenticateApiRequest, recordUsage } from "@/lib/api-auth";
 
 // GET /api/v1/wallpapers/[id] - 壁纸详情
@@ -15,10 +16,14 @@ export async function GET(
 
   try {
     const { id } = await params;
-    const rows = (await query(
-      "SELECT * FROM images WHERE id = ? AND status = 'approved'",
-      [id]
-    )) as any[];
+    const wallpaperId = parseInt(id);
+
+    const rows = await db
+      .selectFrom("images")
+      .selectAll()
+      .where("id", "=", wallpaperId)
+      .where("status", "=", "approved")
+      .execute();
 
     if (rows.length === 0) {
       recordUsage(auth.apiKeyInfo?.id, `/api/v1/wallpapers/${id}`, auth.ipAddress, 404);
@@ -28,10 +33,14 @@ export async function GET(
       );
     }
 
-    const row = rows[0];
+    const row = rows[0] as any;
 
     // 增加浏览次数
-    await query("UPDATE images SET view_count = view_count + 1 WHERE id = ?", [id]);
+    await db
+      .updateTable("images")
+      .set({ view_count: sql`view_count + 1` })
+      .where("id", "=", wallpaperId)
+      .executeTakeFirst();
 
     recordUsage(auth.apiKeyInfo?.id, `/api/v1/wallpapers/${id}`, auth.ipAddress, 200);
 

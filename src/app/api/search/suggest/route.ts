@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { isMeilisearchAvailable, searchSuggestions } from "@/lib/meilisearch";
 
 // GET /api/search/suggest?q=keyword - 搜索建议
@@ -28,29 +28,37 @@ export async function GET(request: NextRequest) {
     const keyword = `%${q}%`;
 
     // 搜索标题匹配
-    const titleResults = (await query(
-      `SELECT DISTINCT title FROM images
-       WHERE title LIKE ? AND status = 'approved'
-       ORDER BY download_count DESC
-       LIMIT 5`,
-      [keyword]
-    )) as any[];
+    const titleResults = await db
+      .selectFrom("images")
+      .select("title")
+      .distinct()
+      .where("title", "like", keyword)
+      .where("status", "=", "approved")
+      .orderBy("download_count", "desc")
+      .limit(5)
+      .execute();
 
     // 搜索分类匹配
-    const categoryResults = (await query(
-      `SELECT DISTINCT category FROM images
-       WHERE category LIKE ? AND status = 'approved' AND category != ''
-       LIMIT 3`,
-      [keyword]
-    )) as any[];
+    const categoryResults = await db
+      .selectFrom("images")
+      .select("category")
+      .distinct()
+      .where("category", "like", keyword)
+      .where("status", "=", "approved")
+      .where("category", "!=", "")
+      .limit(3)
+      .execute();
 
     // 搜索标签匹配
-    const tagResults = (await query(
-      `SELECT DISTINCT tags FROM images
-       WHERE tags LIKE ? AND status = 'approved' AND tags != ''
-       LIMIT 5`,
-      [keyword]
-    )) as any[];
+    const tagResults = await db
+      .selectFrom("images")
+      .select("tags")
+      .distinct()
+      .where("tags", "like", keyword)
+      .where("status", "=", "approved")
+      .where("tags", "!=", "")
+      .limit(5)
+      .execute();
 
     // 提取标签
     const matchedTags = new Set<string>();
@@ -67,7 +75,7 @@ export async function GET(request: NextRequest) {
           }
         } catch {
           // tags 可能是逗号分隔的字符串
-          row.tags.split(",").forEach((t: string) => {
+          (row.tags as string).split(",").forEach((t: string) => {
             const trimmed = t.trim();
             if (trimmed.toLowerCase().includes(q.toLowerCase())) {
               matchedTags.add(trimmed);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { clearPattern } from "@/lib/redis";
 
 // PATCH /api/admin/membership/redeem-codes/[id] - 修改兑换码状态
@@ -27,21 +27,31 @@ export async function PATCH(
       return NextResponse.json({ error: "无效的状态" }, { status: 400 });
     }
 
-    const result = await query(
-      "UPDATE membership_redeem_codes SET status = ? WHERE id = ?",
-      [status, codeId]
-    ) as any;
+    await db
+      .updateTable("membership_redeem_codes")
+      .set({ status })
+      .where("id", "=", codeId)
+      .execute();
 
-    if (result.affectedRows === 0) {
+    // 验证更新是否成功
+    const updated = await db
+      .selectFrom("membership_redeem_codes")
+      .select("id")
+      .where("id", "=", codeId)
+      .where("status", "=", status)
+      .executeTakeFirst();
+
+    if (!updated) {
       return NextResponse.json({ error: "兑换码不存在" }, { status: 404 });
     }
 
     // 记录操作日志
     const operatorId = (session.user as any).id;
-    await query(
-      "INSERT INTO admin_operation_logs (operator_id, operation, detail) VALUES (?, ?, ?)",
-      [operatorId, "update_redeem_code", JSON.stringify({ codeId, status })]
-    );
+    await db.insertInto("admin_operation_logs").values({
+      operator_id: operatorId,
+      operation: "update_redeem_code",
+      detail: JSON.stringify({ codeId, status }),
+    }).execute();
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
@@ -68,10 +78,11 @@ export async function DELETE(
     }
 
     // 只能删除未使用的兑换码
-    const codes = await query(
-      "SELECT * FROM membership_redeem_codes WHERE id = ?",
-      [codeId]
-    ) as any[];
+    const codes = await db
+      .selectFrom("membership_redeem_codes")
+      .selectAll()
+      .where("id", "=", codeId)
+      .execute();
 
     if (codes.length === 0) {
       return NextResponse.json({ error: "兑换码不存在" }, { status: 404 });
@@ -81,14 +92,15 @@ export async function DELETE(
       return NextResponse.json({ error: "已使用的兑换码不能删除，请禁用" }, { status: 400 });
     }
 
-    await query("DELETE FROM membership_redeem_codes WHERE id = ?", [codeId]);
+    await db.deleteFrom("membership_redeem_codes").where("id", "=", codeId).execute();
 
     // 记录操作日志
     const operatorId = (session.user as any).id;
-    await query(
-      "INSERT INTO admin_operation_logs (operator_id, operation, detail) VALUES (?, ?, ?)",
-      [operatorId, "delete_redeem_code", JSON.stringify({ codeId, code: codes[0].code })]
-    );
+    await db.insertInto("admin_operation_logs").values({
+      operator_id: operatorId,
+      operation: "delete_redeem_code",
+      detail: JSON.stringify({ codeId, code: codes[0].code }),
+    }).execute();
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

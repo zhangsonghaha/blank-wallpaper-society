@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { deleteFile } from "@/lib/minio";
 import { auth } from "@/lib/auth";
 
@@ -27,14 +27,16 @@ export async function POST(request: NextRequest) {
 
     for (const id of ids) {
       try {
-        const rows = await query("SELECT * FROM images WHERE id = ?", [id]);
+        const image = await db
+          .selectFrom("images")
+          .where("id", "=", Number(id))
+          .selectAll()
+          .executeTakeFirst();
 
-        if ((rows as any[]).length === 0) {
+        if (!image) {
           errors.push(`图片 ${id} 不存在`);
           continue;
         }
-
-        const image = (rows as any[])[0];
 
         // 删除 MinIO 中的文件
         try {
@@ -48,7 +50,7 @@ export async function POST(request: NextRequest) {
         }
 
         // 删除数据库记录
-        await query("DELETE FROM images WHERE id = ?", [id]);
+        await db.deleteFrom("images").where("id", "=", Number(id)).execute();
         deletedCount++;
       } catch (err: any) {
         errors.push(`图片 ${id} 删除失败: ${err.message}`);

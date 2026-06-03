@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 /**
  * GET /api/user/export - 导出当前用户的所有数据（GDPR 合规）
@@ -13,7 +14,7 @@ export async function GET() {
       return NextResponse.json({ error: "请先登录" }, { status: 401 });
     }
 
-    const userId = (session.user as any).id;
+    const userId = Number((session.user as any).id);
 
     // 并行查询所有用户相关数据
     const [
@@ -33,89 +34,197 @@ export async function GET() {
       userLevel,
       achievements,
     ] = await Promise.all([
-      // 1. 用户基本信息
-      query("SELECT id, username, email, display_name, bio, avatar_url, role, created_at FROM users WHERE id = ?", [userId]),
+      // 1. 用户基本信息 (raw SQL: uses columns not in DB types)
+      sql<any>`
+        SELECT id, name, email, bio, avatar, role, created_at 
+        FROM users WHERE id = ${userId}
+      `.execute(db).then(r => r.rows),
 
       // 2. 用户上传的图片
-      query(
-        "SELECT id, title, description, category, storage_key, width, height, mime_type, media_type, download_count, view_count, nsfw_score, status, created_at FROM images WHERE uploaded_by = ?",
-        [userId]
-      ),
+      db
+        .selectFrom("images")
+        .select([
+          "id",
+          "title",
+          "description",
+          "category",
+          "storage_key",
+          "width",
+          "height",
+          "mime_type",
+          "media_type",
+          "download_count",
+          "view_count",
+          "nsfw_score",
+          "status",
+          "created_at",
+        ])
+        .where("uploaded_by", "=", userId)
+        .execute(),
 
       // 3. 收藏记录
-      query(
-        `SELECT f.id, f.image_id, f.created_at, i.title as image_title 
-         FROM favorites f LEFT JOIN images i ON f.image_id = i.id 
-         WHERE f.user_id = ?`,
-        [userId]
-      ),
+      db
+        .selectFrom("favorites as f")
+        .leftJoin("images as i", "i.id", "f.image_id")
+        .select([
+          "f.id",
+          "f.image_id",
+          "f.created_at",
+          "i.title as image_title",
+        ])
+        .where("f.user_id", "=", userId)
+        .execute(),
 
       // 4. 评论
-      query(
-        `SELECT c.id, c.content, c.image_id, c.parent_id, c.created_at, i.title as image_title 
-         FROM comments c LEFT JOIN images i ON c.image_id = i.id 
-         WHERE c.user_id = ?`,
-        [userId]
-      ),
+      db
+        .selectFrom("comments as c")
+        .leftJoin("images as i", "i.id", "c.image_id")
+        .select([
+          "c.id",
+          "c.content",
+          "c.image_id",
+          "c.parent_id",
+          "c.created_at",
+          "i.title as image_title",
+        ])
+        .where("c.user_id", "=", userId)
+        .execute(),
 
       // 5. 帖子
-      query("SELECT id, title, content, created_at FROM posts WHERE author_id = ?", [userId]),
+      db
+        .selectFrom("posts")
+        .select(["id", "content", "created_at"])
+        .where("user_id", "=", userId)
+        .execute(),
 
       // 6. 帖子点赞
-      query(
-        `SELECT pl.id, pl.post_id, pl.created_at, p.title as post_title 
-         FROM post_likes pl LEFT JOIN posts p ON pl.post_id = p.id 
-         WHERE pl.user_id = ?`,
-        [userId]
-      ),
+      db
+        .selectFrom("post_likes as pl")
+        .leftJoin("posts as p", "p.id", "pl.post_id")
+        .select([
+          "pl.id",
+          "pl.post_id",
+          "pl.created_at",
+          "p.content as post_content",
+        ])
+        .where("pl.user_id", "=", userId)
+        .execute(),
 
-      // 7. 下载历史
-      query("SELECT id, image_id, ip_address, resolution, created_at FROM download_logs WHERE image_id IN (SELECT id FROM images WHERE uploaded_by = ?)", [userId]),
+      // 7. 下载历史 (images uploaded by this user)
+      db
+        .selectFrom("download_logs")
+        .select([
+          "id",
+          "image_id",
+          "ip_address",
+          "resolution",
+          "created_at",
+        ])
+        .where(
+          "image_id",
+          "in",
+          db.selectFrom("images").select("id").where("uploaded_by", "=", userId)
+        )
+        .execute(),
 
       // 8. 创建的收藏集
-      query("SELECT id, name, description, is_public, created_at FROM collections WHERE user_id = ?", [userId]),
+      db
+        .selectFrom("collections")
+        .select([
+          "id",
+          "title as name",
+          "description",
+          "is_public",
+          "created_at",
+        ])
+        .where("user_id", "=", userId)
+        .execute(),
 
       // 9. 收藏集中的图片
-      query(
-        `SELECT ci.id, ci.collection_id, ci.image_id, ci.added_at, c.name as collection_name 
-         FROM collection_images ci 
-         JOIN collections c ON ci.collection_id = c.id 
-         WHERE c.user_id = ?`,
-        [userId]
-      ),
+      db
+        .selectFrom("collection_images as ci")
+        .innerJoin("collections as c", "c.id", "ci.collection_id")
+        .select([
+          "ci.id",
+          "ci.collection_id",
+          "ci.image_id",
+          "ci.added_at",
+          "c.title as collection_name",
+        ])
+        .where("c.user_id", "=", userId)
+        .execute(),
 
       // 10. 关注的用户
-      query(
-        `SELECT uf.id, uf.following_id, uf.created_at, u.username as following_username 
-         FROM user_follows uf JOIN users u ON uf.following_id = u.id 
-         WHERE uf.follower_id = ?`,
-        [userId]
-      ),
+      db
+        .selectFrom("user_follows as uf")
+        .innerJoin("users as u", "u.id", "uf.following_id")
+        .select([
+          "uf.id",
+          "uf.following_id",
+          "uf.created_at",
+          "u.name as following_username",
+        ])
+        .where("uf.follower_id", "=", userId)
+        .execute(),
 
       // 11. 被谁关注
-      query(
-        `SELECT uf.id, uf.follower_id, uf.created_at, u.username as follower_username 
-         FROM user_follows uf JOIN users u ON uf.follower_id = u.id 
-         WHERE uf.following_id = ?`,
-        [userId]
-      ),
+      db
+        .selectFrom("user_follows as uf")
+        .innerJoin("users as u", "u.id", "uf.follower_id")
+        .select([
+          "uf.id",
+          "uf.follower_id",
+          "uf.created_at",
+          "u.name as follower_username",
+        ])
+        .where("uf.following_id", "=", userId)
+        .execute(),
 
       // 12. API Keys（仅前缀，不暴露hash）
-      query("SELECT id, key_prefix, name, rate_limit, is_active, created_at, last_used_at, expires_at FROM api_keys WHERE user_id = ?", [userId]),
+      db
+        .selectFrom("api_keys")
+        .select([
+          "id",
+          "key_prefix",
+          "name",
+          "rate_limit",
+          "is_active",
+          "created_at",
+          "last_used_at",
+          "expires_at",
+        ])
+        .where("user_id", "=", userId)
+        .execute(),
 
       // 13. 通知
-      query("SELECT id, type, title, message, is_read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 500", [userId]),
+      db
+        .selectFrom("notifications")
+        .select(["id", "type", "title", "content as message", "is_read", "created_at"])
+        .where("user_id", "=", userId)
+        .orderBy("created_at", "desc")
+        .limit(500)
+        .execute(),
 
       // 14. 用户等级
-      query("SELECT level, exp, total_exp FROM user_levels WHERE user_id = ?", [userId]),
+      db
+        .selectFrom("user_levels")
+        .select(["level", "exp"])
+        .where("user_id", "=", userId)
+        .execute(),
 
       // 15. 成就
-      query(
-        `SELECT ua.id, ua.achievement_id, ua.unlocked_at, a.name, a.description 
-         FROM user_achievements ua JOIN achievements a ON ua.achievement_id = a.id 
-         WHERE ua.user_id = ?`,
-        [userId]
-      ),
+      db
+        .selectFrom("user_achievements as ua")
+        .innerJoin("achievements as a", "a.id", "ua.achievement_id")
+        .select([
+          "ua.id",
+          "ua.achievement_id",
+          "ua.unlocked_at",
+          "a.name",
+          "a.description",
+        ])
+        .where("ua.user_id", "=", userId)
+        .execute(),
     ]);
 
     // 组装导出数据
@@ -124,7 +233,8 @@ export async function GET() {
         export_date: new Date().toISOString(),
         user_id: userId,
         format_version: "1.0",
-        notice: "此数据导出符合 GDPR 数据可携带权要求。如需删除账户，请访问设置页面。",
+        notice:
+          "此数据导出符合 GDPR 数据可携带权要求。如需删除账户，请访问设置页面。",
       },
       profile: (users as any[])[0] || null,
       images: images as any[],
@@ -147,7 +257,8 @@ export async function GET() {
     const jsonStr = JSON.stringify(exportData, null, 2);
     const buffer = Buffer.from(jsonStr, "utf-8");
 
-    const username = (users as any[])[0]?.username || `user_${userId}`;
+    const username =
+      (users as any[])[0]?.name || `user_${userId}`;
     const dateStr = new Date().toISOString().slice(0, 10);
     const fileName = `${username}_data_export_${dateStr}.json`;
 

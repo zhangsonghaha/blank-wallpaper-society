@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
 // DELETE /api/comments/[id] - 删除评论
@@ -23,10 +23,11 @@ export async function DELETE(
     }
 
     // 验证评论存在，且只有评论作者或管理员可以删除
-    const comments = (await query(
-      "SELECT user_id FROM comments WHERE id = ?",
-      [commentId]
-    )) as any[];
+    const comments = await db
+      .selectFrom("comments")
+      .select(["user_id"])
+      .where("id", "=", commentId)
+      .execute();
 
     if (comments.length === 0) {
       return NextResponse.json({ error: "评论不存在" }, { status: 404 });
@@ -38,10 +39,16 @@ export async function DELETE(
     }
 
     // 先删除子评论（回复）
-    await query("DELETE FROM comments WHERE parent_id = ?", [commentId]);
+    await db
+      .deleteFrom("comments")
+      .where("parent_id", "=", commentId)
+      .executeTakeFirst();
 
     // 再删除评论本身
-    await query("DELETE FROM comments WHERE id = ?", [commentId]);
+    await db
+      .deleteFrom("comments")
+      .where("id", "=", commentId)
+      .executeTakeFirst();
 
     return NextResponse.json({ message: "删除成功" });
   } catch (error: any) {

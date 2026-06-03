@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 
 // GET /api/admin/logs - 获取各类日志
@@ -39,58 +40,55 @@ export async function GET(request: NextRequest) {
 // 日志概览统计
 async function getLogsOverview() {
   const [adminOps, downloads, views, accountDeletions, recentOps] = await Promise.all([
-    query("SELECT COUNT(*) as count FROM admin_operation_logs"),
-    query("SELECT COUNT(*) as count FROM download_logs"),
-    query("SELECT COUNT(*) as count FROM view_logs"),
-    query("SELECT COUNT(*) as count FROM account_deletion_logs"),
-    query(
-      `SELECT DATE(created_at) as date, COUNT(*) as count
+    db.selectFrom("admin_operation_logs").select((eb) => eb.fn.countAll().as("count")).executeTakeFirst(),
+    db.selectFrom("download_logs").select((eb) => eb.fn.countAll().as("count")).executeTakeFirst(),
+    db.selectFrom("view_logs").select((eb) => eb.fn.countAll().as("count")).executeTakeFirst(),
+    db.selectFrom("account_deletion_logs").select((eb) => eb.fn.countAll().as("count")).executeTakeFirst(),
+    sql<{ date: string; count: string | number }>`SELECT DATE(created_at) as date, COUNT(*) as count
        FROM admin_operation_logs
        WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-       GROUP BY DATE(created_at) ORDER BY date`
-    ),
+       GROUP BY DATE(created_at) ORDER BY date`.execute(db),
   ]);
 
   // 今日统计
   const [todayDownloads, todayViews, todayOps] = await Promise.all([
-    query("SELECT COUNT(*) as count FROM download_logs WHERE created_at >= CURDATE()"),
-    query("SELECT COUNT(*) as count FROM view_logs WHERE created_at >= CURDATE()"),
-    query("SELECT COUNT(*) as count FROM admin_operation_logs WHERE created_at >= CURDATE()"),
+    db.selectFrom("download_logs").where("created_at", ">=", sql<Date>`CURDATE()`).select((eb) => eb.fn.countAll().as("count")).executeTakeFirst(),
+    db.selectFrom("view_logs").where("created_at", ">=", sql<Date>`CURDATE()`).select((eb) => eb.fn.countAll().as("count")).executeTakeFirst(),
+    db.selectFrom("admin_operation_logs").where("created_at", ">=", sql<Date>`CURDATE()`).select((eb) => eb.fn.countAll().as("count")).executeTakeFirst(),
   ]);
 
   // 下载量趋势（7天）
-  const downloadTrend = await query(
-    `SELECT DATE(created_at) as date, COUNT(*) as count
+  const downloadTrend = await sql<{ date: string; count: string | number }>`SELECT DATE(created_at) as date, COUNT(*) as count
      FROM download_logs
      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-     GROUP BY DATE(created_at) ORDER BY date`
-  );
+     GROUP BY DATE(created_at) ORDER BY date`.execute(db);
 
   // 浏览量趋势（7天）
-  const viewTrend = await query(
-    `SELECT DATE(created_at) as date, COUNT(*) as count
+  const viewTrend = await sql<{ date: string; count: string | number }>`SELECT DATE(created_at) as date, COUNT(*) as count
      FROM view_logs
      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-     GROUP BY DATE(created_at) ORDER BY date`
-  );
+     GROUP BY DATE(created_at) ORDER BY date`.execute(db);
 
   // 操作类型分布
-  const opDistribution = await query(
-    `SELECT operation, COUNT(*) as count FROM admin_operation_logs GROUP BY operation ORDER BY count DESC LIMIT 20`
-  );
+  const opDistribution = await db.selectFrom("admin_operation_logs")
+    .select((eb) => ["operation", eb.fn.countAll().as("count")])
+    .groupBy("operation")
+    .orderBy("count", "desc")
+    .limit(20)
+    .execute();
 
   return NextResponse.json({
     data: {
-      totalAdminOps: (adminOps as any[])[0]?.count || 0,
-      totalDownloads: (downloads as any[])[0]?.count || 0,
-      totalViews: (views as any[])[0]?.count || 0,
-      totalAccountDeletions: (accountDeletions as any[])[0]?.count || 0,
-      todayDownloads: (todayDownloads as any[])[0]?.count || 0,
-      todayViews: (todayViews as any[])[0]?.count || 0,
-      todayOps: (todayOps as any[])[0]?.count || 0,
-      opsTrend: recentOps,
-      downloadTrend,
-      viewTrend,
+      totalAdminOps: Number(adminOps?.count || 0),
+      totalDownloads: Number(downloads?.count || 0),
+      totalViews: Number(views?.count || 0),
+      totalAccountDeletions: Number(accountDeletions?.count || 0),
+      todayDownloads: Number(todayDownloads?.count || 0),
+      todayViews: Number(todayViews?.count || 0),
+      todayOps: Number(todayOps?.count || 0),
+      opsTrend: recentOps.rows,
+      downloadTrend: downloadTrend.rows,
+      viewTrend: viewTrend.rows,
       opDistribution,
     },
   });
@@ -108,50 +106,33 @@ async function getAdminOperationLogs(
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
 
-  let where = "1=1";
-  const values: any[] = [];
+  const whereParts: ReturnType<typeof sql>[] = [];
 
-  if (operation) {
-    where += " AND a.operation = ?";
-    values.push(operation);
-  }
-  if (operatorId) {
-    where += " AND a.operator_id = ?";
-    values.push(parseInt(operatorId));
-  }
-  if (startDate) {
-    where += " AND a.created_at >= ?";
-    values.push(startDate);
-  }
-  if (endDate) {
-    where += " AND a.created_at <= ?";
-    values.push(endDate + " 23:59:59");
-  }
+  if (operation) whereParts.push(sql`a.operation = ${operation}`);
+  if (operatorId) whereParts.push(sql`a.operator_id = ${parseInt(operatorId)}`);
+  if (startDate) whereParts.push(sql`a.created_at >= ${startDate}`);
+  if (endDate) whereParts.push(sql`a.created_at <= ${endDate + " 23:59:59"}`);
 
-  const countResult = (await query(
-    `SELECT COUNT(*) as total FROM admin_operation_logs a WHERE ${where}`,
-    values
-  )) as any[];
-  const total = Number(countResult?.[0]?.total ?? 0);
+  const whereClause = whereParts.length > 0
+    ? sql`WHERE ${sql.join(whereParts, sql` AND `)}`
+    : sql``;
 
-  const logs = await query(
-    `SELECT a.*, u.name as operator_name, ut.name as target_user_name
+  const countResult = await sql<{ total: string | number }>`SELECT COUNT(*) as total FROM admin_operation_logs a ${whereClause}`.execute(db);
+  const total = Number(countResult.rows[0]?.total ?? 0);
+
+  const logs = await sql<Record<string, any>>`SELECT a.*, u.name as operator_name, ut.name as target_user_name
      FROM admin_operation_logs a
      LEFT JOIN users u ON a.operator_id = u.id
      LEFT JOIN users ut ON a.target_user_id = ut.id
-     WHERE ${where}
+     ${whereClause}
      ORDER BY a.created_at DESC
-     LIMIT ? OFFSET ?`,
-    [...values, pageSize, offset]
-  );
+     LIMIT ${pageSize} OFFSET ${offset}`.execute(db);
 
   // 操作类型列表（用于筛选下拉）
-  const operations = await query(
-    "SELECT DISTINCT operation FROM admin_operation_logs ORDER BY operation"
-  );
+  const operations = await sql<{ operation: string }>`SELECT DISTINCT operation FROM admin_operation_logs ORDER BY operation`.execute(db);
 
   return NextResponse.json({
-    data: { logs, total, operations },
+    data: { logs: logs.rows, total, operations: operations.rows },
     page,
     pageSize,
   });
@@ -169,45 +150,30 @@ async function getDownloadLogs(
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
 
-  let where = "1=1";
-  const values: any[] = [];
+  const whereParts: ReturnType<typeof sql>[] = [];
 
-  if (imageId) {
-    where += " AND d.image_id = ?";
-    values.push(parseInt(imageId));
-  }
-  if (userId) {
-    where += " AND d.user_id = ?";
-    values.push(parseInt(userId));
-  }
-  if (startDate) {
-    where += " AND d.created_at >= ?";
-    values.push(startDate);
-  }
-  if (endDate) {
-    where += " AND d.created_at <= ?";
-    values.push(endDate + " 23:59:59");
-  }
+  if (imageId) whereParts.push(sql`d.image_id = ${parseInt(imageId)}`);
+  if (userId) whereParts.push(sql`d.user_id = ${parseInt(userId)}`);
+  if (startDate) whereParts.push(sql`d.created_at >= ${startDate}`);
+  if (endDate) whereParts.push(sql`d.created_at <= ${endDate + " 23:59:59"}`);
 
-  const countResult = (await query(
-    `SELECT COUNT(*) as total FROM download_logs d WHERE ${where}`,
-    values
-  )) as any[];
-  const total = Number(countResult?.[0]?.total ?? 0);
+  const whereClause = whereParts.length > 0
+    ? sql`WHERE ${sql.join(whereParts, sql` AND `)}`
+    : sql``;
 
-  const logs = await query(
-    `SELECT d.*, i.title as image_title, u.name as user_name
+  const countResult = await sql<{ total: string | number }>`SELECT COUNT(*) as total FROM download_logs d ${whereClause}`.execute(db);
+  const total = Number(countResult.rows[0]?.total ?? 0);
+
+  const logs = await sql<Record<string, any>>`SELECT d.*, i.title as image_title, u.name as user_name
      FROM download_logs d
      LEFT JOIN images i ON d.image_id = i.id
      LEFT JOIN users u ON d.user_id = u.id
-     WHERE ${where}
+     ${whereClause}
      ORDER BY d.created_at DESC
-     LIMIT ? OFFSET ?`,
-    [...values, pageSize, offset]
-  );
+     LIMIT ${pageSize} OFFSET ${offset}`.execute(db);
 
   return NextResponse.json({
-    data: { logs, total },
+    data: { logs: logs.rows, total },
     page,
     pageSize,
   });
@@ -225,45 +191,30 @@ async function getViewLogs(
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
 
-  let where = "1=1";
-  const values: any[] = [];
+  const whereParts: ReturnType<typeof sql>[] = [];
 
-  if (imageId) {
-    where += " AND v.image_id = ?";
-    values.push(parseInt(imageId));
-  }
-  if (userId) {
-    where += " AND v.user_id = ?";
-    values.push(parseInt(userId));
-  }
-  if (startDate) {
-    where += " AND v.created_at >= ?";
-    values.push(startDate);
-  }
-  if (endDate) {
-    where += " AND v.created_at <= ?";
-    values.push(endDate + " 23:59:59");
-  }
+  if (imageId) whereParts.push(sql`v.image_id = ${parseInt(imageId)}`);
+  if (userId) whereParts.push(sql`v.user_id = ${parseInt(userId)}`);
+  if (startDate) whereParts.push(sql`v.created_at >= ${startDate}`);
+  if (endDate) whereParts.push(sql`v.created_at <= ${endDate + " 23:59:59"}`);
 
-  const countResult = (await query(
-    `SELECT COUNT(*) as total FROM view_logs v WHERE ${where}`,
-    values
-  )) as any[];
-  const total = Number(countResult?.[0]?.total ?? 0);
+  const whereClause = whereParts.length > 0
+    ? sql`WHERE ${sql.join(whereParts, sql` AND `)}`
+    : sql``;
 
-  const logs = await query(
-    `SELECT v.*, i.title as image_title, u.name as user_name
+  const countResult = await sql<{ total: string | number }>`SELECT COUNT(*) as total FROM view_logs v ${whereClause}`.execute(db);
+  const total = Number(countResult.rows[0]?.total ?? 0);
+
+  const logs = await sql<Record<string, any>>`SELECT v.*, i.title as image_title, u.name as user_name
      FROM view_logs v
      LEFT JOIN images i ON v.image_id = i.id
      LEFT JOIN users u ON v.user_id = u.id
-     WHERE ${where}
+     ${whereClause}
      ORDER BY v.created_at DESC
-     LIMIT ? OFFSET ?`,
-    [...values, pageSize, offset]
-  );
+     LIMIT ${pageSize} OFFSET ${offset}`.execute(db);
 
   return NextResponse.json({
-    data: { logs, total },
+    data: { logs: logs.rows, total },
     page,
     pageSize,
   });
@@ -280,41 +231,29 @@ async function getAccountDeletionLogs(
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
 
-  let where = "1=1";
-  const values: any[] = [];
+  const whereParts: ReturnType<typeof sql>[] = [];
 
-  if (action) {
-    where += " AND a.action = ?";
-    values.push(action);
-  }
-  if (startDate) {
-    where += " AND a.created_at >= ?";
-    values.push(startDate);
-  }
-  if (endDate) {
-    where += " AND a.created_at <= ?";
-    values.push(endDate + " 23:59:59");
-  }
+  if (action) whereParts.push(sql`a.action = ${action}`);
+  if (startDate) whereParts.push(sql`a.created_at >= ${startDate}`);
+  if (endDate) whereParts.push(sql`a.created_at <= ${endDate + " 23:59:59"}`);
 
-  const countResult = (await query(
-    `SELECT COUNT(*) as total FROM account_deletion_logs a WHERE ${where}`,
-    values
-  )) as any[];
-  const total = Number(countResult?.[0]?.total ?? 0);
+  const whereClause = whereParts.length > 0
+    ? sql`WHERE ${sql.join(whereParts, sql` AND `)}`
+    : sql``;
 
-  const logs = await query(
-    `SELECT a.*, u.name as user_name, op.name as operator_name
+  const countResult = await sql<{ total: string | number }>`SELECT COUNT(*) as total FROM account_deletion_logs a ${whereClause}`.execute(db);
+  const total = Number(countResult.rows[0]?.total ?? 0);
+
+  const logs = await sql<Record<string, any>>`SELECT a.*, u.name as user_name, op.name as operator_name
      FROM account_deletion_logs a
      LEFT JOIN users u ON a.user_id = u.id
      LEFT JOIN users op ON a.operator_id = op.id
-     WHERE ${where}
+     ${whereClause}
      ORDER BY a.created_at DESC
-     LIMIT ? OFFSET ?`,
-    [...values, pageSize, offset]
-  );
+     LIMIT ${pageSize} OFFSET ${offset}`.execute(db);
 
   return NextResponse.json({
-    data: { logs, total },
+    data: { logs: logs.rows, total },
     page,
     pageSize,
   });
@@ -338,32 +277,30 @@ export async function DELETE(request: NextRequest) {
     let result: any;
     switch (type) {
       case "admin_operation":
-        result = await query(
-          "DELETE FROM admin_operation_logs WHERE created_at < ?",
-          [beforeDate]
-        );
+        result = await db.deleteFrom("admin_operation_logs")
+          .where("created_at", "<", new Date(beforeDate))
+          .execute();
         break;
       case "download":
-        result = await query("DELETE FROM download_logs WHERE created_at < ?", [
-          beforeDate,
-        ]);
+        result = await db.deleteFrom("download_logs")
+          .where("created_at", "<", new Date(beforeDate))
+          .execute();
         break;
       case "view":
-        result = await query("DELETE FROM view_logs WHERE created_at < ?", [
-          beforeDate,
-        ]);
+        result = await db.deleteFrom("view_logs")
+          .where("created_at", "<", new Date(beforeDate))
+          .execute();
         break;
       case "account_deletion":
-        result = await query(
-          "DELETE FROM account_deletion_logs WHERE created_at < ?",
-          [beforeDate]
-        );
+        result = await db.deleteFrom("account_deletion_logs")
+          .where("created_at", "<", new Date(beforeDate))
+          .execute();
         break;
       default:
         return NextResponse.json({ error: "未知日志类型" }, { status: 400 });
     }
 
-    const deletedCount = (result as any)?.affectedRows || 0;
+    const deletedCount = (result as any)?.[0]?.affectedRows || 0;
 
     // 记录审计日志
     try {

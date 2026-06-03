@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // GET /api/feed - 混合Feed流
 // 支持类型：all（默认，三源混合）、following（仅关注）、recommended（推荐）、trending（热门）
@@ -64,11 +65,12 @@ export async function GET(request: NextRequest) {
     // 为每张图片附加用户交互状态（是否已收藏）
     if (userId && images.length > 0) {
       const imageIds = images.map((img: any) => img.id);
-      const placeholders = imageIds.map(() => "?").join(",");
-      const favorites = await query(
-        `SELECT image_id FROM favorites WHERE user_id = ? AND image_id IN (${placeholders})`,
-        [userId, ...imageIds]
-      ) as any[];
+      const favorites = await db
+        .selectFrom("favorites")
+        .select(["image_id"])
+        .where("user_id", "=", userId)
+        .where("image_id", "in", imageIds)
+        .execute();
       const favoriteSet = new Set(favorites.map((f: any) => f.image_id));
       images = images.map((img: any) => ({
         ...img,
@@ -97,44 +99,60 @@ export async function GET(request: NextRequest) {
 
 // === 关注者Feed ===
 async function getFollowingFeed(userId: number, limit: number, offset: number) {
-  const countRows = (await query(
-    `SELECT COUNT(*) AS total FROM images i
-     INNER JOIN user_follows uf ON i.uploaded_by = uf.following_id
-     WHERE uf.follower_id = ? AND i.status = 'approved'`,
-    [userId]
-  )) as any[];
+  const countRows = await db
+    .selectFrom("images as i")
+    .innerJoin("user_follows as uf", "uf.following_id", "i.uploaded_by")
+    .select((eb) => [eb.fn.countAll().as("total")])
+    .where("uf.follower_id", "=", userId)
+    .where("i.status", "=", "approved")
+    .execute();
 
-  const images = (await query(
-    `SELECT i.*, u.name as author_name, u.avatar as author_avatar
-     FROM images i
-     INNER JOIN user_follows uf ON i.uploaded_by = uf.following_id
-     LEFT JOIN users u ON i.uploaded_by = u.id
-     WHERE uf.follower_id = ? AND i.status = 'approved'
-     ORDER BY i.created_at DESC
-     LIMIT ? OFFSET ?`,
-    [userId, limit, offset]
-  )) as any[];
+  const images = await db
+    .selectFrom("images as i")
+    .innerJoin("user_follows as uf", "uf.following_id", "i.uploaded_by")
+    .leftJoin("users as u", "u.id", "i.uploaded_by")
+    .select([
+      "i.id", "i.title", "i.url", "i.thumbnail_url", "i.width", "i.height",
+      "i.description", "i.category", "i.tags", "i.filename", "i.storage_key",
+      "i.file_size", "i.mime_type", "i.source_type", "i.status",
+      "i.download_count", "i.view_count", "i.favorite_count",
+      "i.dominant_color", "i.color_palette", "i.phash",
+      "i.uploaded_by", "i.author", "i.media_type", "i.video_url", "i.poster_url",
+      "i.exif", "i.nsfw_flagged", "i.nsfw_score", "i.thumbnails", "i.variants",
+      "i.reject_reason", "i.reviewed_at", "i.reviewed_by",
+      "i.created_at", "i.updated_at",
+      sql<string | null>`u.name`.as("author_name"),
+      sql<string | null>`u.avatar`.as("author_avatar"),
+    ])
+    .where("uf.follower_id", "=", userId)
+    .where("i.status", "=", "approved")
+    .orderBy("i.created_at", "desc")
+    .limit(limit)
+    .offset(offset)
+    .execute();
 
-  return { images, total: countRows[0]?.total || 0 };
+  return { images, total: Number(countRows[0]?.total ?? 0) };
 }
 
 // === 推荐Feed（基于收藏偏好 + 热门混合） ===
 async function getRecommendedFeed(userId: number, limit: number, offset: number) {
   // 获取用户收藏的分类偏好
-  const categoryPrefs = (await query(
-    `SELECT i.category, COUNT(*) AS cnt
-     FROM favorites f
-     INNER JOIN images i ON f.image_id = i.id
-     WHERE f.user_id = ? AND i.category IS NOT NULL AND i.category != ''
-     GROUP BY i.category
-     ORDER BY cnt DESC LIMIT 5`,
-    [userId]
-  )) as any[];
+  const categoryPrefs = await db
+    .selectFrom("favorites as f")
+    .innerJoin("images as i", "i.id", "f.image_id")
+    .select([
+      "i.category",
+      sql<number>`COUNT(*)`.as("cnt"),
+    ])
+    .where("f.user_id", "=", userId)
+    .where("i.category", "is not", null)
+    .where("i.category", "!=", "")
+    .groupBy("i.category")
+    .orderBy("cnt", "desc")
+    .limit(5)
+    .execute();
 
-  const preferredCategories = categoryPrefs.map((r: any) => r.category);
-
-  let images: any[];
-  let total: number;
+  const preferredCategories = categoryPrefs.map((r: any) => r.category).filter(Boolean);
 
   if (preferredCategories.length === 0) {
     // 没有偏好数据，走热门
@@ -142,44 +160,74 @@ async function getRecommendedFeed(userId: number, limit: number, offset: number)
   }
 
   // 基于偏好分类推荐
-  const categoryPlaceholders = preferredCategories.map(() => "?").join(",");
-  const countRows = (await query(
-    `SELECT COUNT(*) AS total FROM images i
-     WHERE i.status = 'approved' AND i.category IN (${categoryPlaceholders})`,
-    [...preferredCategories]
-  )) as any[];
+  const countRows = await db
+    .selectFrom("images as i")
+    .select((eb) => [eb.fn.countAll().as("total")])
+    .where("i.status", "=", "approved")
+    .where("i.category", "in", preferredCategories)
+    .execute();
 
-  images = (await query(
-    `SELECT i.*, u.name as author_name, u.avatar as author_avatar
-     FROM images i
-     LEFT JOIN users u ON i.uploaded_by = u.id
-     WHERE i.status = 'approved' AND i.category IN (${categoryPlaceholders})
-     ORDER BY i.download_count DESC, i.view_count DESC, i.created_at DESC
-     LIMIT ? OFFSET ?`,
-    [...preferredCategories, limit, offset]
-  )) as any[];
+  const images = await db
+    .selectFrom("images as i")
+    .leftJoin("users as u", "u.id", "i.uploaded_by")
+    .select([
+      "i.id", "i.title", "i.url", "i.thumbnail_url", "i.width", "i.height",
+      "i.description", "i.category", "i.tags", "i.filename", "i.storage_key",
+      "i.file_size", "i.mime_type", "i.source_type", "i.status",
+      "i.download_count", "i.view_count", "i.favorite_count",
+      "i.dominant_color", "i.color_palette", "i.phash",
+      "i.uploaded_by", "i.author", "i.media_type", "i.video_url", "i.poster_url",
+      "i.exif", "i.nsfw_flagged", "i.nsfw_score", "i.thumbnails", "i.variants",
+      "i.reject_reason", "i.reviewed_at", "i.reviewed_by",
+      "i.created_at", "i.updated_at",
+      sql<string | null>`u.name`.as("author_name"),
+      sql<string | null>`u.avatar`.as("author_avatar"),
+    ])
+    .where("i.status", "=", "approved")
+    .where("i.category", "in", preferredCategories)
+    .orderBy("i.download_count", "desc")
+    .orderBy("i.view_count", "desc")
+    .orderBy("i.created_at", "desc")
+    .limit(limit)
+    .offset(offset)
+    .execute();
 
-  return { images, total: countRows[0]?.total || 0 };
+  return { images, total: Number(countRows[0]?.total ?? 0) };
 }
 
 // === 热门Feed ===
 async function getTrendingFeed(limit: number, offset: number) {
-  const countRows = (await query(
-    `SELECT COUNT(*) AS total FROM images WHERE status = 'approved'`
-  )) as any[];
+  const countRows = await db
+    .selectFrom("images")
+    .select((eb) => [eb.fn.countAll().as("total")])
+    .where("status", "=", "approved")
+    .execute();
 
-  const images = (await query(
-    `SELECT i.*, u.name as author_name, u.avatar as author_avatar,
-            (i.download_count * 3 + i.view_count) AS trending_score
-     FROM images i
-     LEFT JOIN users u ON i.uploaded_by = u.id
-     WHERE i.status = 'approved'
-     ORDER BY trending_score DESC, i.created_at DESC
-     LIMIT ? OFFSET ?`,
-    [limit, offset]
-  )) as any[];
+  const images = await db
+    .selectFrom("images as i")
+    .leftJoin("users as u", "u.id", "i.uploaded_by")
+    .select([
+      "i.id", "i.title", "i.url", "i.thumbnail_url", "i.width", "i.height",
+      "i.description", "i.category", "i.tags", "i.filename", "i.storage_key",
+      "i.file_size", "i.mime_type", "i.source_type", "i.status",
+      "i.download_count", "i.view_count", "i.favorite_count",
+      "i.dominant_color", "i.color_palette", "i.phash",
+      "i.uploaded_by", "i.author", "i.media_type", "i.video_url", "i.poster_url",
+      "i.exif", "i.nsfw_flagged", "i.nsfw_score", "i.thumbnails", "i.variants",
+      "i.reject_reason", "i.reviewed_at", "i.reviewed_by",
+      "i.created_at", "i.updated_at",
+      sql<string | null>`u.name`.as("author_name"),
+      sql<string | null>`u.avatar`.as("author_avatar"),
+      sql<number>`(i.download_count * 3 + i.view_count)`.as("trending_score"),
+    ])
+    .where("i.status", "=", "approved")
+    .orderBy("trending_score", "desc")
+    .orderBy("i.created_at", "desc")
+    .limit(limit)
+    .offset(offset)
+    .execute();
 
-  return { images, total: countRows[0]?.total || 0 };
+  return { images, total: Number(countRows[0]?.total ?? 0) };
 }
 
 // === 混合Feed（关注40% + 推荐30% + 热门30%） ===
@@ -190,55 +238,99 @@ async function getMixedFeed(userId: number, limit: number, offset: number) {
   const trendingCount = limit - followingCount - recommendedCount;
 
   // 获取关注者的图片
-  const followingImages = (await query(
-    `SELECT i.*, u.name as author_name, u.avatar as author_avatar, 'following' as feed_source
-     FROM images i
-     INNER JOIN user_follows uf ON i.uploaded_by = uf.following_id
-     LEFT JOIN users u ON i.uploaded_by = u.id
-     WHERE uf.follower_id = ? AND i.status = 'approved'
-     ORDER BY i.created_at DESC
-     LIMIT ?`,
-    [userId, followingCount + offset]
-  )) as any[];
+  const followingImages = await db
+    .selectFrom("images as i")
+    .innerJoin("user_follows as uf", "uf.following_id", "i.uploaded_by")
+    .leftJoin("users as u", "u.id", "i.uploaded_by")
+    .select([
+      "i.id", "i.title", "i.url", "i.thumbnail_url", "i.width", "i.height",
+      "i.description", "i.category", "i.tags", "i.filename", "i.storage_key",
+      "i.file_size", "i.mime_type", "i.source_type", "i.status",
+      "i.download_count", "i.view_count", "i.favorite_count",
+      "i.dominant_color", "i.color_palette", "i.phash",
+      "i.uploaded_by", "i.author", "i.media_type", "i.video_url", "i.poster_url",
+      "i.exif", "i.nsfw_flagged", "i.nsfw_score", "i.thumbnails", "i.variants",
+      "i.reject_reason", "i.reviewed_at", "i.reviewed_by",
+      "i.created_at", "i.updated_at",
+      sql<string | null>`u.name`.as("author_name"),
+      sql<string | null>`u.avatar`.as("author_avatar"),
+      sql<string>`'following'`.as("feed_source"),
+    ])
+    .where("uf.follower_id", "=", userId)
+    .where("i.status", "=", "approved")
+    .orderBy("i.created_at", "desc")
+    .limit(followingCount + offset)
+    .execute();
 
   // 获取推荐图片（基于分类偏好，排除关注者）
-  const categoryPrefs = (await query(
-    `SELECT i.category, COUNT(*) AS cnt
-     FROM favorites f
-     INNER JOIN images i ON f.image_id = i.id
-     WHERE f.user_id = ? AND i.category IS NOT NULL AND i.category != ''
-     GROUP BY i.category
-     ORDER BY cnt DESC LIMIT 5`,
-    [userId]
-  )) as any[];
+  const categoryPrefs = await db
+    .selectFrom("favorites as f")
+    .innerJoin("images as i", "i.id", "f.image_id")
+    .select([
+      "i.category",
+      sql<number>`COUNT(*)`.as("cnt"),
+    ])
+    .where("f.user_id", "=", userId)
+    .where("i.category", "is not", null)
+    .where("i.category", "!=", "")
+    .groupBy("i.category")
+    .orderBy("cnt", "desc")
+    .limit(5)
+    .execute();
 
-  const preferredCategories = categoryPrefs.map((r: any) => r.category);
+  const preferredCategories = categoryPrefs.map((r: any) => r.category).filter(Boolean);
   let recommendedImages: any[] = [];
 
   if (preferredCategories.length > 0) {
-    const categoryPlaceholders = preferredCategories.map(() => "?").join(",");
-    recommendedImages = (await query(
-      `SELECT i.*, u.name as author_name, u.avatar as author_avatar, 'recommended' as feed_source
-       FROM images i
-       LEFT JOIN users u ON i.uploaded_by = u.id
-       WHERE i.status = 'approved' AND i.category IN (${categoryPlaceholders})
-       ORDER BY i.download_count DESC, i.created_at DESC
-       LIMIT ?`,
-      [...preferredCategories, recommendedCount + offset]
-    )) as any[];
+    recommendedImages = await db
+      .selectFrom("images as i")
+      .leftJoin("users as u", "u.id", "i.uploaded_by")
+      .select([
+        "i.id", "i.title", "i.url", "i.thumbnail_url", "i.width", "i.height",
+        "i.description", "i.category", "i.tags", "i.filename", "i.storage_key",
+        "i.file_size", "i.mime_type", "i.source_type", "i.status",
+        "i.download_count", "i.view_count", "i.favorite_count",
+        "i.dominant_color", "i.color_palette", "i.phash",
+        "i.uploaded_by", "i.author", "i.media_type", "i.video_url", "i.poster_url",
+        "i.exif", "i.nsfw_flagged", "i.nsfw_score", "i.thumbnails", "i.variants",
+        "i.reject_reason", "i.reviewed_at", "i.reviewed_by",
+        "i.created_at", "i.updated_at",
+        sql<string | null>`u.name`.as("author_name"),
+        sql<string | null>`u.avatar`.as("author_avatar"),
+        sql<string>`'recommended'`.as("feed_source"),
+      ])
+      .where("i.status", "=", "approved")
+      .where("i.category", "in", preferredCategories)
+      .orderBy("i.download_count", "desc")
+      .orderBy("i.created_at", "desc")
+      .limit(recommendedCount + offset)
+      .execute();
   }
 
   // 获取热门图片
-  const trendingImages = (await query(
-    `SELECT i.*, u.name as author_name, u.avatar as author_avatar, 'trending' as feed_source,
-            (i.download_count * 3 + i.view_count) AS trending_score
-     FROM images i
-     LEFT JOIN users u ON i.uploaded_by = u.id
-     WHERE i.status = 'approved'
-     ORDER BY trending_score DESC, i.created_at DESC
-     LIMIT ?`,
-    [trendingCount + offset]
-  )) as any[];
+  const trendingImages = await db
+    .selectFrom("images as i")
+    .leftJoin("users as u", "u.id", "i.uploaded_by")
+    .select([
+      "i.id", "i.title", "i.url", "i.thumbnail_url", "i.width", "i.height",
+      "i.description", "i.category", "i.tags", "i.filename", "i.storage_key",
+      "i.file_size", "i.mime_type", "i.source_type", "i.status",
+      "i.download_count", "i.view_count", "i.favorite_count",
+      "i.dominant_color", "i.color_palette", "i.phash",
+      "i.uploaded_by", "i.author", "i.media_type", "i.video_url", "i.poster_url",
+      "i.exif", "i.nsfw_flagged", "i.nsfw_score", "i.thumbnails", "i.variants",
+      "i.reject_reason", "i.reviewed_at", "i.reviewed_by",
+      "i.created_at", "i.updated_at",
+      sql<string | null>`u.name`.as("author_name"),
+      sql<string | null>`u.avatar`.as("author_avatar"),
+      sql<string>`'trending'`.as("feed_source"),
+      sql<number>`(i.download_count * 3 + i.view_count)`.as("trending_score"),
+    ])
+    .where("i.status", "=", "approved")
+    .orderBy("trending_score", "desc")
+    .orderBy("i.created_at", "desc")
+    .limit(trendingCount + offset)
+    .execute();
 
   // 合并去重，优先级：following > recommended > trending
   const seen = new Set<number>();

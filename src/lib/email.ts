@@ -5,7 +5,7 @@
  * 模板优先级：数据库 email_templates > 硬编码默认模板
  */
 
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { renderEmailTemplate } from "@/lib/email-template";
 
 // === 邮件发送参数 ===
@@ -46,11 +46,11 @@ export async function getEmailConfig(): Promise<EmailConfig> {
   // 从数据库读取
   let dbSettings: Record<string, string> = {};
   try {
-    const rows = (await query(
-      "SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN (?, ?, ?, ?, ?, ?, ?, ?)",
-      ["email_enabled", "email_provider", "email_from", "resend_api_key", "smtp_host", "smtp_port", "smtp_user", "smtp_pass"]
-    )) as any[];
-    rows.forEach((r: any) => {
+    const rows = await db.selectFrom("system_settings")
+      .select(["setting_key", "setting_value"])
+      .where("setting_key", "in", ["email_enabled", "email_provider", "email_from", "resend_api_key", "smtp_host", "smtp_port", "smtp_user", "smtp_pass"])
+      .execute();
+    rows.forEach((r) => {
       if (r.setting_value) dbSettings[r.setting_key] = r.setting_value;
     });
   } catch {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { addExp, checkAchievements } from "@/lib/user-level";
 import { notifyNewFollower } from "@/lib/notification";
 
@@ -28,33 +28,38 @@ export async function POST(
     }
 
     // 检查目标用户是否存在
-    const targetUsers = (await query("SELECT id FROM users WHERE id = ?", [
-      targetId,
-    ])) as any[];
+    const targetUsers = await db
+      .selectFrom("users")
+      .select("id")
+      .where("id", "=", targetId)
+      .execute();
 
     if (targetUsers.length === 0) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
 
     // 检查是否已关注
-    const existing = (await query(
-      "SELECT id FROM user_follows WHERE follower_id = ? AND following_id = ?",
-      [userId, targetId]
-    )) as any[];
+    const existing = await db
+      .selectFrom("user_follows")
+      .select("id")
+      .where("follower_id", "=", Number(userId))
+      .where("following_id", "=", targetId)
+      .execute();
 
     if (existing.length > 0) {
       // 取关
-      await query(
-        "DELETE FROM user_follows WHERE follower_id = ? AND following_id = ?",
-        [userId, targetId]
-      );
+      await db
+        .deleteFrom("user_follows")
+        .where("follower_id", "=", Number(userId))
+        .where("following_id", "=", targetId)
+        .executeTakeFirst();
       return NextResponse.json({ following: false, message: "已取消关注" });
     } else {
       // 关注
-      await query(
-        "INSERT INTO user_follows (follower_id, following_id) VALUES (?, ?)",
-        [userId, targetId]
-      );
+      await db
+        .insertInto("user_follows")
+        .values({ follower_id: Number(userId), following_id: targetId })
+        .executeTakeFirst();
       // 关注成功 → 被关注者 +5 exp + 检查成就（异步不阻塞）
       addExp(targetId, 5).catch(() => {});
       checkAchievements(targetId).catch(() => {});
@@ -87,31 +92,35 @@ export async function GET(
     }
 
     // 获取粉丝数和关注数
-    const followersCount = (await query(
-      "SELECT COUNT(*) AS count FROM user_follows WHERE following_id = ?",
-      [targetId]
-    )) as any[];
+    const followersCount = await db
+      .selectFrom("user_follows")
+      .select((eb) => [eb.fn.count("id").as("count")])
+      .where("following_id", "=", targetId)
+      .execute();
 
-    const followingCount = (await query(
-      "SELECT COUNT(*) AS count FROM user_follows WHERE follower_id = ?",
-      [targetId]
-    )) as any[];
+    const followingCount = await db
+      .selectFrom("user_follows")
+      .select((eb) => [eb.fn.count("id").as("count")])
+      .where("follower_id", "=", targetId)
+      .execute();
 
     // 检查当前用户是否关注了该用户
     let isFollowing = false;
     const session = await auth();
     if (session?.user) {
       const userId = (session.user as any).id;
-      const followStatus = (await query(
-        "SELECT id FROM user_follows WHERE follower_id = ? AND following_id = ?",
-        [userId, targetId]
-      )) as any[];
+      const followStatus = await db
+        .selectFrom("user_follows")
+        .select("id")
+        .where("follower_id", "=", Number(userId))
+        .where("following_id", "=", targetId)
+        .execute();
       isFollowing = followStatus.length > 0;
     }
 
     return NextResponse.json({
-      followersCount: followersCount[0]?.count || 0,
-      followingCount: followingCount[0]?.count || 0,
+      followersCount: Number(followersCount[0]?.count) || 0,
+      followingCount: Number(followingCount[0]?.count) || 0,
       isFollowing,
     });
   } catch (error: any) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // POST /api/reports - 用户举报图片
 export async function POST(request: NextRequest) {
@@ -29,28 +30,38 @@ export async function POST(request: NextRequest) {
     }
 
     // 检查图片是否存在
-    const imageExists = await query("SELECT id FROM images WHERE id = ?", [
-      imageId,
-    ]);
-    if ((imageExists as any[]).length === 0) {
+    const imageExists = await db
+      .selectFrom("images")
+      .select("id")
+      .where("id", "=", imageId)
+      .execute();
+    if (imageExists.length === 0) {
       return NextResponse.json({ error: "图片不存在" }, { status: 404 });
     }
 
     const reporterId = (session.user as any).id;
 
     // 检查是否已举报过（同一用户对同一图片）
-    const existingReport = await query(
-      "SELECT id FROM reports WHERE image_id = ? AND reporter_id = ? AND status = 'pending'",
-      [imageId, reporterId]
-    );
-    if ((existingReport as any[]).length > 0) {
+    const existingReport = await db
+      .selectFrom("reports")
+      .select("id")
+      .where("image_id", "=", imageId)
+      .where("reporter_id", "=", reporterId)
+      .where("status", "=", "pending")
+      .execute();
+    if (existingReport.length > 0) {
       return NextResponse.json({ error: "您已举报过该图片，请等待处理" }, { status: 400 });
     }
 
-    await query(
-      `INSERT INTO reports (image_id, reporter_id, reason, status) VALUES (?, ?, ?, 'pending')`,
-      [imageId, reporterId, reason.trim()]
-    );
+    await db
+      .insertInto("reports")
+      .values({
+        image_id: imageId,
+        reporter_id: reporterId,
+        reason: reason.trim(),
+        status: "pending",
+      })
+      .executeTakeFirst();
 
     return NextResponse.json(
       { message: "举报成功，我们会尽快处理" },
@@ -85,27 +96,33 @@ export async function GET(request: NextRequest) {
     }
 
     // 获取总数
-    const countResult = await query(
-      "SELECT COUNT(*) as total FROM reports WHERE status = ?",
-      [status]
-    );
-    const total = (countResult as any[])[0]?.total || 0;
+    const countResult = await db
+      .selectFrom("reports")
+      .select((eb) => [eb.fn.count<number>("id").as("total")])
+      .where("status", "=", status)
+      .executeTakeFirst();
+    const total = Number(countResult?.total ?? 0);
 
     // 获取举报列表，关联图片和用户信息
-    const rows = await query(
-      `SELECT r.*, 
-              i.title as image_title, i.url as image_url, i.thumbnail_url as image_thumbnail,
-              reporter.name as reporter_name, reporter.email as reporter_email,
-              resolver.name as resolver_name
-       FROM reports r
-       LEFT JOIN images i ON r.image_id = i.id
-       LEFT JOIN users reporter ON r.reporter_id = reporter.id
-       LEFT JOIN users resolver ON r.resolved_by = resolver.id
-       WHERE r.status = ?
-       ORDER BY r.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [status, limit, offset]
-    );
+    const rows = await db
+      .selectFrom("reports as r")
+      .leftJoin("images as i", "i.id", "r.image_id")
+      .leftJoin("users as reporter", "reporter.id", "r.reporter_id")
+      .leftJoin("users as resolver", "resolver.id", "r.resolved_by")
+      .selectAll("r")
+      .select([
+        "i.title as image_title",
+        "i.url as image_url",
+        "i.thumbnail_url as image_thumbnail",
+        "reporter.name as reporter_name",
+        "reporter.email as reporter_email",
+        "resolver.name as resolver_name",
+      ])
+      .where("r.status", "=", status)
+      .orderBy("r.created_at", "desc")
+      .limit(limit)
+      .offset(offset)
+      .execute();
 
     return NextResponse.json({
       data: rows,
@@ -143,29 +160,42 @@ export async function PATCH(request: NextRequest) {
     }
 
     // 检查举报记录是否存在
-    const existing = await query("SELECT id, image_id FROM reports WHERE id = ?", [
-      reportId,
-    ]);
-    if ((existing as any[]).length === 0) {
+    const existing = await db
+      .selectFrom("reports")
+      .select(["id", "image_id"])
+      .where("id", "=", reportId)
+      .execute();
+    if (existing.length === 0) {
       return NextResponse.json({ error: "举报记录不存在" }, { status: 404 });
     }
 
-    const report = (existing as any[])[0];
+    const report = existing[0];
     const adminId = (session.user as any).id;
 
     // 更新举报状态
     const newStatus = action === "dismiss" ? "reviewed" : "resolved";
-    await query(
-      `UPDATE reports SET status = ?, resolved_by = ?, resolved_at = NOW() WHERE id = ?`,
-      [newStatus, adminId, reportId]
-    );
+    await db
+      .updateTable("reports")
+      .set({
+        status: newStatus,
+        resolved_by: adminId,
+        resolved_at: sql`NOW()`,
+      })
+      .where("id", "=", reportId)
+      .executeTakeFirst();
 
     // 如果是下架操作，同时将图片状态改为 rejected
     if (action === "remove") {
-      await query(
-        `UPDATE images SET status = 'rejected', reviewed_by = ?, reviewed_at = NOW(), reject_reason = '因举报被下架' WHERE id = ?`,
-        [adminId, report.image_id]
-      );
+      await db
+        .updateTable("images")
+        .set({
+          status: "rejected",
+          reviewed_by: adminId,
+          reviewed_at: sql`NOW()`,
+          reject_reason: "因举报被下架",
+        })
+        .where("id", "=", report.image_id)
+        .executeTakeFirst();
     }
 
     return NextResponse.json({

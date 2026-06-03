@@ -3,7 +3,8 @@
  * 记录所有管理员关键操作，支持 IP 记录、详情存储和可疑操作告警
  */
 
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // 操作类型
 export type AuditOperation =
@@ -64,16 +65,14 @@ export async function logAudit(params: AuditLogParams): Promise<void> {
       timestamp: new Date().toISOString(),
     };
 
-    await query(
-      `INSERT INTO admin_operation_logs (operator_id, target_user_id, operation, detail)
-       VALUES (?, ?, ?, ?)`,
-      [
-        operatorId,
-        targetUserId || null,
+    await db.insertInto("admin_operation_logs")
+      .values({
+        operator_id: operatorId,
+        target_user_id: targetUserId || null,
         operation,
-        JSON.stringify(logDetail),
-      ]
-    );
+        detail: JSON.stringify(logDetail),
+      })
+      .execute();
 
     // 敏感操作告警
     if (SENSITIVE_OPERATIONS.includes(operation)) {
@@ -97,34 +96,43 @@ export async function getAuditLogs(params: {
 }): Promise<{ logs: any[]; total: number }> {
   const { operation, operatorId, limit = 50, offset = 0 } = params;
 
-  let where = "1=1";
-  const values: any[] = [];
-
+  // Build COUNT query
+  let countQuery = db.selectFrom("admin_operation_logs")
+    .select((eb) => eb.fn.countAll().as("count"));
   if (operation) {
-    where += " AND operation = ?";
-    values.push(operation);
+    countQuery = countQuery.where("admin_operation_logs.operation", "=", operation as any);
   }
   if (operatorId) {
-    where += " AND operator_id = ?";
-    values.push(operatorId);
+    countQuery = countQuery.where("admin_operation_logs.operator_id", "=", operatorId);
   }
+  const countResult = await countQuery.executeTakeFirst();
+  const total = Number(countResult?.count ?? 0);
 
-  const countResult = (await query(
-    `SELECT COUNT(*) as total FROM admin_operation_logs WHERE ${where}`,
-    values
-  )) as any[];
-  const total = Number(countResult?.[0]?.total ?? 0);
-
-  const logs = (await query(
-    `SELECT a.*, u.name as operator_name, ut.name as target_user_name
-     FROM admin_operation_logs a
-     LEFT JOIN users u ON a.operator_id = u.id
-     LEFT JOIN users ut ON a.target_user_id = ut.id
-     WHERE ${where}
-     ORDER BY a.created_at DESC
-     LIMIT ? OFFSET ?`,
-    [...values, String(limit), String(offset)]
-  )) as any[];
+  // Build main query with JOINs
+  let mainQuery = db.selectFrom("admin_operation_logs as a")
+    .leftJoin("users as u", "u.id", "a.operator_id")
+    .leftJoin("users as ut", "ut.id", "a.target_user_id")
+    .select((eb) => [
+      eb.ref("a.id").as("id"),
+      eb.ref("a.operation").as("operation"),
+      eb.ref("a.operator_id").as("operator_id"),
+      eb.ref("a.target_user_id").as("target_user_id"),
+      eb.ref("a.detail").as("detail"),
+      eb.ref("a.created_at").as("created_at"),
+      sql<string | null>`u.name`.as("operator_name"),
+      sql<string | null>`ut.name`.as("target_user_name"),
+    ]);
+  if (operation) {
+    mainQuery = mainQuery.where("a.operation", "=", operation as any);
+  }
+  if (operatorId) {
+    mainQuery = mainQuery.where("a.operator_id", "=", operatorId);
+  }
+  const logs = await mainQuery
+    .orderBy("a.created_at", "desc")
+    .limit(limit)
+    .offset(offset)
+    .execute();
 
   return { logs, total };
 }

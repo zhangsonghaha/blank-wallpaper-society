@@ -1,4 +1,5 @@
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import redis from "@/lib/redis";
 
 // ========== API 套餐配置 ==========
@@ -111,10 +112,14 @@ export async function logApiUsage(
 ) {
   try {
     if (apiKeyId) {
-      await query(
-        "INSERT INTO api_usage_logs (api_key_id, endpoint, ip_address, status_code) VALUES (?, ?, ?, ?)",
-        [apiKeyId, endpoint, ipAddress, statusCode]
-      );
+      await db.insertInto("api_usage_logs")
+        .values({
+          api_key_id: apiKeyId,
+          endpoint,
+          ip_address: ipAddress,
+          status_code: statusCode,
+        })
+        .execute();
     }
   } catch (err) {
     console.error("记录API使用日志失败:", err);
@@ -126,10 +131,10 @@ export async function logApiUsage(
  */
 export async function updateKeyLastUsed(apiKeyId: number) {
   try {
-    await query(
-      "UPDATE api_keys SET last_used_at = NOW() WHERE id = ?",
-      [apiKeyId]
-    );
+    await db.updateTable("api_keys")
+      .set({ last_used_at: sql`NOW()` })
+      .where("id", "=", apiKeyId)
+      .execute();
   } catch (err) {
     console.error("更新API Key最后使用时间失败:", err);
   }
@@ -265,10 +270,10 @@ export async function findApiKeyByKey(rawKey: string): Promise<{
   const crypto = await import("crypto");
   const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
 
-  const rows = (await query(
-    "SELECT id, user_id, key_prefix, name, rate_limit, is_active, expires_at FROM api_keys WHERE key_hash = ?",
-    [keyHash]
-  )) as any[];
+  const rows = await db.selectFrom("api_keys")
+    .where("key_hash", "=", keyHash)
+    .select(["id", "user_id", "key_prefix", "name", "rate_limit", "is_active", "expires_at"])
+    .execute();
 
   if (rows.length === 0) return null;
 
@@ -277,11 +282,29 @@ export async function findApiKeyByKey(rawKey: string): Promise<{
   // 检查是否已过期
   if (key.expires_at && new Date(key.expires_at) < new Date()) {
     // 异步标记为不活跃
-    query("UPDATE api_keys SET is_active = 0 WHERE id = ?", [key.id]).catch(() => {});
-    return { ...key, is_active: false };
+    db.updateTable("api_keys")
+      .set({ is_active: 0 })
+      .where("id", "=", key.id)
+      .execute()
+      .catch(() => {});
+    return {
+      id: key.id,
+      user_id: key.user_id,
+      key_prefix: key.key_prefix,
+      name: key.name,
+      rate_limit: key.rate_limit ?? 0,
+      is_active: false,
+    };
   }
 
-  return key;
+  return {
+    id: key.id,
+    user_id: key.user_id,
+    key_prefix: key.key_prefix,
+    name: key.name,
+    rate_limit: key.rate_limit ?? 0,
+    is_active: !!key.is_active,
+  };
 }
 
 /**
@@ -295,59 +318,66 @@ export async function getApiKeyUsageStats(apiKeyId: number): Promise<{
   errorRate: number;
   topEndpoints: Array<{ endpoint: string; count: number }>;
 }> {
-  const today = (await query(
-    "SELECT COUNT(*) as count FROM api_usage_logs WHERE api_key_id = ? AND created_at >= CURDATE()",
-    [apiKeyId]
-  )) as any[];
+  const todayResult = await db.selectFrom("api_usage_logs")
+    .where("api_key_id", "=", apiKeyId)
+    .where("created_at", ">=", sql<Date>`CURDATE()`)
+    .select((eb) => eb.fn.countAll().as("count"))
+    .executeTakeFirst();
 
-  const last7 = (await query(
-    "SELECT COUNT(*) as count FROM api_usage_logs WHERE api_key_id = ? AND created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)",
-    [apiKeyId]
-  )) as any[];
+  const last7Result = await db.selectFrom("api_usage_logs")
+    .where("api_key_id", "=", apiKeyId)
+    .where("created_at", ">=", sql<Date>`DATE_SUB(CURDATE(), INTERVAL 7 DAY)`)
+    .select((eb) => eb.fn.countAll().as("count"))
+    .executeTakeFirst();
 
-  const last30 = (await query(
-    "SELECT COUNT(*) as count FROM api_usage_logs WHERE api_key_id = ? AND created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)",
-    [apiKeyId]
-  )) as any[];
+  const last30Result = await db.selectFrom("api_usage_logs")
+    .where("api_key_id", "=", apiKeyId)
+    .where("created_at", ">=", sql<Date>`DATE_SUB(CURDATE(), INTERVAL 30 DAY)`)
+    .select((eb) => eb.fn.countAll().as("count"))
+    .executeTakeFirst();
 
   // 24小时分布
-  const hourlyBreakdown = (await query(
-    `SELECT DATE_FORMAT(created_at, '%Y-%m-%d %H:00') as hour, COUNT(*) as count
-     FROM api_usage_logs
-     WHERE api_key_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
-     GROUP BY hour ORDER BY hour`,
-    [apiKeyId]
-  )) as any[];
+  const hourlyBreakdown = await db.selectFrom("api_usage_logs")
+    .where("api_key_id", "=", apiKeyId)
+    .where("created_at", ">=", sql<Date>`DATE_SUB(NOW(), INTERVAL 24 HOUR)`)
+    .select((eb) => [
+      sql<string>`DATE_FORMAT(created_at, '%Y-%m-%d %H:00')`.as("hour"),
+      eb.fn.countAll().as("count"),
+    ])
+    .groupBy("hour")
+    .orderBy("hour")
+    .execute();
 
   // 错误率
-  const errorStats = (await query(
-    `SELECT
-       COUNT(*) as total,
-       SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) as errors
-     FROM api_usage_logs
-     WHERE api_key_id = ? AND created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)`,
-    [apiKeyId]
-  )) as any[];
-  const total7d = errorStats[0]?.total || 0;
-  const errors7d = errorStats[0]?.errors || 0;
+  const errorStats = await db.selectFrom("api_usage_logs")
+    .where("api_key_id", "=", apiKeyId)
+    .where("created_at", ">=", sql<Date>`DATE_SUB(CURDATE(), INTERVAL 7 DAY)`)
+    .select((eb) => [
+      eb.fn.countAll().as("total"),
+      sql<number>`SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END)`.as("errors"),
+    ])
+    .executeTakeFirst();
+  const total7d = Number(errorStats?.total ?? 0);
+  const errors7d = Number(errorStats?.errors ?? 0);
   const errorRate = total7d > 0 ? errors7d / total7d : 0;
 
   // 热门端点
-  const topEndpoints = (await query(
-    `SELECT endpoint, COUNT(*) as count
-     FROM api_usage_logs
-     WHERE api_key_id = ? AND created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-     GROUP BY endpoint ORDER BY count DESC LIMIT 10`,
-    [apiKeyId]
-  )) as any[];
+  const topEndpoints = await db.selectFrom("api_usage_logs")
+    .where("api_key_id", "=", apiKeyId)
+    .where("created_at", ">=", sql<Date>`DATE_SUB(CURDATE(), INTERVAL 7 DAY)`)
+    .select((eb) => ["endpoint", eb.fn.countAll().as("count")])
+    .groupBy("endpoint")
+    .orderBy("count", "desc")
+    .limit(10)
+    .execute();
 
   return {
-    today: today[0]?.count || 0,
-    last7days: last7[0]?.count || 0,
-    last30days: last30[0]?.count || 0,
-    hourlyBreakdown,
+    today: Number(todayResult?.count ?? 0),
+    last7days: Number(last7Result?.count ?? 0),
+    last30days: Number(last30Result?.count ?? 0),
+    hourlyBreakdown: hourlyBreakdown.map((r) => ({ hour: r.hour, count: Number(r.count) })),
     errorRate: Math.round(errorRate * 10000) / 100, // 百分比，保留2位
-    topEndpoints,
+    topEndpoints: topEndpoints.map((r) => ({ endpoint: r.endpoint, count: Number(r.count) })),
   };
 }
 

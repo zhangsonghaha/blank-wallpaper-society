@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
-import { withTransaction } from "@/lib/db-tx";
+import { db } from "@/lib/db";
 import { clearPattern } from "@/lib/redis";
 import crypto from "crypto";
 
@@ -16,46 +15,34 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
-    const status = searchParams.get("status") || "";
-    const plan = searchParams.get("plan") || "";
-    const batch = searchParams.get("batch") || "";
+    const statusParam = searchParams.get("status") || "";
+    const planParam = searchParams.get("plan") || "";
+    const batchParam = searchParams.get("batch") || "";
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = [];
-    const params: any[] = [];
-
-    if (status) {
-      conditions.push("rc.status = ?");
-      params.push(status);
-    }
-    if (plan) {
-      conditions.push("rc.plan = ?");
-      params.push(plan);
-    }
-    if (batch) {
-      conditions.push("rc.batch_name LIKE ?");
-      params.push(`%${batch}%`);
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
     // 获取总数
-    const countResult = await query(
-      `SELECT COUNT(*) as count FROM membership_redeem_codes rc ${whereClause}`,
-      params
-    ) as any[];
-    const total = Number(countResult[0]?.count ?? 0);
+    const countResult = await db
+      .selectFrom("membership_redeem_codes as rc")
+      .select((eb) => eb.fn.countAll().as("count"))
+      .$if(!!statusParam, (qb) => qb.where("rc.status", "=", statusParam as "active" | "disabled" | "expired"))
+      .$if(!!planParam, (qb) => qb.where("rc.plan", "=", planParam as "monthly" | "yearly"))
+      .$if(!!batchParam, (qb) => qb.where("rc.batch_name", "like", `%${batchParam}%`))
+      .executeTakeFirst();
+    const total = Number(countResult?.count ?? 0);
 
     // 获取列表
-    const codes = await query(
-      `SELECT rc.*, u.name as creator_name
-       FROM membership_redeem_codes rc
-       LEFT JOIN users u ON rc.created_by = u.id
-       ${whereClause}
-       ORDER BY rc.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
-    ) as any[];
+    const codes = await db
+      .selectFrom("membership_redeem_codes as rc")
+      .leftJoin("users as u", "rc.created_by", "u.id")
+      .selectAll("rc")
+      .select(["u.name as creator_name"])
+      .$if(!!statusParam, (qb) => qb.where("rc.status", "=", statusParam as "active" | "disabled" | "expired"))
+      .$if(!!planParam, (qb) => qb.where("rc.plan", "=", planParam as "monthly" | "yearly"))
+      .$if(!!batchParam, (qb) => qb.where("rc.batch_name", "like", `%${batchParam}%`))
+      .orderBy("rc.created_at", "desc")
+      .limit(limit)
+      .offset(offset)
+      .execute();
 
     return NextResponse.json({
       data: codes,
@@ -95,27 +82,28 @@ export async function POST(request: NextRequest) {
     const durationDays = plan === "monthly" ? 30 : 365;
 
     // 兑换码过期时间
-    let codeExpiresAt: string | null = null;
+    let codeExpiresAt: Date | null = null;
     if (expiresInDays) {
       const d = new Date();
       d.setDate(d.getDate() + parseInt(expiresInDays));
-      codeExpiresAt = d.toISOString().slice(0, 19).replace("T", " ");
+      codeExpiresAt = d;
     }
 
     // 生成兑换码
     const generatedCodes: string[] = [];
 
-    await withTransaction(async (conn) => {
+    await db.transaction().execute(async (trx) => {
       for (let i = 0; i < codeCount; i++) {
         const code = customCode && codeCount === 1
           ? customCode
           : generateRedeemCode();
 
         // 检查是否已存在
-        const [existing] = await conn.execute(
-          "SELECT id FROM membership_redeem_codes WHERE code = ?",
-          [code]
-        ) as [any[], any];
+        const existing = await trx
+          .selectFrom("membership_redeem_codes")
+          .select("id")
+          .where("code", "=", code)
+          .execute();
 
         if (existing.length > 0) {
           if (customCode) {
@@ -125,26 +113,32 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        await conn.execute(
-          `INSERT INTO membership_redeem_codes (code, plan, duration_days, max_uses, created_by, batch_name, note, expires_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [code, plan, durationDays, usesPerCode, operatorId, batchName || null, note || null, codeExpiresAt]
-        );
+        await trx.insertInto("membership_redeem_codes").values({
+          code,
+          plan,
+          duration_days: durationDays,
+          max_uses: usesPerCode,
+          created_by: operatorId,
+          batch_name: batchName || null,
+          note: note || null,
+          expires_at: codeExpiresAt,
+        }).execute();
 
         generatedCodes.push(code);
       }
     });
 
     // 记录操作日志
-    await query(
-      "INSERT INTO admin_operation_logs (operator_id, operation, detail) VALUES (?, ?, ?)",
-      [operatorId, "generate_redeem_codes", JSON.stringify({
+    await db.insertInto("admin_operation_logs").values({
+      operator_id: operatorId,
+      operation: "generate_redeem_codes",
+      detail: JSON.stringify({
         plan,
         count: generatedCodes.length,
         batchName,
         maxUses: usesPerCode,
-      })]
-    );
+      }),
+    }).execute();
 
     return NextResponse.json({
       success: true,

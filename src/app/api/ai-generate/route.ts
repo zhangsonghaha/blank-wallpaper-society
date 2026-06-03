@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { generateWallpaper, getUserGenerations, AI_STYLES, AiStyle } from "@/lib/ai-generate";
+import { sql } from "kysely";
 
 // AI生成配额配置
 const AI_QUOTA = {
@@ -28,11 +29,14 @@ export async function GET(request: NextRequest) {
     // 获取今日已用次数
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-    const usedRows = (await query(
-      "SELECT COUNT(*) as count FROM ai_generations WHERE user_id = ? AND created_at >= ? AND status IN ('completed', 'processing')",
-      [userId, todayStart.toISOString().slice(0, 19).replace("T", " ")]
-    )) as any[];
-    const usedToday = usedRows[0]?.count || 0;
+    const usedRows = await db
+      .selectFrom("ai_generations")
+      .select((eb) => [eb.fn.count<number>("id").as("count")])
+      .where("user_id", "=", userId)
+      .where("created_at", ">=", todayStart)
+      .where("status", "in", ["completed", "processing"])
+      .executeTakeFirst();
+    const usedToday = Number(usedRows?.count || 0);
 
     // 获取用户等级确定配额（优先使用会员等级，其次 API Key tier）
     const membership = (session.user as any)?.membership as { plan: string; status: string } | null;
@@ -45,11 +49,15 @@ export async function GET(request: NextRequest) {
       tier = "pro";
     } else {
       // 回退：检查 API Key tier
-      const tierRows = (await query(
-        "SELECT tier FROM api_keys WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1",
-        [userId]
-      )) as any[];
-      tier = tierRows[0]?.tier || "free";
+      const tierRow = await db
+        .selectFrom("api_keys")
+        .select("tier")
+        .where("user_id", "=", userId)
+        .where("is_active", "=", 1)
+        .orderBy("created_at", "desc")
+        .limit(1)
+        .executeTakeFirst();
+      tier = tierRow?.tier || "free";
     }
     const quota = AI_QUOTA[tier as keyof typeof AI_QUOTA] || AI_QUOTA.free;
 
@@ -89,11 +97,14 @@ export async function POST(request: NextRequest) {
     // === 配额检查 ===
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-    const usedRows = (await query(
-      "SELECT COUNT(*) as count FROM ai_generations WHERE user_id = ? AND created_at >= ? AND status IN ('completed', 'processing')",
-      [userId, todayStart.toISOString().slice(0, 19).replace("T", " ")]
-    )) as any[];
-    const usedToday = usedRows[0]?.count || 0;
+    const usedRows = await db
+      .selectFrom("ai_generations")
+      .select((eb) => [eb.fn.count<number>("id").as("count")])
+      .where("user_id", "=", userId)
+      .where("created_at", ">=", todayStart)
+      .where("status", "in", ["completed", "processing"])
+      .executeTakeFirst();
+    const usedToday = Number(usedRows?.count || 0);
 
     // 优先使用会员等级确定配额
     const membership = (session.user as any)?.membership as { plan: string; status: string } | null;
@@ -105,11 +116,15 @@ export async function POST(request: NextRequest) {
     } else if (membership?.status === "active") {
       tier = "pro";
     } else {
-      const tierRows = (await query(
-        "SELECT tier FROM api_keys WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1",
-        [userId]
-      )) as any[];
-      tier = tierRows[0]?.tier || "free";
+      const tierRow = await db
+        .selectFrom("api_keys")
+        .select("tier")
+        .where("user_id", "=", userId)
+        .where("is_active", "=", 1)
+        .orderBy("created_at", "desc")
+        .limit(1)
+        .executeTakeFirst();
+      tier = tierRow?.tier || "free";
     }
     const quota = AI_QUOTA[tier as keyof typeof AI_QUOTA] || AI_QUOTA.free;
 
@@ -155,26 +170,31 @@ export async function POST(request: NextRequest) {
     // 将AI生成的图片插入 images 表，status=pending 审核状态
     if (result.imageUrl) {
       try {
-        const insertResult = await query(
-          `INSERT INTO images (title, url, storage_key, width, height, category, tags, uploaded_by, status, source_type, media_type)
-           VALUES (?, ?, ?, ?, ?, 'ai_generated', ?, ?, 'pending', 'ai_generated', 'image')`,
-          [
-            `AI生成: ${prompt.trim().slice(0, 50)}`,
-            result.imageUrl,
-            result.imageUrl.split("/").pop() || "",
-            w,
-            h,
-            JSON.stringify([validStyle, "ai-generated"]),
-            userId,
-          ]
-        );
-        const imageId = (insertResult as any).insertId;
+        const insertResult = await db
+          .insertInto("images")
+          .values({
+            title: `AI生成: ${prompt.trim().slice(0, 50)}`,
+            filename: result.imageUrl.split("/").pop() || "ai_generated",
+            url: result.imageUrl,
+            storage_key: result.imageUrl.split("/").pop() || "",
+            width: w,
+            height: h,
+            category: "ai_generated",
+            tags: JSON.stringify([validStyle, "ai-generated"]),
+            uploaded_by: userId,
+            status: "pending",
+            source_type: "ai_generated",
+            media_type: "image",
+          })
+          .executeTakeFirst();
+        const imageId = Number(insertResult.insertId);
 
         // 更新 ai_generations 记录关联 image_id
-        await query(
-          "UPDATE ai_generations SET image_id = ? WHERE id = ?",
-          [imageId, result.generationId]
-        );
+        await db
+          .updateTable("ai_generations")
+          .set({ image_id: imageId })
+          .where("id", "=", result.generationId)
+          .executeTakeFirst();
 
         return NextResponse.json(
           {

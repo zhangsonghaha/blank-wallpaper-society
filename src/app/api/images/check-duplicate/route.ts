@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { computePHash, hammingDistance } from "@/lib/phash";
 
@@ -51,9 +51,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 查询数据库中所有已有 pHash
-    const existingImages = await query(
-      "SELECT id, title, url, thumbnail_url, phash FROM images WHERE phash IS NOT NULL"
-    ) as any[];
+    const existingImages = await db
+      .selectFrom("images")
+      .where("phash", "is not", null)
+      .select(["id", "title", "url", "thumbnail_url", "phash"])
+      .execute();
 
     // 找出相似图片
     const duplicates = existingImages
@@ -63,7 +65,7 @@ export async function POST(request: NextRequest) {
         title: img.title,
         url: img.url,
         thumbnail_url: img.thumbnail_url,
-        similarity: Math.round(((64 - hammingDistance(phash, img.phash)) / 64) * 100),
+        similarity: Math.round(((64 - hammingDistance(phash, img.phash!)) / 64) * 100),
       }));
 
     return NextResponse.json({

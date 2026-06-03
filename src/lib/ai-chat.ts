@@ -4,7 +4,7 @@
  * 用于机器人消息回复
  */
 
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // === 类型定义 ===
 
@@ -58,15 +58,17 @@ async function getModelConfigs(): Promise<{ providers: ModelProvider[]; models: 
     return modelConfigCache.data;
   }
 
-  const providers = (await query(
-    "SELECT * FROM ai_model_providers WHERE enabled = 1"
-  )) as ModelProvider[];
+  const providers = await db.selectFrom("ai_model_providers")
+    .where("enabled", "=", 1)
+    .selectAll()
+    .execute() as unknown as ModelProvider[];
 
-  const models = (await query(
-    "SELECT * FROM ai_models WHERE enabled = 1"
-  )) as (AiModel & { extra_config: string | null })[];
+  const models = await db.selectFrom("ai_models")
+    .where("enabled", "=", 1)
+    .selectAll()
+    .execute();
 
-  const parsedModels = models.map((m) => ({
+  const parsedModels = models.map((m: any) => ({
     ...m,
     extra_config: m.extra_config
       ? typeof m.extra_config === "string"

@@ -4,7 +4,8 @@
  * 包含签名验证、重试机制、投递日志
  */
 
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import crypto from "crypto";
 
 // === 事件类型定义 ===
@@ -151,20 +152,18 @@ async function logDelivery(
   attempt: number,
   success: boolean
 ): Promise<void> {
-  await query(
-    `INSERT INTO webhook_delivery_logs (subscription_id, event, payload, response_status, response_body, attempt, success, delivered_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      subscriptionId,
+  await db.insertInto("webhook_delivery_logs")
+    .values({
+      subscription_id: subscriptionId,
       event,
-      JSON.stringify(payload),
-      statusCode || null,
-      responseBody ? responseBody.slice(0, 1000) : null,
+      payload: JSON.stringify(payload),
+      response_status: statusCode || null,
+      response_body: responseBody ? responseBody.slice(0, 1000) : null,
       attempt,
-      success ? 1 : 0,
-      success ? new Date().toISOString().slice(0, 19).replace("T", " ") : null,
-    ]
-  );
+      success: success ? 1 : 0,
+      delivered_at: success ? new Date() : null,
+    })
+    .execute();
 }
 
 // === 核心方法 ===
@@ -177,14 +176,23 @@ export async function triggerWebhook(
   data: Record<string, unknown>
 ): Promise<void> {
   try {
-    const rows = (await query(
-      "SELECT * FROM webhook_subscriptions WHERE enabled = 1"
-    )) as any[];
+    const rows = await db.selectFrom("webhook_subscriptions")
+      .where("enabled", "=", 1)
+      .selectAll()
+      .execute();
 
     for (const row of rows) {
       const subscription: WebhookSubscription = {
         ...row,
         events: typeof row.events === "string" ? JSON.parse(row.events) : row.events,
+        max_retries: row.max_retries ?? 3,
+        retry_interval: row.retry_interval ?? 60,
+        timeout_ms: row.timeout_ms ?? 5000,
+        delivery_count: row.delivery_count ?? 0,
+        fail_count: row.fail_count ?? 0,
+        last_delivered_at: row.last_delivered_at ? row.last_delivered_at.toISOString() : null,
+        created_at: row.created_at.toISOString(),
+        updated_at: row.updated_at.toISOString(),
       };
 
       // 检查事件订阅
@@ -231,15 +239,18 @@ export async function triggerWebhook(
 
       // 更新订阅统计
       if (lastResult?.success) {
-        await query(
-          "UPDATE webhook_subscriptions SET last_delivered_at = NOW(), delivery_count = delivery_count + 1 WHERE id = ?",
-          [subscription.id]
-        );
+        await db.updateTable("webhook_subscriptions")
+          .set({
+            last_delivered_at: sql`NOW()`,
+            delivery_count: sql`delivery_count + 1`,
+          })
+          .where("id", "=", subscription.id)
+          .execute();
       } else {
-        await query(
-          "UPDATE webhook_subscriptions SET fail_count = fail_count + 1 WHERE id = ?",
-          [subscription.id]
-        );
+        await db.updateTable("webhook_subscriptions")
+          .set({ fail_count: sql`fail_count + 1` })
+          .where("id", "=", subscription.id)
+          .execute();
       }
     }
   } catch (error) {

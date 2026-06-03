@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { authenticateApiRequest, recordUsage } from "@/lib/api-auth";
 
 function getDateCondition(period: string): string {
@@ -33,44 +34,54 @@ export async function GET(request: NextRequest) {
     let rows: any[];
 
     if (type === "favorites") {
-      const sql = `
-        SELECT 
-          i.id, i.title, i.description, i.url, i.thumbnail_url, 
-          i.width, i.height, i.author, i.tags, i.category,
-          i.download_count, i.view_count,
-          i.favorite_count
-        FROM images i
-        WHERE i.status = 'approved' AND i.favorite_count > 0
-        ORDER BY i.favorite_count DESC, i.download_count DESC
-        LIMIT ?
-      `;
-      rows = (await query(sql, [limit])) as any[];
+      rows = await db
+        .selectFrom("images as i")
+        .select([
+          "i.id",
+          "i.title",
+          "i.description",
+          "i.url",
+          "i.thumbnail_url",
+          "i.width",
+          "i.height",
+          "i.author",
+          "i.tags",
+          "i.category",
+          "i.download_count",
+          "i.view_count",
+          "i.favorite_count",
+        ])
+        .where("i.status", "=", "approved")
+        .where("i.favorite_count", ">", 0)
+        .orderBy("i.favorite_count", "desc")
+        .orderBy("i.download_count", "desc")
+        .limit(limit)
+        .execute() as any[];
     } else {
       const logTable = type === "views" ? "view_logs" : "download_logs";
       const dateCondition = getDateCondition(period);
 
-      const sql = `
-        SELECT 
-          i.id, i.title, i.description, i.url, i.thumbnail_url, 
+      rows = (await sql`
+        SELECT
+          i.id, i.title, i.description, i.url, i.thumbnail_url,
           i.width, i.height, i.author, i.tags, i.category,
           i.download_count, i.view_count,
           l.log_count
         FROM images i
         INNER JOIN (
           SELECT image_id, COUNT(*) AS log_count
-          FROM ${logTable}
-          WHERE 1=1 ${dateCondition}
+          FROM ${sql.raw(logTable)}
+          WHERE 1=1 ${sql.raw(dateCondition)}
           GROUP BY image_id
           ORDER BY log_count DESC
-          LIMIT ?
+          LIMIT ${limit}
         ) l ON l.image_id = i.id
         WHERE i.status = 'approved'
         ORDER BY l.log_count DESC
-      `;
-      rows = (await query(sql, [limit])) as any[];
+      `.execute(db)).rows as any[];
     }
 
-    const rankings = rows.map((row, index) => ({
+    const rankings = rows.map((row: any, index: number) => ({
       rank: index + 1,
       id: row.id,
       title: row.title,

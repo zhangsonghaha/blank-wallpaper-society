@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 
 // POST /api/challenges/[id]/vote - 投票
@@ -29,20 +30,25 @@ export async function POST(
     }
 
     // 验证活动存在且正在进行
-    const challenge = (await query(
-      "SELECT * FROM challenges WHERE id = ? AND status = 'active'",
-      [challengeId]
-    )) as any[];
+    const challenge = await db
+      .selectFrom("challenges")
+      .selectAll()
+      .where("id", "=", challengeId)
+      .where("status", "=", "active")
+      .execute();
 
     if (challenge.length === 0) {
       return NextResponse.json({ error: "活动不存在或未开始" }, { status: 404 });
     }
 
     // 验证投稿存在且属于该活动
-    const submission = (await query(
-      "SELECT id, user_id FROM challenge_submissions WHERE id = ? AND challenge_id = ? AND status = 'approved'",
-      [submissionId, challengeId]
-    )) as any[];
+    const submission = await db
+      .selectFrom("challenge_submissions")
+      .select(["id", "user_id"])
+      .where("id", "=", submissionId)
+      .where("challenge_id", "=", challengeId)
+      .where("status", "=", "approved")
+      .execute();
 
     if (submission.length === 0) {
       return NextResponse.json({ error: "投稿不存在" }, { status: 404 });
@@ -54,29 +60,42 @@ export async function POST(
     }
 
     // 检查今日投票数限制
-    const todayVotes = (await query(
-      "SELECT COUNT(*) as count FROM challenge_votes WHERE challenge_id = ? AND user_id = ? AND DATE(created_at) = CURDATE()",
-      [challengeId, userId]
-    )) as any[];
+    const todayVotes = await db
+      .selectFrom("challenge_votes")
+      .select((eb) => [eb.fn.countAll().as("count")])
+      .where("challenge_id", "=", challengeId)
+      .where("user_id", "=", userId)
+      .where(sql`DATE(created_at)`, "=", sql`CURDATE()`)
+      .execute();
 
-    if (todayVotes[0]?.count >= (challenge[0].votes_per_day || 5)) {
-      return NextResponse.json({ error: `每天最多投${challenge[0].votes_per_day || 5}票` }, { status: 400 });
+    if (Number(todayVotes[0]?.count ?? 0) >= (challenge[0].votes_per_day || 5)) {
+      return NextResponse.json(
+        { error: `每天最多投${challenge[0].votes_per_day || 5}票` },
+        { status: 400 }
+      );
     }
 
     // 检查是否已投票
-    const existingVote = (await query(
-      "SELECT id FROM challenge_votes WHERE challenge_id = ? AND submission_id = ? AND user_id = ?",
-      [challengeId, submissionId, userId]
-    )) as any[];
+    const existingVote = await db
+      .selectFrom("challenge_votes")
+      .select(["id"])
+      .where("challenge_id", "=", challengeId)
+      .where("submission_id", "=", submissionId)
+      .where("user_id", "=", userId)
+      .execute();
 
     if (existingVote.length > 0) {
       return NextResponse.json({ error: "已投过票" }, { status: 409 });
     }
 
-    await query(
-      "INSERT INTO challenge_votes (challenge_id, submission_id, user_id) VALUES (?, ?, ?)",
-      [challengeId, submissionId, userId]
-    );
+    await db
+      .insertInto("challenge_votes")
+      .values({
+        challenge_id: challengeId,
+        submission_id: submissionId,
+        user_id: userId,
+      })
+      .executeTakeFirst();
 
     return NextResponse.json({ message: "投票成功" }, { status: 201 });
   } catch (error: any) {

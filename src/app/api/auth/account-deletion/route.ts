@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import {
   requestAccountDeletion,
   cancelAccountDeletion,
@@ -28,16 +28,17 @@ export async function POST(request: NextRequest) {
     }
 
     // 验证密码
-    const users = (await query(
-      "SELECT password FROM users WHERE id = ?",
-      [userId]
-    )) as any[];
+    const user = await db
+      .selectFrom("users")
+      .select("password")
+      .where("id", "=", userId)
+      .executeTakeFirst();
 
-    if (users.length === 0) {
+    if (!user) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
 
-    const { valid } = await verifyPassword(password, users[0].password);
+    const { valid } = await verifyPassword(password, user.password);
 
     if (!valid) {
       return NextResponse.json({ error: "密码不正确" }, { status: 400 });

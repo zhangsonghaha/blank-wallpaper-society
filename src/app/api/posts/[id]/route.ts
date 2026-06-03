@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { uploadFile } from "@/lib/minio";
 
@@ -19,7 +20,11 @@ export async function PUT(
     const postId = parseInt(id);
 
     // 验证帖子归属
-    const existing = await query("SELECT * FROM posts WHERE id = ?", [postId]) as any[];
+    const existing = await db
+      .selectFrom("posts")
+      .selectAll()
+      .where("id", "=", postId)
+      .execute();
     if (existing.length === 0) {
       return NextResponse.json({ error: "帖子不存在" }, { status: 404 });
     }
@@ -44,7 +49,7 @@ export async function PUT(
     if (contentType.includes("multipart/form-data")) {
       const formData = await request.formData();
       content = (formData.get("content") as string) || "";
-      visibility = (formData.get("visibility") as string) || existing[0].visibility;
+      visibility = (formData.get("visibility") as string) || existing[0].visibility || "public";
       linkUrl = (formData.get("link_url") as string) || null;
       linkTitle = (formData.get("link_title") as string) || null;
       linkDescription = (formData.get("link_description") as string) || null;
@@ -65,7 +70,7 @@ export async function PUT(
     } else {
       const body = await request.json();
       content = body.content || existing[0].content;
-      visibility = body.visibility || existing[0].visibility;
+      visibility = body.visibility || existing[0].visibility || "public";
       linkUrl = body.link_url || null;
       linkTitle = body.link_title || null;
       linkDescription = body.link_description || null;
@@ -82,57 +87,88 @@ export async function PUT(
       return NextResponse.json({ error: "动态内容不能超过2000字" }, { status: 400 });
     }
 
-    // 计算总附件数（删除旧附件 + 新附件）
     // 删除旧附件记录
-    await query("DELETE FROM post_attachments WHERE post_id = ?", [postId]);
+    await db.deleteFrom("post_attachments").where("post_id", "=", postId).executeTakeFirst();
     // 删除旧链接预览
-    await query("DELETE FROM post_link_previews WHERE post_id = ?", [postId]);
+    await db.deleteFrom("post_link_previews").where("post_id", "=", postId).executeTakeFirst();
 
     // 插入新附件
     for (const att of newAttachments) {
-      await query(
-        `INSERT INTO post_attachments (post_id, type, url, thumbnail_url, width, height, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [postId, att.type, att.url, att.thumbnail_url || null, att.width || 0, att.height || 0, att.sort_order || 0]
-      );
+      await db
+        .insertInto("post_attachments")
+        .values({
+          post_id: postId,
+          type: att.type as "image" | "video",
+          url: att.url,
+          thumbnail_url: att.thumbnail_url || null,
+          width: att.width || 0,
+          height: att.height || 0,
+          sort_order: att.sort_order || 0,
+        })
+        .executeTakeFirst();
     }
 
     // 插入新链接预览
     if (linkUrl) {
-      await query(
-        `INSERT INTO post_link_previews (post_id, url, title, description, image_url, site_name) VALUES (?, ?, ?, ?, ?, ?)`,
-        [postId, linkUrl, linkTitle, linkDescription, linkImageUrl, linkSiteName]
-      );
+      await db
+        .insertInto("post_link_previews")
+        .values({
+          post_id: postId,
+          url: linkUrl,
+          title: linkTitle,
+          description: linkDescription,
+          image_url: linkImageUrl,
+          site_name: linkSiteName,
+        })
+        .executeTakeFirst();
     }
 
     // 更新帖子
-    await query(
-      `UPDATE posts SET content = ?, visibility = ?, attachments_count = ? WHERE id = ?`,
-      [content.trim(), visibility, newAttachments.length, postId]
-    );
+    await db
+      .updateTable("posts")
+      .set({
+        content: content.trim(),
+        visibility: visibility as "public" | "followers" | "private",
+        attachments_count: newAttachments.length,
+      })
+      .where("id", "=", postId)
+      .executeTakeFirst();
 
     // 返回更新后的数据
-    const updatedPost = await query(
-      `SELECT p.*, u.name as author_name, u.avatar as author_avatar
-       FROM posts p
-       LEFT JOIN users u ON p.user_id = u.id
-       WHERE p.id = ?`,
-      [postId]
-    ) as any[];
+    const updatedPost = await db
+      .selectFrom("posts as p")
+      .leftJoin("users as u", "u.id", "p.user_id")
+      .select([
+        "p.id", "p.user_id", "p.content", "p.visibility", "p.is_pinned",
+        "p.likes_count", "p.comments_count", "p.attachments_count",
+        "p.created_at", "p.updated_at",
+        sql<string>`u.name`.as("author_name"),
+        sql<string | null>`u.avatar`.as("author_avatar"),
+      ])
+      .where("p.id", "=", postId)
+      .execute();
 
-    const postAttachments = await query(
-      `SELECT * FROM post_attachments WHERE post_id = ? ORDER BY sort_order`,
-      [postId]
-    ) as any[];
+    const postAttachments = await db
+      .selectFrom("post_attachments")
+      .selectAll()
+      .where("post_id", "=", postId)
+      .orderBy("sort_order")
+      .execute();
 
-    const postLinks = await query(
-      `SELECT * FROM post_link_previews WHERE post_id = ?`,
-      [postId]
-    ) as any[];
+    const postLinks = await db
+      .selectFrom("post_link_previews")
+      .selectAll()
+      .where("post_id", "=", postId)
+      .execute();
 
-    const likeStatus = userId ? await query(
-      `SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?`,
-      [postId, userId]
-    ) as any[] : [];
+    const likeStatus = userId
+      ? await db
+          .selectFrom("post_likes")
+          .select(["id"])
+          .where("post_id", "=", postId)
+          .where("user_id", "=", userId)
+          .execute()
+      : [];
 
     return NextResponse.json({
       message: "更新成功",
@@ -165,7 +201,11 @@ export async function DELETE(
     const { id } = await params;
     const postId = parseInt(id);
 
-    const existing = await query("SELECT * FROM posts WHERE id = ?", [postId]) as any[];
+    const existing = await db
+      .selectFrom("posts")
+      .selectAll()
+      .where("id", "=", postId)
+      .execute();
     if (existing.length === 0) {
       return NextResponse.json({ error: "帖子不存在" }, { status: 404 });
     }
@@ -178,7 +218,7 @@ export async function DELETE(
     }
 
     // 删除帖子（关联的附件、链接、点赞会通过 CASCADE 自动删除）
-    await query("DELETE FROM posts WHERE id = ?", [postId]);
+    await db.deleteFrom("posts").where("id", "=", postId).executeTakeFirst();
 
     return NextResponse.json({ message: "删除成功" });
 

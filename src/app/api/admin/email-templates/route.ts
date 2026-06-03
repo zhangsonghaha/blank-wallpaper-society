@@ -10,7 +10,7 @@ import {
   CATEGORY_LABELS,
   VARIABLE_GROUPS,
 } from "@/lib/email-template";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // GET /api/admin/email-templates - 获取模板列表
 export async function GET(request: NextRequest) {
@@ -56,10 +56,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 检查 key 是否已存在
-    const existing = await query(
-      "SELECT id FROM email_templates WHERE template_key = ?",
-      [template_key]
-    ) as any[];
+    const existing = await db
+      .selectFrom("email_templates")
+      .select("id")
+      .where("template_key", "=", template_key)
+      .execute();
     if (existing.length > 0) {
       return NextResponse.json({ error: "模板标识已存在" }, { status: 409 });
     }

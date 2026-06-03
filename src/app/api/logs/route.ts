@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // POST /api/logs - 记录浏览/下载日志
 export async function POST(request: NextRequest) {
@@ -21,28 +22,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const table = type === "view" ? "view_logs" : "download_logs";
-
     // IP脱敏：只保留前两段
     const maskedIp = maskIp(ip_address || getClientIp(request));
 
     if (type === "download") {
-      await query(
-        `INSERT INTO ${table} (image_id, user_id, ip_address, resolution) VALUES (?, ?, ?, ?)`,
-        [image_id, user_id || null, maskedIp, resolution || null]
-      );
+      await db
+        .insertInto("download_logs")
+        .values({
+          image_id,
+          user_id: user_id || null,
+          ip_address: maskedIp,
+          resolution: resolution || null,
+        })
+        .executeTakeFirst();
     } else {
-      await query(
-        `INSERT INTO ${table} (image_id, user_id, ip_address) VALUES (?, ?, ?)`,
-        [image_id, user_id || null, maskedIp]
-      );
+      await db
+        .insertInto("view_logs")
+        .values({
+          image_id,
+          user_id: user_id || null,
+          ip_address: maskedIp,
+        })
+        .executeTakeFirst();
     }
 
     // 更新图片表的计数（浏览量）
     if (type === "view") {
-      await query("UPDATE images SET view_count = view_count + 1 WHERE id = ?", [
-        image_id,
-      ]);
+      await db
+        .updateTable("images")
+        .set({ view_count: sql`view_count + 1` })
+        .where("id", "=", image_id)
+        .executeTakeFirst();
     }
 
     return NextResponse.json({ success: true });

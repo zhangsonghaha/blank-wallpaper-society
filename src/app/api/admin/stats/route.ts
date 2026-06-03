@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { safeQuery } from "@/lib/db";
+import { db, safeExecute } from "@/lib/db";
+import { sql } from "kysely";
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,7 +13,6 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const days = parseInt(searchParams.get("days") || "30");
-    const interval = `${days} DAY`;
 
     // 并行执行所有查询（每个查询独立容错）
     const [
@@ -39,147 +39,130 @@ export async function GET(request: NextRequest) {
       nsfwFlaggedRes,
     ] = await Promise.all([
       // 总用户数
-      safeQuery("SELECT COUNT(*) as count FROM users", undefined, [{ count: 0 }]),
+      safeExecute(
+        () => db.selectFrom("users").select((eb) => eb.fn.countAll().as("count")).execute(),
+        [{ count: 0 }],
+        "totalUsers"
+      ),
       // 总图片数
-      safeQuery("SELECT COUNT(*) as count FROM images", undefined, [{ count: 0 }]),
+      safeExecute(
+        () => db.selectFrom("images").select((eb) => eb.fn.countAll().as("count")).execute(),
+        [{ count: 0 }],
+        "totalImages"
+      ),
       // 总下载量
-      safeQuery("SELECT COALESCE(SUM(download_count), 0) as count FROM images", undefined, [{ count: 0 }]),
+      safeExecute(
+        () => db.selectFrom("images").select((eb) => sql`COALESCE(SUM(download_count), 0)`.as("count")).execute(),
+        [{ count: 0 }],
+        "totalDownloads"
+      ),
       // 总收藏数
-      safeQuery("SELECT COUNT(*) as count FROM favorites", undefined, [{ count: 0 }]),
+      safeExecute(
+        () => db.selectFrom("favorites").select((eb) => eb.fn.countAll().as("count")).execute(),
+        [{ count: 0 }],
+        "totalFavorites"
+      ),
       // 总浏览量
-      safeQuery("SELECT COALESCE(SUM(view_count), 0) as count FROM images", undefined, [{ count: 0 }]),
+      safeExecute(
+        () => db.selectFrom("images").select((eb) => sql`COALESCE(SUM(view_count), 0)`.as("count")).execute(),
+        [{ count: 0 }],
+        "totalViews"
+      ),
       // 待审核图片数
-      safeQuery("SELECT COUNT(*) as count FROM images WHERE status = 'pending'", undefined, [{ count: 0 }]),
+      safeExecute(
+        () => db.selectFrom("images").select((eb) => eb.fn.countAll().as("count")).where("status", "=", "pending").execute(),
+        [{ count: 0 }],
+        "pendingReview"
+      ),
       // 待处理举报
-      safeQuery("SELECT COUNT(*) as count FROM reports WHERE status = 'open'", undefined, [{ count: 0 }]),
+      safeExecute(
+        () => db.selectFrom("reports").select((eb) => eb.fn.countAll().as("count")).where("status", "=", "open").execute(),
+        [{ count: 0 }],
+        "openReports"
+      ),
       // 近期新增评论
-      safeQuery(
-        `SELECT COUNT(*) as count FROM comments WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${interval})`,
-        undefined,
-        [{ count: 0 }]
+      safeExecute(
+        () => db.selectFrom("comments").select((eb) => eb.fn.countAll().as("count")).where("created_at", ">=", sql<Date>`DATE_SUB(NOW(), INTERVAL ${days} DAY)`).execute(),
+        [{ count: 0 }],
+        "newComments"
       ),
       // 近期活跃用户数
-      safeQuery(
-        `SELECT COUNT(DISTINCT user_id) as count FROM download_logs WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${interval})`,
-        undefined,
-        [{ count: 0 }]
+      safeExecute(
+        () => sql<{ count: number }>`SELECT COUNT(DISTINCT user_id) as count FROM download_logs WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${days} DAY)`.execute(db).then((r) => r.rows),
+        [{ count: 0 }],
+        "recentActive"
       ),
       // 每日新增用户趋势
-      safeQuery(
-        `SELECT DATE(created_at) as date, COUNT(*) as count 
-         FROM users 
-         WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${interval}) 
-         GROUP BY DATE(created_at) 
-         ORDER BY date ASC`,
-        undefined,
-        []
+      safeExecute(
+        () => sql<{ date: string; count: number }>`SELECT DATE(created_at) as date, COUNT(*) as count FROM users WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${days} DAY) GROUP BY DATE(created_at) ORDER BY date ASC`.execute(db).then((r) => r.rows),
+        [],
+        "newUsersTrend"
       ),
       // 每日新增图片趋势
-      safeQuery(
-        `SELECT DATE(created_at) as date, COUNT(*) as count 
-         FROM images 
-         WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${interval}) 
-         GROUP BY DATE(created_at) 
-         ORDER BY date ASC`,
-        undefined,
-        []
+      safeExecute(
+        () => sql<{ date: string; count: number }>`SELECT DATE(created_at) as date, COUNT(*) as count FROM images WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${days} DAY) GROUP BY DATE(created_at) ORDER BY date ASC`.execute(db).then((r) => r.rows),
+        [],
+        "newImagesTrend"
       ),
       // 每日下载趋势
-      safeQuery(
-        `SELECT DATE(created_at) as date, COUNT(*) as count 
-         FROM download_logs 
-         WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${interval}) 
-         GROUP BY DATE(created_at) 
-         ORDER BY date ASC`,
-        undefined,
-        []
+      safeExecute(
+        () => sql<{ date: string; count: number }>`SELECT DATE(created_at) as date, COUNT(*) as count FROM download_logs WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${days} DAY) GROUP BY DATE(created_at) ORDER BY date ASC`.execute(db).then((r) => r.rows),
+        [],
+        "downloadTrend"
       ),
       // 每日上传趋势
-      safeQuery(
-        `SELECT DATE(created_at) as date, COUNT(*) as count 
-         FROM images 
-         WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${interval}) 
-         GROUP BY DATE(created_at) 
-         ORDER BY date ASC`,
-        undefined,
-        []
+      safeExecute(
+        () => sql<{ date: string; count: number }>`SELECT DATE(created_at) as date, COUNT(*) as count FROM images WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${days} DAY) GROUP BY DATE(created_at) ORDER BY date ASC`.execute(db).then((r) => r.rows),
+        [],
+        "uploadTrend"
       ),
       // 分类分布
-      safeQuery(
-        `SELECT c.name, c.slug, COUNT(i.id) as count 
-         FROM categories c 
-         LEFT JOIN images i ON i.category = c.slug AND i.status = 'approved'
-         GROUP BY c.id, c.name, c.slug 
-         ORDER BY count DESC`,
-        undefined,
-        []
+      safeExecute(
+        () => sql<{ name: string; slug: string; count: number }>`SELECT c.name, c.slug, COUNT(i.id) as count FROM categories c LEFT JOIN images i ON i.category = c.slug AND i.status = 'approved' GROUP BY c.id, c.name, c.slug ORDER BY count DESC`.execute(db).then((r) => r.rows),
+        [],
+        "categoryDist"
       ),
       // 热门壁纸 Top 10
-      safeQuery(
-        `SELECT id, title, thumbnail_url, url, download_count, view_count, width, height, category 
-         FROM images 
-         WHERE status = 'approved'
-         ORDER BY download_count DESC 
-         LIMIT 10`,
-        undefined,
-        []
+      safeExecute(
+        () => db.selectFrom("images").select(["id", "title", "thumbnail_url", "url", "download_count", "view_count", "width", "height", "category"]).where("status", "=", "approved").orderBy("download_count", "desc").limit(10).execute(),
+        [],
+        "topImages"
       ),
       // 热门创作者 Top 10
-      safeQuery(
-        `SELECT uploaded_by as user_id, u.name, u.avatar,
-                COUNT(*) as upload_count,
-                COALESCE(SUM(i.download_count), 0) as total_downloads,
-                COALESCE(SUM(i.view_count), 0) as total_views
-         FROM images i
-         LEFT JOIN users u ON i.uploaded_by = u.id
-         WHERE i.status = 'approved'
-         GROUP BY uploaded_by, u.name, u.avatar
-         ORDER BY total_downloads DESC
-         LIMIT 10`,
-        undefined,
-        []
+      safeExecute(
+        () => sql<{ user_id: number; name: string; avatar: string; upload_count: number; total_downloads: number; total_views: number }>`SELECT uploaded_by as user_id, u.name, u.avatar, COUNT(*) as upload_count, COALESCE(SUM(i.download_count), 0) as total_downloads, COALESCE(SUM(i.view_count), 0) as total_views FROM images i LEFT JOIN users u ON i.uploaded_by = u.id WHERE i.status = 'approved' GROUP BY uploaded_by, u.name, u.avatar ORDER BY total_downloads DESC LIMIT 10`.execute(db).then((r) => r.rows),
+        [],
+        "topCreators"
       ),
       // 存储用量
-      safeQuery(
-        "SELECT COALESCE(SUM(file_size), 0) as total_size, COUNT(*) as file_count FROM images",
-        undefined,
-        [{ total_size: 0, file_count: 0 }]
+      safeExecute(
+        () => db.selectFrom("images").select((eb) => [sql`COALESCE(SUM(file_size), 0)`.as("total_size"), eb.fn.countAll().as("file_count")]).execute(),
+        [{ total_size: 0, file_count: 0 }],
+        "storage"
       ),
       // 媒体类型分布
-      safeQuery(
-        `SELECT media_type, COUNT(*) as count FROM images WHERE status = 'approved' GROUP BY media_type ORDER BY count DESC`,
-        undefined,
-        []
+      safeExecute(
+        () => sql<{ media_type: string; count: number }>`SELECT media_type, COUNT(*) as count FROM images WHERE status = 'approved' GROUP BY media_type ORDER BY count DESC`.execute(db).then((r) => r.rows),
+        [],
+        "mediaTypes"
       ),
       // 分辨率分布
-      safeQuery(
-        `SELECT 
-          CASE 
-            WHEN width >= 3840 THEN '4K+'
-            WHEN width >= 2560 THEN '2K'
-            WHEN width >= 1920 THEN '1080p'
-            WHEN width >= 1280 THEN '720p'
-            ELSE 'SD'
-          END as resolution,
-          COUNT(*) as count 
-         FROM images 
-         WHERE width > 0 AND status = 'approved'
-         GROUP BY resolution 
-         ORDER BY MIN(width) DESC`,
-        undefined,
-        []
+      safeExecute(
+        () => sql<{ resolution: string; count: number }>`SELECT CASE WHEN width >= 3840 THEN '4K+' WHEN width >= 2560 THEN '2K' WHEN width >= 1920 THEN '1080p' WHEN width >= 1280 THEN '720p' ELSE 'SD' END as resolution, COUNT(*) as count FROM images WHERE width > 0 AND status = 'approved' GROUP BY resolution ORDER BY MIN(width) DESC`.execute(db).then((r) => r.rows),
+        [],
+        "resolutions"
       ),
       // 近期注册用户
-      safeQuery(
-        `SELECT id, name, email, avatar, created_at FROM users ORDER BY created_at DESC LIMIT 5`,
-        undefined,
-        []
+      safeExecute(
+        () => db.selectFrom("users").select(["id", "name", "email", "avatar", "created_at"]).orderBy("created_at", "desc").limit(5).execute(),
+        [],
+        "recentUsers"
       ),
       // NSFW标记数
-      safeQuery(
-        "SELECT COUNT(*) as count FROM images WHERE nsfw_flagged = 1",
-        undefined,
-        [{ count: 0 }]
+      safeExecute(
+        () => db.selectFrom("images").select((eb) => eb.fn.countAll().as("count")).where("nsfw_flagged", "=", 1).execute(),
+        [{ count: 0 }],
+        "nsfwFlagged"
       ),
     ]);
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // GET /api/images/[id]/similar - 获取相似图片
 export async function GET(
@@ -15,34 +16,32 @@ export async function GET(
     }
 
     // 先获取当前图片的分类和颜色
-    const images = (await query(
-      "SELECT category, dominant_color, tags FROM images WHERE id = ? AND status = 'approved'",
-      [imageId]
-    )) as any[];
+    const current = await db
+      .selectFrom("images")
+      .where("id", "=", imageId)
+      .where("status", "=", "approved")
+      .select(["category", "dominant_color", "tags"])
+      .executeTakeFirst();
 
-    if (images.length === 0) {
+    if (!current) {
       return NextResponse.json({ data: [] });
     }
 
-    const current = images[0];
-
-    // 构建查询条件
-    const conditions: string[] = [];
-    const paramsList: any[] = [];
+    // 构建查询条件（使用 sql template for dynamic OR conditions）
+    const conditions: any[] = [];
 
     // 同分类（优先）
     if (current.category) {
-      conditions.push("(category = ? AND id != ?)");
-      paramsList.push(current.category, imageId);
+      conditions.push(sql`(category = ${current.category} AND id != ${imageId})`);
     }
 
     // 同主色调（次优）
     if (current.dominant_color) {
-      const catCond = current.category ? " AND category != ?" : "";
-      conditions.push(`(dominant_color = ?${catCond} AND id != ?)`);
-      paramsList.push(current.dominant_color);
-      if (current.category) paramsList.push(current.category);
-      paramsList.push(imageId);
+      if (current.category) {
+        conditions.push(sql`(dominant_color = ${current.dominant_color} AND category != ${current.category} AND id != ${imageId})`);
+      } else {
+        conditions.push(sql`(dominant_color = ${current.dominant_color} AND id != ${imageId})`);
+      }
     }
 
     // 同标签（第三优先级）
@@ -60,46 +59,62 @@ export async function GET(
       // 只取前5个标签，避免查询过于宽泛
       tagList = tagList.slice(0, 5);
       if (tagList.length > 0) {
-        const tagConditions = tagList.map(() => "tags LIKE ?").join(" OR ");
-        conditions.push(`((${tagConditions}) AND id != ?)`);
-        tagList.forEach((tag: string) => paramsList.push(`%${tag}%`));
-        paramsList.push(imageId);
+        const tagLikeConditions = tagList.map((tag: string) => sql`tags LIKE ${`%${tag}%`}`);
+        conditions.push(sql`((${sql.join(tagLikeConditions, sql` OR `)}) AND id != ${imageId})`);
       }
     }
 
     let similar: any[] = [];
 
     if (conditions.length > 0) {
-      const whereClause = conditions.join(" OR ");
-      similar = (await query(
-        `SELECT id, title, url, thumbnail_url, width, height, author, category, dominant_color, tags, uploaded_by
+      const orCondition = sql.join(conditions, sql` OR `);
+      const result1 = await sql<{
+        id: number;
+        title: string;
+        url: string | null;
+        thumbnail_url: string | null;
+        width: number | null;
+        height: number | null;
+        author: string | null;
+        category: string | null;
+        dominant_color: string | null;
+        tags: string | null;
+        uploaded_by: number | null;
+      }>`SELECT id, title, url, thumbnail_url, width, height, author, category, dominant_color, tags, uploaded_by
          FROM images
-         WHERE (${whereClause}) AND status = 'approved' AND url IS NOT NULL AND url != ''
+         WHERE (${orCondition}) AND status = 'approved' AND url IS NOT NULL AND url != ''
          ORDER BY 
-           CASE WHEN category = ? THEN 1 ELSE 2 END,
-           CASE WHEN dominant_color = ? THEN 1 ELSE 2 END,
+           CASE WHEN category = ${current.category || ''} THEN 1 ELSE 2 END,
+           CASE WHEN dominant_color = ${current.dominant_color || ''} THEN 1 ELSE 2 END,
            RAND()
-         LIMIT 12`,
-        [...paramsList, current.category || '', current.dominant_color || '']
-      )) as any[];
+         LIMIT 12`.execute(db);
+      similar = result1.rows;
     }
 
     // 如果结果不足，补充随机推荐
     if (similar.length < 6) {
       const existingIds = similar.map((s) => s.id);
       existingIds.push(imageId);
-      const placeholders = existingIds.map(() => "?").join(",");
 
-      const extra = (await query(
-        `SELECT id, title, url, thumbnail_url, width, height, author, category, dominant_color, tags, uploaded_by
+      const result2 = await sql<{
+        id: number;
+        title: string;
+        url: string | null;
+        thumbnail_url: string | null;
+        width: number | null;
+        height: number | null;
+        author: string | null;
+        category: string | null;
+        dominant_color: string | null;
+        tags: string | null;
+        uploaded_by: number | null;
+      }>`SELECT id, title, url, thumbnail_url, width, height, author, category, dominant_color, tags, uploaded_by
          FROM images
-         WHERE id NOT IN (${placeholders}) AND status = 'approved' AND url IS NOT NULL AND url != ''
+         WHERE id NOT IN (${sql.join(existingIds)}) AND status = 'approved' AND url IS NOT NULL AND url != ''
          ORDER BY RAND()
-         LIMIT ?`,
-        [...existingIds, 12 - similar.length]
-      )) as any[];
+         LIMIT ${12 - similar.length}`.execute(db);
 
-      similar = [...similar, ...extra];
+      similar = [...similar, ...result2.rows];
     }
 
     // 处理返回数据：确保 URL 有效，并标记匹配类型
@@ -117,7 +132,7 @@ export async function GET(
           try {
             currentTags = JSON.parse(current.tags);
             if (!Array.isArray(currentTags)) currentTags = [currentTags];
-          } catch { currentTags = current.tags.split(','); }
+          } catch { currentTags = current.tags!.split(','); }
           try {
             imgTags = JSON.parse(img.tags);
             if (!Array.isArray(imgTags)) imgTags = [imgTags];

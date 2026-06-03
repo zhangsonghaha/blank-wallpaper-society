@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query, safeQuery } from "@/lib/db";
+import { db, safeExecute } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 
 // GET /api/admin/analytics - 获取运营分析数据
@@ -12,147 +13,152 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const days = parseInt(searchParams.get("days") || "30");
+    const daysStr = String(days);
 
     // 1. 用户统计
-    const totalUsers = (await safeQuery(
-      "SELECT COUNT(*) as count FROM users",
-      [],
-      [{ count: 0 }]
-    )) as any[];
+    const totalUsers = await safeExecute(
+      () => db.selectFrom("users").select((eb) => eb.fn.countAll().as("count")).executeTakeFirst(),
+      { count: 0 }
+    );
 
-    const newUsers = (await safeQuery(
-      "SELECT COUNT(*) as count FROM users WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)",
-      [String(days)],
-      [{ count: 0 }]
-    )) as any[];
+    const newUsers = await safeExecute(
+      () => sql<{ count: string | number }>`SELECT COUNT(*) as count FROM users WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${sql.raw(daysStr)} DAY)`.execute(db),
+      { rows: [{ count: 0 }] },
+      "new-users"
+    );
 
-    const activeUsers = (await safeQuery(
-      "SELECT COUNT(DISTINCT user_id) as count FROM download_logs WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)",
-      [String(days)],
-      [{ count: 0 }]
-    )) as any[];
+    const activeUsers = await safeExecute(
+      () => sql<{ count: string | number }>`SELECT COUNT(DISTINCT user_id) as count FROM download_logs WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${sql.raw(daysStr)} DAY)`.execute(db),
+      { rows: [{ count: 0 }] },
+      "active-users"
+    );
 
     // 2. 图片统计
-    const totalImages = (await safeQuery(
-      "SELECT COUNT(*) as count FROM images",
-      [],
-      [{ count: 0 }]
-    )) as any[];
+    const totalImages = await safeExecute(
+      () => db.selectFrom("images").select((eb) => eb.fn.countAll().as("count")).executeTakeFirst(),
+      { count: 0 }
+    );
 
-    const approvedImages = (await safeQuery(
-      "SELECT COUNT(*) as count FROM images WHERE status = 'approved'",
-      [],
-      [{ count: 0 }]
-    )) as any[];
+    const approvedImages = await safeExecute(
+      () => db.selectFrom("images").where("status", "=", "approved").select((eb) => eb.fn.countAll().as("count")).executeTakeFirst(),
+      { count: 0 }
+    );
 
-    const pendingImages = (await safeQuery(
-      "SELECT COUNT(*) as count FROM images WHERE status = 'pending'",
-      [],
-      [{ count: 0 }]
-    )) as any[];
+    const pendingImages = await safeExecute(
+      () => db.selectFrom("images").where("status", "=", "pending").select((eb) => eb.fn.countAll().as("count")).executeTakeFirst(),
+      { count: 0 }
+    );
 
     // 3. 下载/浏览统计
-    const totalDownloads = (await safeQuery(
-      "SELECT COUNT(*) as count FROM download_logs",
-      [],
-      [{ count: 0 }]
-    )) as any[];
+    const totalDownloads = await safeExecute(
+      () => db.selectFrom("download_logs").select((eb) => eb.fn.countAll().as("count")).executeTakeFirst(),
+      { count: 0 }
+    );
 
-    const recentDownloads = (await safeQuery(
-      "SELECT COUNT(*) as count FROM download_logs WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)",
-      [String(days)],
-      [{ count: 0 }]
-    )) as any[];
+    const recentDownloads = await safeExecute(
+      () => sql<{ count: string | number }>`SELECT COUNT(*) as count FROM download_logs WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${sql.raw(daysStr)} DAY)`.execute(db),
+      { rows: [{ count: 0 }] },
+      "recent-downloads"
+    );
 
-    const totalViews = (await safeQuery(
-      "SELECT COALESCE(SUM(view_count), 0) as count FROM images",
-      [],
-      [{ count: 0 }]
-    )) as any[];
+    const totalViews = await safeExecute(
+      () => sql<{ count: string | number }>`SELECT COALESCE(SUM(view_count), 0) as count FROM images`.execute(db),
+      { rows: [{ count: 0 }] },
+      "total-views"
+    );
 
     // 4. 分类分布
-    const categoryDistribution = (await safeQuery(
-      `SELECT category, COUNT(*) as count FROM images
-       WHERE status = 'approved' AND category IS NOT NULL AND category != ''
-       GROUP BY category ORDER BY count DESC LIMIT 10`,
-      [],
-      []
-    )) as any[];
+    const categoryDistribution = await safeExecute(
+      () => db.selectFrom("images")
+        .where("status", "=", "approved")
+        .where("category", "is not", null)
+        .where("category", "!=", "")
+        .select((eb) => ["category", eb.fn.countAll().as("count")])
+        .groupBy("category")
+        .orderBy("count", "desc")
+        .limit(10)
+        .execute(),
+      [] as any[],
+      "category-dist"
+    );
 
-    // 5. 每日上传趋势（最近 days 天）
-    const uploadTrend = (await safeQuery(
-      `SELECT DATE(created_at) as date, COUNT(*) as count
-       FROM images WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-       GROUP BY DATE(created_at) ORDER BY date`,
-      [String(days)],
-      []
-    )) as any[];
+    // 5. 每日上传趋势
+    const uploadTrend = await safeExecute(
+      () => sql<{ date: string; count: string | number }>`SELECT DATE(created_at) as date, COUNT(*) as count
+       FROM images WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${sql.raw(daysStr)} DAY)
+       GROUP BY DATE(created_at) ORDER BY date`.execute(db),
+      { rows: [] } as { rows: any[] },
+      "upload-trend"
+    );
 
     // 6. 每日下载趋势
-    const downloadTrend = (await safeQuery(
-      `SELECT DATE(created_at) as date, COUNT(*) as count
-       FROM download_logs WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-       GROUP BY DATE(created_at) ORDER BY date`,
-      [String(days)],
-      []
-    )) as any[];
+    const downloadTrend = await safeExecute(
+      () => sql<{ date: string; count: string | number }>`SELECT DATE(created_at) as date, COUNT(*) as count
+       FROM download_logs WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${sql.raw(daysStr)} DAY)
+       GROUP BY DATE(created_at) ORDER BY date`.execute(db),
+      { rows: [] } as { rows: any[] },
+      "download-trend"
+    );
 
     // 7. 热门图片 Top 10
-    const topImages = (await safeQuery(
-      `SELECT id, title, thumbnail_url, download_count, view_count, category
-       FROM images WHERE status = 'approved'
-       ORDER BY download_count DESC LIMIT 10`,
-      [],
-      []
-    )) as any[];
+    const topImages = await safeExecute(
+      () => db.selectFrom("images")
+        .where("status", "=", "approved")
+        .select(["id", "title", "thumbnail_url", "download_count", "view_count", "category"])
+        .orderBy("download_count", "desc")
+        .limit(10)
+        .execute(),
+      [] as any[],
+      "top-images"
+    );
 
     // 8. 活跃创作者 Top 10
-    const topCreators = (await safeQuery(
-      `SELECT uploaded_by as user_id, u.name, COUNT(*) as upload_count,
+    const topCreators = await safeExecute(
+      () => sql<{ user_id: number; name: string; upload_count: string | number; total_downloads: string | number }>`SELECT uploaded_by as user_id, u.name, COUNT(*) as upload_count,
               COALESCE(SUM(i.download_count), 0) as total_downloads
        FROM images i
        LEFT JOIN users u ON i.uploaded_by = u.id
-       WHERE i.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+       WHERE i.created_at >= DATE_SUB(NOW(), INTERVAL ${sql.raw(daysStr)} DAY)
        GROUP BY uploaded_by, u.name
-       ORDER BY upload_count DESC LIMIT 10`,
-      [String(days)],
-      []
-    )) as any[];
+       ORDER BY upload_count DESC LIMIT 10`.execute(db),
+      { rows: [] } as { rows: any[] },
+      "top-creators"
+    );
 
     // 9. 新用户注册趋势
-    const registrationTrend = (await safeQuery(
-      `SELECT DATE(created_at) as date, COUNT(*) as count
-       FROM users WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-       GROUP BY DATE(created_at) ORDER BY date`,
-      [String(days)],
-      []
-    )) as any[];
+    const registrationTrend = await safeExecute(
+      () => sql<{ date: string; count: string | number }>`SELECT DATE(created_at) as date, COUNT(*) as count
+       FROM users WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${sql.raw(daysStr)} DAY)
+       GROUP BY DATE(created_at) ORDER BY date`.execute(db),
+      { rows: [] } as { rows: any[] },
+      "registration-trend"
+    );
 
     return NextResponse.json({
       period: days,
       users: {
-        total: Number(totalUsers?.[0]?.count ?? 0),
-        newInPeriod: Number(newUsers?.[0]?.count ?? 0),
-        activeInPeriod: Number(activeUsers?.[0]?.count ?? 0),
+        total: Number(totalUsers?.count ?? 0),
+        newInPeriod: Number(newUsers.rows?.[0]?.count ?? 0),
+        activeInPeriod: Number(activeUsers.rows?.[0]?.count ?? 0),
       },
       images: {
-        total: Number(totalImages?.[0]?.count ?? 0),
-        approved: Number(approvedImages?.[0]?.count ?? 0),
-        pending: Number(pendingImages?.[0]?.count ?? 0),
+        total: Number(totalImages?.count ?? 0),
+        approved: Number(approvedImages?.count ?? 0),
+        pending: Number(pendingImages?.count ?? 0),
       },
       downloads: {
-        total: Number(totalDownloads?.[0]?.count ?? 0),
-        recentInPeriod: Number(recentDownloads?.[0]?.count ?? 0),
+        total: Number(totalDownloads?.count ?? 0),
+        recentInPeriod: Number(recentDownloads.rows?.[0]?.count ?? 0),
       },
       views: {
-        total: Number(totalViews?.[0]?.count ?? 0),
+        total: Number(totalViews.rows?.[0]?.count ?? 0),
       },
       categoryDistribution,
-      uploadTrend,
-      downloadTrend,
-      registrationTrend,
+      uploadTrend: uploadTrend.rows,
+      downloadTrend: downloadTrend.rows,
+      registrationTrend: registrationTrend.rows,
       topImages,
-      topCreators,
+      topCreators: topCreators.rows,
     });
   } catch (error: any) {
     console.error("GET /api/admin/analytics error:", error);

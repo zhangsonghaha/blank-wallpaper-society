@@ -1,38 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
 // GET /api/categories - 获取分类列表（含图片计数）
 export async function GET() {
   try {
     // 获取所有分类及其图片数量
-    const rows = await query(
-      `SELECT c.*, COUNT(i.id) as image_count 
-       FROM categories c 
-       LEFT JOIN images i ON c.slug = i.category AND i.status = 'approved'
-       GROUP BY c.id 
-       ORDER BY c.sort_order ASC`
-    );
-    
+    const rows = await db
+      .selectFrom("categories as c")
+      .leftJoin("images as i", (join) =>
+        join
+          .onRef("i.category", "=", "c.slug")
+          .on("i.status", "=", "approved")
+      )
+      .select(["c.id", "c.name", "c.slug", "c.sort_order", "c.created_at"])
+      .select((eb) => [eb.fn.count<number>("i.id").as("image_count")])
+      .groupBy("c.id")
+      .orderBy("c.sort_order", "asc")
+      .execute();
+
     // 查询未分类的图片数量
-    const uncategorizedCount = await query(
-      `SELECT COUNT(*) as count FROM images 
-       WHERE (category IS NULL OR category = '') 
-       AND status = 'approved'`
-    );
-    
+    const uncategorizedRow = await db
+      .selectFrom("images")
+      .select((eb) => [eb.fn.count<number>("id").as("count")])
+      .where((eb) => eb.or([
+        eb("category", "is", null),
+        eb("category", "=", ""),
+      ]))
+      .where("status", "=", "approved")
+      .executeTakeFirst();
+
     // 添加"未分类"选项
-    const categories = Array.isArray(rows) ? rows : [];
     const uncategorized = {
       id: 0,
       name: "未分类",
       slug: "uncategorized",
       sort_order: 999,
-      image_count: (uncategorizedCount as any[])[0]?.count || 0,
+      image_count: Number(uncategorizedRow?.count ?? 0),
       created_at: new Date().toISOString()
     };
-    
-    return NextResponse.json([...categories, uncategorized]);
+
+    return NextResponse.json([...rows, uncategorized]);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -54,28 +62,36 @@ export async function POST(request: NextRequest) {
     }
 
     // 检查slug是否重复
-    const existing = await query("SELECT id FROM categories WHERE slug = ?", [slug.trim()]);
-    if ((existing as any[]).length > 0) {
+    const existing = await db
+      .selectFrom("categories")
+      .select("id")
+      .where("slug", "=", slug.trim())
+      .execute();
+    if (existing.length > 0) {
       return NextResponse.json({ error: "分类标识已存在" }, { status: 400 });
     }
 
     // 检查name是否重复
-    const existingName = await query("SELECT id FROM categories WHERE name = ?", [name.trim()]);
-    if ((existingName as any[]).length > 0) {
+    const existingName = await db
+      .selectFrom("categories")
+      .select("id")
+      .where("name", "=", name.trim())
+      .execute();
+    if (existingName.length > 0) {
       return NextResponse.json({ error: "分类名称已存在" }, { status: 400 });
     }
 
     const order = sort_order ?? 0;
-    const result = await query(
-      "INSERT INTO categories (name, slug, sort_order) VALUES (?, ?, ?)",
-      [name.trim(), slug.trim(), order]
-    );
+    const result = await db
+      .insertInto("categories")
+      .values({ name: name.trim(), slug: slug.trim(), sort_order: order })
+      .executeTakeFirst();
 
-    return NextResponse.json({ 
-      id: (result as any).insertId, 
-      name: name.trim(), 
-      slug: slug.trim(), 
-      sort_order: order 
+    return NextResponse.json({
+      id: Number(result.insertId),
+      name: name.trim(),
+      slug: slug.trim(),
+      sort_order: order
     }, { status: 201 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -97,38 +113,47 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "缺少分类ID" }, { status: 400 });
     }
 
-    const updates: string[] = [];
-    const params: any[] = [];
+    const updateObj: Record<string, any> = {};
 
     if (name !== undefined) {
       // 检查name是否重复（排除自身）
-      const existingName = await query("SELECT id FROM categories WHERE name = ? AND id != ?", [name.trim(), id]);
-      if ((existingName as any[]).length > 0) {
+      const existingName = await db
+        .selectFrom("categories")
+        .select("id")
+        .where("name", "=", name.trim())
+        .where("id", "!=", id)
+        .execute();
+      if (existingName.length > 0) {
         return NextResponse.json({ error: "分类名称已存在" }, { status: 400 });
       }
-      updates.push("name = ?");
-      params.push(name.trim());
+      updateObj.name = name.trim();
     }
     if (slug !== undefined) {
       // 检查slug是否重复（排除自身）
-      const existing = await query("SELECT id FROM categories WHERE slug = ? AND id != ?", [slug.trim(), id]);
-      if ((existing as any[]).length > 0) {
+      const existing = await db
+        .selectFrom("categories")
+        .select("id")
+        .where("slug", "=", slug.trim())
+        .where("id", "!=", id)
+        .execute();
+      if (existing.length > 0) {
         return NextResponse.json({ error: "分类标识已存在" }, { status: 400 });
       }
-      updates.push("slug = ?");
-      params.push(slug.trim());
+      updateObj.slug = slug.trim();
     }
     if (sort_order !== undefined) {
-      updates.push("sort_order = ?");
-      params.push(sort_order);
+      updateObj.sort_order = sort_order;
     }
 
-    if (updates.length === 0) {
+    if (Object.keys(updateObj).length === 0) {
       return NextResponse.json({ error: "没有更新内容" }, { status: 400 });
     }
 
-    params.push(id);
-    await query(`UPDATE categories SET ${updates.join(", ")} WHERE id = ?`, params);
+    await db
+      .updateTable("categories")
+      .set(updateObj)
+      .where("id", "=", id)
+      .executeTakeFirst();
 
     return NextResponse.json({ message: "更新成功" });
   } catch (error: any) {
@@ -152,18 +177,22 @@ export async function DELETE(request: NextRequest) {
     }
 
     // 检查是否有图片使用此分类
-    const imagesCount = await query(
-      "SELECT COUNT(*) as count FROM images WHERE category = (SELECT slug FROM categories WHERE id = ?)",
-      [id]
-    );
-    if ((imagesCount as any[])[0]?.count > 0) {
-      return NextResponse.json({ 
-        error: `该分类下有 ${(imagesCount as any[])[0].count} 张图片，无法删除` 
+    const imagesCountRow = await db
+      .selectFrom("images")
+      .select((eb) => [eb.fn.count<number>("id").as("count")])
+      .where("category", "=", (
+        db.selectFrom("categories").select("slug").where("id", "=", id) as any
+      ))
+      .executeTakeFirst();
+
+    if (Number(imagesCountRow?.count ?? 0) > 0) {
+      return NextResponse.json({
+        error: `该分类下有 ${imagesCountRow?.count} 张图片，无法删除`
       }, { status: 400 });
     }
 
-    const result = await query("DELETE FROM categories WHERE id = ?", [id]);
-    if ((result as any).affectedRows === 0) {
+    const result = await db.deleteFrom("categories").where("id", "=", id).executeTakeFirst();
+    if (Number(result.numDeletedRows) === 0) {
       return NextResponse.json({ error: "分类不存在" }, { status: 404 });
     }
 

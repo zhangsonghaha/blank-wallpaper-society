@@ -1,4 +1,4 @@
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // 嵌入式壁纸展示页面（iframe方案）
 export default async function EmbedWallpaperPage({
@@ -21,16 +21,19 @@ export default async function EmbedWallpaperPage({
     );
   }
 
-  const rows = (await query(
-    `SELECT i.id, i.title, i.url, i.thumbnail_url, i.width, i.height, i.author,
-            u.name as author_name
-     FROM images i
-     LEFT JOIN users u ON i.uploaded_by = u.id
-     WHERE i.id = ? AND i.status = 'approved'`,
-    [id]
-  )) as any[];
+  const image = await db
+    .selectFrom("images as i")
+    .leftJoin("users as u", "u.id", "i.uploaded_by")
+    .select([
+      "i.id", "i.title", "i.url", "i.thumbnail_url",
+      "i.width", "i.height", "i.author",
+      "u.name as author_name",
+    ])
+    .where("i.id", "=", id)
+    .where("i.status", "=", "approved")
+    .executeTakeFirst();
 
-  if (rows.length === 0) {
+  if (!image) {
     return (
       <html>
         <body style={{ margin: 0, fontFamily: "system-ui, sans-serif" }}>
@@ -42,7 +45,6 @@ export default async function EmbedWallpaperPage({
     );
   }
 
-  const image = rows[0];
   const siteUrl = process.env.NEXT_PUBLIC_URL || "https://bws.example.com";
 
   return (

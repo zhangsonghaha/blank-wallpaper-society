@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
-import { withTransaction } from "@/lib/db-tx";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { PLATFORM_FEE_RATE, MEMBERSHIP_PRICES } from "@/lib/earnings";
 import { handlePaymentSuccess } from "@/lib/payment";
 
@@ -20,30 +20,26 @@ export async function GET(request: NextRequest) {
     const pageSize = parseInt(searchParams.get("page_size") || "20");
     const search = searchParams.get("search");
 
-    let whereClause = "";
-    const params: any[] = [];
-
-    if (type) {
-      whereClause += whereClause ? " AND" : " WHERE";
-      whereClause += " o.type = ?";
-      params.push(type);
-    }
-    if (status) {
-      whereClause += whereClause ? " AND" : " WHERE";
-      whereClause += " o.payment_status = ?";
-      params.push(status);
-    }
+    const whereParts: ReturnType<typeof sql>[] = [];
+    if (type) whereParts.push(sql`o.type = ${type}`);
+    if (status) whereParts.push(sql`o.payment_status = ${status}`);
     if (search) {
-      whereClause += whereClause ? " AND" : " WHERE";
-      whereClause += " (o.payment_id LIKE ? OR u.name LIKE ? OR u.email LIKE ?)";
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+      const searchPattern = `%${search}%`;
+      whereParts.push(sql`(o.payment_id LIKE ${searchPattern} OR u.name LIKE ${searchPattern} OR u.email LIKE ${searchPattern})`);
     }
+
+    const whereClause = whereParts.length > 0
+      ? sql`WHERE ${sql.join(whereParts, sql` AND `)}`
+      : sql``;
 
     const offset = (page - 1) * pageSize;
 
     const [orders, countResult] = await Promise.all([
-      query(
-        `SELECT o.*, u.name as buyer_name, u.email as buyer_email,
+      sql<{
+        id: number; user_id: number; type: string; amount: string; payment_status: string;
+        payment_method: string; payment_id: string; related_id: number; paid_at: string;
+        created_at: string; buyer_name: string; buyer_email: string; description: string;
+      }>`SELECT o.*, u.name as buyer_name, u.email as buyer_email,
           CASE o.type 
             WHEN 'paid_wallpaper' THEN (SELECT title FROM images WHERE id = o.related_id)
             WHEN 'tip' THEN CONCAT('打赏给用户#', o.related_id)
@@ -53,18 +49,13 @@ export async function GET(request: NextRequest) {
         LEFT JOIN users u ON o.user_id = u.id
         ${whereClause}
         ORDER BY o.created_at DESC
-        LIMIT ? OFFSET ?`,
-        [...params, pageSize, offset]
-      ),
-      query(
-        `SELECT COUNT(*) as total FROM orders o LEFT JOIN users u ON o.user_id = u.id ${whereClause}`,
-        params
-      ),
+        LIMIT ${pageSize} OFFSET ${offset}`.execute(db),
+      sql<{ total: string | number }>`SELECT COUNT(*) as total FROM orders o LEFT JOIN users u ON o.user_id = u.id ${whereClause}`.execute(db),
     ]);
 
     return NextResponse.json({
-      data: orders,
-      total: (countResult as any[])[0]?.total || 0,
+      data: orders.rows,
+      total: Number(countResult.rows[0]?.total || 0),
       page,
       page_size: pageSize,
     });
@@ -90,10 +81,10 @@ export async function PATCH(request: NextRequest) {
     }
 
     // 获取订单信息
-    const orderRows = (await query(
-      "SELECT * FROM orders WHERE id = ?",
-      [order_id]
-    )) as any[];
+    const orderRows = await db.selectFrom("orders")
+      .where("id", "=", order_id)
+      .selectAll()
+      .execute();
 
     if (orderRows.length === 0) {
       return NextResponse.json({ error: "订单不存在" }, { status: 404 });
@@ -119,19 +110,21 @@ export async function PATCH(request: NextRequest) {
         }
       }
 
-      // 确认支付：调用统一的支付成功处理逻辑
-      // 先将订单状态重置为pending，确保handlePaymentSuccess能正常处理
-      await query("UPDATE orders SET payment_status = 'pending' WHERE id = ?", [order_id]);
-      await handlePaymentSuccess(order_id, "alipay"); // 后台确认默认标记为支付宝支付
+      // 确认支付：先将订单状态重置为pending，确保handlePaymentSuccess能正常处理
+      await db.updateTable("orders")
+        .set({ payment_status: "pending" })
+        .where("id", "=", order_id)
+        .execute();
+      await handlePaymentSuccess(order_id, "alipay");
       const result = { order_id, action: "confirmed" };
 
       return NextResponse.json({ data: result, message: "订单已确认" });
     } else if (action === "reject") {
       // 拒绝订单
-      await query(
-        "UPDATE orders SET payment_status = 'failed' WHERE id = ?",
-        [order_id]
-      );
+      await db.updateTable("orders")
+        .set({ payment_status: "failed" })
+        .where("id", "=", order_id)
+        .execute();
       return NextResponse.json({ data: { order_id, action: "rejected" }, message: "订单已拒绝" });
     } else {
       return NextResponse.json({ error: "无效操作" }, { status: 400 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // 缓存
 let recommendationsCache: Record<string, { data: any[]; timestamp: number }> = {};
@@ -51,20 +52,19 @@ export async function GET(request: NextRequest) {
 // 个性化推荐：基于用户收藏分类偏好 + 热门趋势
 async function getPersonalizedRecommendations(userId: number, limit: number): Promise<any[]> {
   // 1. 获取用户收藏图片的分类偏好
-  const categoryPrefs = (await query(
-    `SELECT category, COUNT(*) AS cnt 
-     FROM images 
-     WHERE is_favorite = 1 AND id IN (
-       SELECT image_id FROM download_logs WHERE user_id = ? 
-       UNION 
-       SELECT image_id FROM view_logs WHERE user_id = ?
-     )
-     AND category IS NOT NULL
-     GROUP BY category 
-     ORDER BY cnt DESC 
-     LIMIT 5`,
-    [userId, userId]
-  )) as any[];
+  const categoryPrefs = (await sql`
+    SELECT category, COUNT(*) AS cnt
+    FROM images
+    WHERE is_favorite = 1 AND id IN (
+      SELECT image_id FROM download_logs WHERE user_id = ${userId}
+      UNION
+      SELECT image_id FROM view_logs WHERE user_id = ${userId}
+    )
+    AND category IS NOT NULL
+    GROUP BY category
+    ORDER BY cnt DESC
+    LIMIT 5
+  `.execute(db)).rows as any[];
 
   const preferredCategories = categoryPrefs.map((r: any) => r.category);
 
@@ -74,30 +74,53 @@ async function getPersonalizedRecommendations(userId: number, limit: number): Pr
   }
 
   // 2. 基于偏好分类推荐（权重60%）
-  const categoryPlaceholders = preferredCategories.map(() => "?").join(",");
-  const preferredImages = (await query(
-    `SELECT i.id, i.title, i.description, i.url, i.thumbnail_url, 
-            i.width, i.height, i.author, i.tags, i.category,
-            i.download_count, i.view_count
-     FROM images i
-     WHERE i.status = 'approved' 
-       AND i.category IN (${categoryPlaceholders})
-     ORDER BY i.download_count DESC, i.view_count DESC
-     LIMIT ?`,
-    [...preferredCategories, Math.ceil(limit * 0.6)]
-  )) as any[];
+  const preferredLimit = Math.ceil(limit * 0.6);
+  const preferredImages = await db
+    .selectFrom("images as i")
+    .select([
+      "i.id",
+      "i.title",
+      "i.description",
+      "i.url",
+      "i.thumbnail_url",
+      "i.width",
+      "i.height",
+      "i.author",
+      "i.tags",
+      "i.category",
+      "i.download_count",
+      "i.view_count",
+    ])
+    .where("i.status", "=", "approved")
+    .where("i.category", "in", preferredCategories)
+    .orderBy("i.download_count", "desc")
+    .orderBy("i.view_count", "desc")
+    .limit(preferredLimit)
+    .execute();
 
   // 3. 热门趋势补充（权重40%）
-  const trendingImages = (await query(
-    `SELECT i.id, i.title, i.description, i.url, i.thumbnail_url, 
-            i.width, i.height, i.author, i.tags, i.category,
-            i.download_count, i.view_count
-     FROM images i
-     WHERE i.status = 'approved'
-     ORDER BY i.download_count DESC, i.view_count DESC
-     LIMIT ?`,
-    [Math.ceil(limit * 0.4)]
-  )) as any[];
+  const trendingLimit = Math.ceil(limit * 0.4);
+  const trendingImages = await db
+    .selectFrom("images as i")
+    .select([
+      "i.id",
+      "i.title",
+      "i.description",
+      "i.url",
+      "i.thumbnail_url",
+      "i.width",
+      "i.height",
+      "i.author",
+      "i.tags",
+      "i.category",
+      "i.download_count",
+      "i.view_count",
+    ])
+    .where("i.status", "=", "approved")
+    .orderBy("i.download_count", "desc")
+    .orderBy("i.view_count", "desc")
+    .limit(trendingLimit)
+    .execute();
 
   // 4. 合并去重 + 推荐理由
   const seen = new Set<number>();
@@ -131,17 +154,16 @@ async function getPersonalizedRecommendations(userId: number, limit: number): Pr
 // 热门趋势推荐
 async function getTrendingRecommendations(limit: number): Promise<any[]> {
   // 综合下载量、浏览量、近期活跃度
-  const rows = (await query(
-    `SELECT i.id, i.title, i.description, i.url, i.thumbnail_url, 
+  const rows = (await sql`
+    SELECT i.id, i.title, i.description, i.url, i.thumbnail_url,
             i.width, i.height, i.author, i.tags, i.category,
             i.download_count, i.view_count,
             (i.download_count * 3 + i.view_count) AS trending_score
      FROM images i
      WHERE i.status = 'approved'
      ORDER BY trending_score DESC
-     LIMIT ?`,
-    [limit]
-  )) as any[];
+     LIMIT ${limit}
+  `.execute(db)).rows as any[];
 
   return rows.map((img: any) => ({
     ...img,

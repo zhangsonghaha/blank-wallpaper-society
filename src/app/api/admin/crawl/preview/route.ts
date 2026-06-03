@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 
 // GET /api/admin/crawl/preview — 获取会话信息 + 分页预览项
@@ -20,9 +21,12 @@ export async function GET(request: NextRequest) {
 
     // 未指定 session_id 时，自动获取最近一个 pending 会话
     if (!targetSessionId) {
-      const latestSessions = await query(
-        `SELECT id FROM crawl_sessions WHERE status = 'pending' ORDER BY created_at DESC LIMIT 1`
-      ) as any[];
+      const latestSessions = await db.selectFrom("crawl_sessions")
+        .where("status", "=", "pending")
+        .select(["id"])
+        .orderBy("created_at", "desc")
+        .limit(1)
+        .execute();
       if (latestSessions.length > 0) {
         targetSessionId = latestSessions[0].id;
       }
@@ -36,32 +40,30 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const sessionRows = await query(
-      `SELECT id, source_url, source_type, category, tags, total_count, selected_count, imported_count, status, created_at
-       FROM crawl_sessions WHERE id = ?`,
-      [targetSessionId]
-    ) as any[];
+    const sessionRows = await db.selectFrom("crawl_sessions")
+      .where("id", "=", targetSessionId)
+      .select(["id", "source_url", "source_type", "category", "tags", "total_count", "selected_count", "imported_count", "status", "created_at"])
+      .execute();
 
     if (sessionRows.length === 0) {
       return NextResponse.json({ error: "会话不存在" }, { status: 404 });
     }
 
     const [items, countResult] = await Promise.all([
-      query(
-        `SELECT id, session_id, source_url, title, width, height, file_size, mime_type, media_type, is_selected, source, tags, category, video_url, poster_url, created_at
-         FROM crawl_preview_items
-         WHERE session_id = ?
-         ORDER BY id ASC
-         LIMIT ? OFFSET ?`,
-        [targetSessionId, pageSize, offset]
-      ),
-      query(
-        `SELECT COUNT(*) as total FROM crawl_preview_items WHERE session_id = ?`,
-        [targetSessionId]
-      ),
+      db.selectFrom("crawl_preview_items")
+        .where("session_id", "=", targetSessionId)
+        .select(["id", "session_id", "source_url", "title", "width", "height", "file_size", "mime_type", "media_type", "is_selected", "source", "tags", "category", "video_url", "poster_url", "created_at"])
+        .orderBy("id", "asc")
+        .limit(pageSize)
+        .offset(offset)
+        .execute(),
+      db.selectFrom("crawl_preview_items")
+        .where("session_id", "=", targetSessionId)
+        .select((eb) => eb.fn.countAll().as("total"))
+        .executeTakeFirst(),
     ]);
 
-    const total = (countResult as any[])[0]?.total || 0;
+    const total = Number(countResult?.total || 0);
 
     return NextResponse.json({
       session: sessionRows[0],
@@ -91,19 +93,20 @@ export async function PATCH(request: NextRequest) {
 
     if (select_all !== undefined) {
       // 全选/取消全选
-      await query(
-        `UPDATE crawl_preview_items SET is_selected = ? WHERE session_id = ?`,
-        [select_all ? 1 : 0, session_id]
-      );
-      const countResult = await query(
-        `SELECT COUNT(*) as cnt FROM crawl_preview_items WHERE session_id = ? AND is_selected = 1`,
-        [session_id]
-      ) as any[];
-      const selectedCount = (countResult[0] as any)?.cnt || 0;
-      await query(
-        `UPDATE crawl_sessions SET selected_count = ? WHERE id = ?`,
-        [selectedCount, session_id]
-      );
+      await db.updateTable("crawl_preview_items")
+        .set({ is_selected: select_all ? 1 : 0 })
+        .where("session_id", "=", session_id)
+        .execute();
+      const countResult = await db.selectFrom("crawl_preview_items")
+        .where("session_id", "=", session_id)
+        .where("is_selected", "=", 1)
+        .select((eb) => eb.fn.countAll().as("cnt"))
+        .executeTakeFirst();
+      const selectedCount = Number(countResult?.cnt || 0);
+      await db.updateTable("crawl_sessions")
+        .set({ selected_count: selectedCount })
+        .where("id", "=", session_id)
+        .execute();
       return NextResponse.json({ message: select_all ? "已全选" : "已取消全选", selected_count: selectedCount });
     }
 
@@ -111,22 +114,23 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "请提供 item_ids" }, { status: 400 });
     }
 
-    const placeholders = item_ids.map(() => "?").join(",");
-    await query(
-      `UPDATE crawl_preview_items SET is_selected = ? WHERE id IN (${placeholders}) AND session_id = ?`,
-      [selected ? 1 : 0, ...item_ids, session_id]
-    );
+    await db.updateTable("crawl_preview_items")
+      .set({ is_selected: selected ? 1 : 0 })
+      .where("id", "in", item_ids as number[])
+      .where("session_id", "=", session_id)
+      .execute();
 
     // 更新 session 的 selected_count
-    const countResult = await query(
-      `SELECT COUNT(*) as cnt FROM crawl_preview_items WHERE session_id = ? AND is_selected = 1`,
-      [session_id]
-    ) as any[];
-    const selectedCount = (countResult[0] as any)?.cnt || 0;
-    await query(
-      `UPDATE crawl_sessions SET selected_count = ? WHERE id = ?`,
-      [selectedCount, session_id]
-    );
+    const countResult = await db.selectFrom("crawl_preview_items")
+      .where("session_id", "=", session_id)
+      .where("is_selected", "=", 1)
+      .select((eb) => eb.fn.countAll().as("cnt"))
+      .executeTakeFirst();
+    const selectedCount = Number(countResult?.cnt || 0);
+    await db.updateTable("crawl_sessions")
+      .set({ selected_count: selectedCount })
+      .where("id", "=", session_id)
+      .execute();
 
     return NextResponse.json({
       message: selected ? "已选中" : "已取消选中",
@@ -153,9 +157,9 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "请提供 session_id" }, { status: 400 });
     }
 
-    // 级联删除（外键ON DELETE CASCADE 自动删除 items）
-    await query(`DELETE FROM crawl_preview_items WHERE session_id = ?`, [sessionId]);
-    await query(`UPDATE crawl_sessions SET status = 'discarded' WHERE id = ?`, [sessionId]);
+    // 级联删除
+    await db.deleteFrom("crawl_preview_items").where("session_id", "=", sessionId).execute();
+    await db.updateTable("crawl_sessions").set({ status: "discarded" }).where("id", "=", sessionId).execute();
 
     return NextResponse.json({ message: "会话已丢弃" });
   } catch (error: any) {

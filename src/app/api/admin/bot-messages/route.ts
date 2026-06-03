@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
 // GET /api/admin/bot-messages - 获取机器人消息留痕
@@ -20,50 +20,47 @@ export async function GET(request: NextRequest) {
     const pageSize = parseInt(searchParams.get("page_size") || "20", 10);
     const offset = (page - 1) * pageSize;
 
-    // 构建查询条件
-    const conditions: string[] = [];
-    const params: any[] = [];
-
-    if (botConfigId) {
-      conditions.push("bm.bot_config_id = ?");
-      params.push(botConfigId);
-    }
-    if (direction && (direction === "outbound" || direction === "inbound")) {
-      conditions.push("bm.direction = ?");
-      params.push(direction);
-    }
-    if (eventType) {
-      conditions.push("bm.event_type = ?");
-      params.push(eventType);
-    }
-    if (platform) {
-      conditions.push("bm.platform = ?");
-      params.push(platform);
-    }
-    if (status && (status === "success" || status === "failed")) {
-      conditions.push("bm.status = ?");
-      params.push(status);
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    // 构建查询条件（使用 $if 动态构建）
+    const applyFilters = (qb: any) =>
+      qb
+        .$if(!!botConfigId, (q: any) => q.where("bm.bot_config_id", "=", Number(botConfigId)))
+        .$if(!!direction && (direction === "outbound" || direction === "inbound"), (q: any) => q.where("bm.direction", "=", direction))
+        .$if(!!eventType, (q: any) => q.where("bm.event_type", "=", eventType))
+        .$if(!!platform, (q: any) => q.where("bm.platform", "=", platform))
+        .$if(!!status && (status === "success" || status === "failed"), (q: any) => q.where("bm.status", "=", status));
 
     // 查询总数
-    const countResult = (await query(
-      `SELECT COUNT(*) as total FROM bot_messages bm ${whereClause}`,
-      params
-    )) as any[];
-    const total = countResult[0]?.total || 0;
+    const countResult = await applyFilters(
+      db.selectFrom("bot_messages as bm").select((eb) => eb.fn.countAll().as("total"))
+    ).executeTakeFirst();
+    const total = Number(countResult?.total ?? 0);
 
     // 查询消息列表（关联机器人名称）
-    const messages = (await query(
-      `SELECT bm.*, bc.name as bot_name
-       FROM bot_messages bm
-       LEFT JOIN bot_configs bc ON bm.bot_config_id = bc.id
-       ${whereClause}
-       ORDER BY bm.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset]
-    )) as any[];
+    const messages = await applyFilters(
+      db.selectFrom("bot_messages as bm")
+        .leftJoin("bot_configs as bc", "bm.bot_config_id", "bc.id")
+        .select((eb) => [
+          "bm.id",
+          "bm.bot_config_id",
+          "bm.chat_id",
+          "bm.content",
+          "bm.created_at",
+          "bm.direction",
+          "bm.error_message",
+          "bm.event_type",
+          "bm.message_type",
+          "bm.platform",
+          "bm.sender_id",
+          "bm.sender_name",
+          "bm.status",
+          "bm.title",
+          "bc.name as bot_name",
+        ])
+    )
+      .orderBy("bm.created_at", "desc")
+      .limit(pageSize)
+      .offset(offset)
+      .execute();
 
     return NextResponse.json({
       messages,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { authenticateApiRequest, recordUsage } from "@/lib/api-auth";
 
 // GET /api/v1/categories - 分类列表
@@ -11,9 +11,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const rows = (await query(
-      "SELECT * FROM categories ORDER BY sort_order ASC"
-    )) as any[];
+    const rows = await db
+      .selectFrom("categories")
+      .selectAll()
+      .orderBy("sort_order", "asc")
+      .execute();
 
     const categories = rows.map((row: any) => ({
       id: row.id,

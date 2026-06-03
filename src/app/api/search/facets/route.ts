@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { sanitizeQueryParam } from "@/lib/sanitize";
+import { sql } from "kysely";
 
 // GET /api/search/facets - 搜索分面筛选（分类/颜色/分辨率聚合）
 export async function GET(request: NextRequest) {
@@ -9,37 +10,37 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search") ? sanitizeQueryParam(searchParams.get("search")!) : null;
     const category = searchParams.get("category");
 
-    const baseConditions: string[] = ["status = 'approved'"];
-    const baseParams: any[] = [];
+    // Build base conditions
+    const conditions = [sql`status = 'approved'`];
 
     if (search) {
-      baseConditions.push("(title LIKE ? OR description LIKE ? OR tags LIKE ?)");
       const like = `%${search}%`;
-      baseParams.push(like, like, like);
+      conditions.push(sql`(title LIKE ${like} OR description LIKE ${like} OR tags LIKE ${like})`);
     }
     if (category && category !== "all") {
-      baseConditions.push("category = ?");
-      baseParams.push(category);
+      conditions.push(sql`category = ${category}`);
     }
 
-    const whereClause = baseConditions.join(" AND ");
+    const whereClause = sql.join(conditions, sql` AND `);
 
     // 并行查询所有分面
     const [categoryRows, colorRows, resolutionRows] = await Promise.all([
       // 分类聚合
-      query(
-        `SELECT category, COUNT(*) as count FROM images WHERE ${whereClause} AND category IS NOT NULL AND category != '' GROUP BY category ORDER BY count DESC LIMIT 20`,
-        baseParams
-      ),
+      sql`
+        SELECT category, COUNT(*) as count FROM images
+        WHERE ${whereClause} AND category IS NOT NULL AND category != ''
+        GROUP BY category ORDER BY count DESC LIMIT 20
+      `.execute(db),
       // 颜色聚合（取主色前12种色系）
-      query(
-        `SELECT dominant_color, COUNT(*) as count FROM images WHERE ${whereClause} AND dominant_color IS NOT NULL AND dominant_color != '' GROUP BY dominant_color ORDER BY count DESC LIMIT 50`,
-        baseParams
-      ),
+      sql`
+        SELECT dominant_color, COUNT(*) as count FROM images
+        WHERE ${whereClause} AND dominant_color IS NOT NULL AND dominant_color != ''
+        GROUP BY dominant_color ORDER BY count DESC LIMIT 50
+      `.execute(db),
       // 分辨率聚合
-      query(
-        `SELECT 
-          CASE 
+      sql`
+        SELECT
+          CASE
             WHEN width >= 3840 THEN '4K+'
             WHEN width >= 2560 THEN '2K+'
             WHEN width >= 1920 THEN '1080p+'
@@ -49,9 +50,8 @@ export async function GET(request: NextRequest) {
           COUNT(*) as count
         FROM images WHERE ${whereClause} AND width IS NOT NULL AND width > 0
         GROUP BY resolution_tier
-        ORDER BY MIN(width) DESC`,
-        baseParams
-      ),
+        ORDER BY MIN(width) DESC
+      `.execute(db),
     ]);
 
     // 将颜色聚合成色系（简化为16色系）
@@ -94,14 +94,14 @@ export async function GET(request: NextRequest) {
       return "red";
     }
 
-    for (const row of colorRows as any[]) {
+    for (const row of colorRows.rows as any[]) {
       const hex = row.dominant_color;
       if (!hex || hex.length < 7) continue;
       const colorFamily = classifyColor(hex);
       if (!colorBuckets[colorFamily]) {
         colorBuckets[colorFamily] = { hex, count: 0 };
       }
-      colorBuckets[colorFamily].count += row.count;
+      colorBuckets[colorFamily].count += Number(row.count);
       // 保留更鲜艳的代表色
       if (hex !== colorBuckets[colorFamily].hex) {
         const curR = parseInt(colorBuckets[colorFamily].hex.slice(1, 3), 16);
@@ -125,9 +125,9 @@ export async function GET(request: NextRequest) {
     }
 
     const facets = {
-      categories: (categoryRows as any[]).map((r) => ({
+      categories: (categoryRows.rows as any[]).map((r) => ({
         name: r.category,
-        count: r.count,
+        count: Number(r.count),
       })),
       colors: Object.entries(colorBuckets)
         .sort(([, a], [, b]) => b.count - a.count)
@@ -138,9 +138,9 @@ export async function GET(request: NextRequest) {
           family: name,
           count: data.count,
         })),
-      resolutions: (resolutionRows as any[]).map((r) => ({
+      resolutions: (resolutionRows.rows as any[]).map((r) => ({
         name: r.resolution_tier,
-        count: r.count,
+        count: Number(r.count),
       })),
     };
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { uploadFile, BUCKET_NAME, PUBLIC_URL_BASE } from "@/lib/minio";
 import { extractColors } from "@/lib/color-extract";
@@ -54,7 +55,6 @@ export async function GET(request: NextRequest) {
     const action = searchParams.get("action");
 
     if (action === "sources") {
-      // 返回可用的爬取源列表
       return NextResponse.json({ sources: CRAWL_SOURCES });
     }
 
@@ -65,45 +65,42 @@ export async function GET(request: NextRequest) {
 
     // 查询爬取历史（从 crawl_logs 表查询）
     const [logResult, logCountResult] = await Promise.all([
-      query(
-        `SELECT id, source, source_url, crawl_mode, category, tags, pages, requested_count,
-                success_count, fail_count, dedup_skipped, status, error_message,
-                started_at, finished_at, duration_seconds
-         FROM crawl_logs 
-         ORDER BY started_at DESC 
-         LIMIT ? OFFSET ?`,
-        [limit, offset]
-      ),
-      query(
-        `SELECT COUNT(*) as total FROM crawl_logs`
-      ),
+      db.selectFrom("crawl_logs")
+        .select(["id", "source", "source_url", "crawl_mode", "category", "tags", "pages", "requested_count",
+                "success_count", "fail_count", "dedup_skipped", "status", "error_message",
+                "started_at", "finished_at", "duration_seconds"])
+        .orderBy("started_at", "desc")
+        .limit(limit)
+        .offset(offset)
+        .execute(),
+      db.selectFrom("crawl_logs")
+        .select((eb) => eb.fn.countAll().as("total"))
+        .executeTakeFirst(),
     ]);
 
     // 查询爬取统计（从 images 表筛选 source 为爬虫导入的记录）
     const [historyResult, countResult] = await Promise.all([
-      query(
-        `SELECT id, title, url, thumbnail_url, width, height, tags, category, created_at
+      sql<{
+        id: number; title: string; url: string; thumbnail_url: string;
+        width: number; height: number; tags: string; category: string; created_at: string;
+      }>`SELECT id, title, url, thumbnail_url, width, height, tags, category, created_at
          FROM images 
          WHERE description LIKE '%[crawl]%'
          ORDER BY created_at DESC 
-         LIMIT ? OFFSET ?`,
-        [limit, offset]
-      ),
-      query(
-        `SELECT COUNT(*) as total FROM images WHERE description LIKE '%[crawl]%'`
-      ),
+         LIMIT ${limit} OFFSET ${offset}`.execute(db),
+      sql<{ total: string | number }>`SELECT COUNT(*) as total FROM images WHERE description LIKE '%[crawl]%'`.execute(db),
     ]);
 
-    const total = (countResult as any[])[0]?.total || 0;
+    const total = Number(countResult.rows[0]?.total || 0);
 
     return NextResponse.json({
       sources: CRAWL_SOURCES,
-      history: historyResult,
+      history: historyResult.rows,
       total,
       page,
       totalPages: Math.ceil(total / limit),
       crawlLogs: logResult,
-      crawlLogsTotal: (logCountResult as any[])[0]?.total || 0,
+      crawlLogsTotal: Number(logCountResult?.total || 0),
     });
   } catch (error: any) {
     console.error("GET /api/admin/crawl error:", error);
@@ -127,9 +124,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { source, mode, count, url, fetchMode, minWidth, pages, dedup, category, tags } = body;
 
-    // 参数验证：支持两种模式
-    // 1. 自定义URL模式 (url 字段)
-    // 2. 固定源模式 (source 字段)
+    // 参数验证
     const isUrlMode = !!url;
     const isSourceMode = !!source;
 
@@ -148,7 +143,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (isUrlMode) {
-      // 验证URL格式
       try {
         new URL(url);
       } catch {
@@ -167,31 +161,29 @@ export async function POST(request: NextRequest) {
     }
 
     const crawlCount = Math.min(Math.max(parseInt(count) || 5, 1), 50);
-    const crawlPages = Math.min(Math.max(parseInt(pages) || 1, 1), 10); // 最多10页
-    const enableDedup = dedup !== false; // 默认开启去重
-    const categoryValue = category || ""; // 手动指定分类
-    const tagsValue = tags || ""; // 手动指定标签（逗号分隔）
+    const crawlPages = Math.min(Math.max(parseInt(pages) || 1, 1), 10);
+    const enableDedup = dedup !== false;
+    const categoryValue = category || "";
+    const tagsValue = tags || "";
 
-    // 创建爬取历史记录
     const crawlSource = isUrlMode ? url : source;
     const crawlModeStr = isUrlMode ? (fetchMode || "auto") : (mode || "random");
     const tagsStr = Array.isArray(tagsValue) ? tagsValue.join(",") : tagsValue;
 
-    const logResult = await query(
-      `INSERT INTO crawl_logs (source, source_url, crawl_mode, category, tags, pages, requested_count, status, operator_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?)`,
-      [
-        isUrlMode ? new URL(url).hostname : source,
-        isUrlMode ? url : (CRAWL_SOURCES.find(s => s.id === source)?.url || ""),
-        crawlModeStr,
-        categoryValue,
-        tagsStr,
-        crawlPages,
-        crawlCount,
-        userId,
-      ]
-    );
-    const crawlLogId = (logResult as any).insertId;
+    const logResult = await db.insertInto("crawl_logs")
+      .values({
+        source: isUrlMode ? new URL(url).hostname : source,
+        source_url: isUrlMode ? url : (CRAWL_SOURCES.find(s => s.id === source)?.url || ""),
+        crawl_mode: crawlModeStr,
+        category: categoryValue,
+        tags: tagsStr,
+        pages: crawlPages,
+        requested_count: crawlCount,
+        status: "running",
+        operator_id: userId,
+      })
+      .executeTakeFirst();
+    const crawlLogId = Number(logResult.insertId);
     const startTime = Date.now();
 
     // 调用 Python 爬虫脚本
@@ -210,12 +202,16 @@ export async function POST(request: NextRequest) {
     });
 
     if (!crawlResult.success || !crawlResult.results || crawlResult.results.length === 0) {
-      // 更新爬取历史为失败
       const duration = Math.round((Date.now() - startTime) / 1000);
-      await query(
-        `UPDATE crawl_logs SET status = 'failed', error_message = ?, finished_at = NOW(), duration_seconds = ? WHERE id = ?`,
-        [crawlResult.error || "爬取未返回任何结果", duration, crawlLogId]
-      );
+      await db.updateTable("crawl_logs")
+        .set({
+          status: "failed",
+          error_message: crawlResult.error || "爬取未返回任何结果",
+          finished_at: sql`NOW()`,
+          duration_seconds: duration,
+        })
+        .where("id", "=", crawlLogId)
+        .execute();
       return NextResponse.json(
         {
           error: crawlResult.error || "爬取未返回任何结果",
@@ -225,57 +221,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 创建预览会话 — 不再直接入库，先写入临时预览表供用户选择
-    const sessionResult = await query(
-      `INSERT INTO crawl_sessions (source_url, source_type, category, tags, crawl_log_id, total_count, status)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
-      [
-        isUrlMode ? url : (CRAWL_SOURCES.find(s => s.id === source)?.url || ""),
-        isUrlMode ? "custom" : source,
-        categoryValue,
-        tagsStr,
-        crawlLogId,
-        crawlResult.results.length,
-      ]
-    );
-    const sessionId = (sessionResult as any).insertId;
+    // 创建预览会话
+    const sessionResult = await db.insertInto("crawl_sessions")
+      .values({
+        source_url: isUrlMode ? url : (CRAWL_SOURCES.find(s => s.id === source)?.url || ""),
+        source_type: isUrlMode ? "custom" : source,
+        category: categoryValue,
+        tags: tagsStr,
+        crawl_log_id: crawlLogId,
+        total_count: crawlResult.results.length,
+        status: "pending",
+      })
+      .executeTakeFirst();
+    const sessionId = Number(sessionResult.insertId);
 
     // 批量写入预览项
     if (crawlResult.results.length > 0) {
-      const insertValues: string[] = [];
-      const insertParams: any[] = [];
-      for (const item of crawlResult.results) {
+      const tuples = crawlResult.results.map((item: any) => {
         const isVideo = item.media_type === "video";
-        insertValues.push("(?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)");
-        insertParams.push(
-          sessionId,
-          isVideo ? (item.video_url || item.image_url) : (item.image_url || ""),
-          item.title || "",
-          item.width || 0,
-          item.height || 0,
-          item.file_size || 0,
-          item.mime_type || (isVideo ? "video/mp4" : "image/jpeg"),
-          isVideo ? "video" : "image",
-          item.source || (isUrlMode ? new URL(url).hostname : source),
-          Array.isArray(item.tags) ? item.tags.join(",") : (item.tags || ""),
-          item.category || categoryValue,
-          isVideo ? (item.video_url || null) : null,
-          isVideo ? (item.poster_url || null) : null
-        );
-      }
-      await query(
-        `INSERT INTO crawl_preview_items (session_id, source_url, title, width, height, file_size, mime_type, media_type, is_selected, source, tags, category, video_url, poster_url)
-         VALUES ${insertValues.join(", ")}`,
-        insertParams
-      );
+        return sql`(${sessionId}, ${isVideo ? (item.video_url || item.image_url) : (item.image_url || "")}, ${item.title || ""}, ${item.width || 0}, ${item.height || 0}, ${item.file_size || 0}, ${item.mime_type || (isVideo ? "video/mp4" : "image/jpeg")}, ${isVideo ? "video" : "image"}, 0, ${item.source || (isUrlMode ? new URL(url).hostname : source)}, ${Array.isArray(item.tags) ? item.tags.join(",") : (item.tags || "")}, ${item.category || categoryValue}, ${isVideo ? (item.video_url || null) : null}, ${isVideo ? (item.poster_url || null) : null})`;
+      });
+      await sql`INSERT INTO crawl_preview_items (session_id, source_url, title, width, height, file_size, mime_type, media_type, is_selected, source, tags, category, video_url, poster_url)
+         VALUES ${sql.join(tuples)}`.execute(db);
     }
 
     // 更新爬取历史为完成
     const duration = Math.round((Date.now() - startTime) / 1000);
-    await query(
-      `UPDATE crawl_logs SET status = 'completed', success_count = ?, finished_at = NOW(), duration_seconds = ? WHERE id = ?`,
-      [crawlResult.results.length, duration, crawlLogId]
-    );
+    await db.updateTable("crawl_logs")
+      .set({
+        status: "completed",
+        success_count: crawlResult.results.length,
+        finished_at: sql`NOW()`,
+        duration_seconds: duration,
+      })
+      .where("id", "=", crawlLogId)
+      .execute();
 
     return NextResponse.json({
       success: true,
@@ -317,7 +297,6 @@ function runCrawlScript(
   return new Promise((resolve) => {
     const args = [scriptPath];
 
-    // 根据模式选择 --url 或 --source
     if (params.url) {
       args.push("--url", params.url);
       args.push("--fetch-mode", params.fetchMode || "auto");
@@ -330,33 +309,28 @@ function runCrawlScript(
 
     args.push("--count", String(params.count));
 
-    // 分页参数
     if (params.pages && params.pages > 1) {
       args.push("--pages", String(params.pages));
     }
 
-    // 去重参数
     if (params.dedup === false) {
       args.push("--no-dedup");
     }
 
-    // 手动分类参数
     if (params.category) {
       args.push("--category", params.category);
     }
 
-    // 手动标签参数
     if (params.tags) {
       args.push("--tags", params.tags);
     }
 
-    // 尝试找到 Python 可执行文件
     const pythonCmd = process.platform === "win32" ? "python" : "python3";
 
     const proc = spawn(pythonCmd, args, {
       cwd: process.cwd(),
       env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
-      timeout: 120000, // 2分钟超时
+      timeout: 120000,
     });
 
     let stdout = "";
@@ -382,7 +356,6 @@ function runCrawlScript(
       }
 
       try {
-        // 解析 JSON 输出
         const result = JSON.parse(stdout);
         resolve({
           success: result.success !== false,
@@ -430,19 +403,17 @@ async function processCrawledImage(
   userId: number
 ): Promise<any | null> {
   const isVideo = item.media_type === "video";
-  // 视频类型优先使用 video_url（实际视频文件地址），image_url 可能是封面图
   const downloadUrl = (isVideo && item.video_url) ? item.video_url : item.image_url;
 
   if (!downloadUrl) return null;
 
-  // 1. 下载图片/视频
   const imageRes = await fetch(downloadUrl, {
     headers: {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       "Referer": new URL(item.image_url).origin + "/",
     },
-    signal: AbortSignal.timeout(60000), // 视频文件较大，超时60秒
+    signal: AbortSignal.timeout(60000),
   });
 
   if (!imageRes.ok) {
@@ -453,7 +424,6 @@ async function processCrawledImage(
   const contentType = imageRes.headers.get("content-type") || (isVideo ? "video/mp4" : "image/jpeg");
   const imageBuffer = Buffer.from(await imageRes.arrayBuffer());
 
-  // 2. 获取图片尺寸（视频不处理）
   let width = item.width || 0;
   let height = item.height || 0;
   if (!isVideo) {
@@ -466,7 +436,6 @@ async function processCrawledImage(
     }
   }
 
-  // 3. 上传文件到 MinIO
   const timestamp = Date.now();
   const safeName = item.filename || (isVideo ? `crawled_${timestamp}.mp4` : `crawled_${timestamp}.jpg`);
   const storageKey = isVideo
@@ -480,15 +449,12 @@ async function processCrawledImage(
 
   const storedUrl = `${PUBLIC_URL_BASE}/${BUCKET_NAME}/${storageKey}`;
 
-  // 4. 生成缩略图（视频用 poster，静态图片正常生成）
   let thumbnailUrl = "";
   let posterStoredUrl = "";
 
   if (isVideo) {
-    // 视频类型：使用爬取到的 poster_url 或存储视频URL
-    posterStoredUrl = storedUrl; // 视频文件URL
+    posterStoredUrl = storedUrl;
     if (item.poster_url) {
-      // 尝试下载封面图作为缩略图
       try {
         const posterRes = await fetch(item.poster_url, {
           headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
@@ -508,7 +474,6 @@ async function processCrawledImage(
       }
     }
   } else {
-    // 静态图片：正常生成缩略图
     try {
       const thumbBuffer = await sharp(imageBuffer)
         .resize(400, 400, { fit: "inside", withoutEnlargement: true })
@@ -526,7 +491,6 @@ async function processCrawledImage(
     }
   }
 
-  // 5. 提取颜色（仅静态图片）
   let dominantColor: string | null = null;
   let colorPalette: string | null = null;
   if (!isVideo) {
@@ -539,38 +503,35 @@ async function processCrawledImage(
     }
   }
 
-  // 6. 写入数据库（增加 media_type, video_url, poster_url 字段）
   const tagsStr = Array.isArray(item.tags) ? item.tags.join(",") : (item.tags || "");
   const description = `[crawl] 从 ${item.source} 爬取 | 源地址: ${item.source_url || item.image_url}${isVideo ? " | 动态壁纸" : ""}`;
 
-  const result = await query(
-    `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by, media_type, video_url, poster_url)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      item.title || `从${item.source}爬取的${isVideo ? "动态壁纸" : "图片"}`,
+  const result = await db.insertInto("images")
+    .values({
+      title: item.title || `从${item.source}爬取的${isVideo ? "动态壁纸" : "图片"}`,
       description,
-      safeName,
-      storageKey,
-      isVideo ? (thumbnailUrl || storedUrl) : storedUrl, // 视频的url显示封面/缩略图
-      thumbnailUrl || null,
+      filename: safeName,
+      storage_key: storageKey,
+      url: isVideo ? (thumbnailUrl || storedUrl) : storedUrl,
+      thumbnail_url: thumbnailUrl || null,
       width,
       height,
-      imageBuffer.length,
-      contentType,
-      `crawler-${item.source}`,
-      tagsStr,
-      item.category || "",
-      "approved",
-      dominantColor,
-      colorPalette,
-      userId,
-      isVideo ? "video" : "image",
-      isVideo ? storedUrl : null,     // video_url: 视频文件地址
-      isVideo ? (thumbnailUrl || null) : null, // poster_url: 封面图地址
-    ]
-  );
+      file_size: imageBuffer.length,
+      mime_type: contentType,
+      author: `crawler-${item.source}`,
+      tags: tagsStr,
+      category: item.category || "",
+      status: "approved",
+      dominant_color: dominantColor,
+      color_palette: colorPalette,
+      uploaded_by: userId,
+      media_type: isVideo ? "video" : "image",
+      video_url: isVideo ? storedUrl : null,
+      poster_url: isVideo ? (thumbnailUrl || null) : null,
+    })
+    .executeTakeFirst();
 
-  const insertId = (result as any).insertId;
+  const insertId = Number(result.insertId);
 
   return {
     id: insertId,

@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // GET /api/discover/theme-zones - 获取主题专区数据
 export async function GET() {
   try {
     // 从 system_settings 读取主题专区配置
-    const settings = (await query(
-      "SELECT setting_value FROM system_settings WHERE setting_key = 'theme_zones'"
-    )) as any[];
+    const settings = await db
+      .selectFrom("system_settings")
+      .select("setting_value")
+      .where("setting_key", "=", "theme_zones")
+      .execute();
 
     let themeZones: any[] = [];
     if (settings.length > 0 && settings[0].setting_value) {
@@ -32,16 +35,28 @@ export async function GET() {
       themeZones.map(async (zone: any) => {
         try {
           // 1. 先获取手动关联的图片（优先级最高）
-          const manualImages = (await query(
-            `SELECT i.id, i.title, i.url, i.thumbnail_url, i.width, i.height,
-              i.category, i.view_count, i.download_count, i.dominant_color
-            FROM theme_zone_images tzi
-            JOIN images i ON tzi.image_id = i.id
-            WHERE tzi.zone_key = ? AND i.status = 'approved' AND i.media_type != 'video'
-            ORDER BY tzi.sort_order ASC, i.download_count DESC
-            LIMIT 6`,
-            [zone.key]
-          )) as any[];
+          const manualImages = await db
+            .selectFrom("theme_zone_images as tzi")
+            .innerJoin("images as i", "i.id", "tzi.image_id")
+            .select([
+              "i.id",
+              "i.title",
+              "i.url",
+              "i.thumbnail_url",
+              "i.width",
+              "i.height",
+              "i.category",
+              "i.view_count",
+              "i.download_count",
+              "i.dominant_color",
+            ])
+            .where("tzi.zone_key", "=", zone.key)
+            .where("i.status", "=", "approved")
+            .where("i.media_type", "!=", "video")
+            .orderBy("tzi.sort_order", "asc")
+            .orderBy("i.download_count", "desc")
+            .limit(6)
+            .execute();
 
           const manualCount = manualImages.length;
           const manualImageIds = manualImages.map((img: any) => img.id);
@@ -57,28 +72,26 @@ export async function GET() {
                 : [];
 
             if (categorySlugs.length > 0) {
-              const placeholders = categorySlugs.map(() => "?").join(", ");
               const excludeClause = manualImageIds.length > 0
-                ? `AND i.id NOT IN (${manualImageIds.map(() => "?").join(", ")})`
-                : "";
+                ? sql`AND i.id NOT IN (${sql.join(manualImageIds)})`
+                : sql``;
 
-              categoryImages = (await query(
-                `SELECT i.id, i.title, i.url, i.thumbnail_url, i.width, i.height,
+              const needed = 6 - manualCount;
+              categoryImages = (await sql`
+                SELECT i.id, i.title, i.url, i.thumbnail_url, i.width, i.height,
                   i.category, i.view_count, i.download_count, i.dominant_color
                 FROM images i
                 WHERE i.status = 'approved' AND i.media_type != 'video'
-                AND (i.category IN (${placeholders}) OR i.category IN (SELECT c.name FROM categories c WHERE c.slug IN (${placeholders})))
+                AND (i.category IN (${sql.join(categorySlugs)}) OR i.category IN (SELECT c.name FROM categories c WHERE c.slug IN (${sql.join(categorySlugs)})))
                 ${excludeClause}
-                ORDER BY i.download_count DESC, i.view_count DESC LIMIT ${6 - manualCount}`,
-                [...categorySlugs, ...categorySlugs, ...manualImageIds]
-              )) as any[];
+                ORDER BY i.download_count DESC, i.view_count DESC LIMIT ${needed}
+              `.execute(db)).rows as any[];
             }
           }
 
           const images = [...manualImages, ...categoryImages];
 
           // 3. 获取总数（手动 + 分类匹配去重）
-          let total = 0;
           const categorySlugs: string[] = zone.categories && Array.isArray(zone.categories) && zone.categories.length > 0
             ? zone.categories
             : zone.category
@@ -86,28 +99,28 @@ export async function GET() {
               : [];
 
           // 手动关联数量
-          const [manualTotal] = (await query(
-            `SELECT COUNT(*) as cnt FROM theme_zone_images tzi
-            JOIN images i ON tzi.image_id = i.id
-            WHERE tzi.zone_key = ? AND i.status = 'approved' AND i.media_type != 'video'`,
-            [zone.key]
-          )) as any[];
+          const manualTotalRow = await db
+            .selectFrom("theme_zone_images as tzi")
+            .innerJoin("images as i", "i.id", "tzi.image_id")
+            .select((eb) => [eb.fn.count<number>("i.id").as("cnt")])
+            .where("tzi.zone_key", "=", zone.key)
+            .where("i.status", "=", "approved")
+            .where("i.media_type", "!=", "video")
+            .executeTakeFirst();
 
           // 分类匹配数量
           let categoryTotal = 0;
           if (categorySlugs.length > 0) {
-            const placeholders = categorySlugs.map(() => "?").join(", ");
-            const [catTotal] = (await query(
-              `SELECT COUNT(*) as cnt FROM images i
+            const catTotalRow = (await sql`
+              SELECT COUNT(*) as cnt FROM images i
               WHERE i.status = 'approved' AND i.media_type != 'video'
-              AND (i.category IN (${placeholders}) OR i.category IN (SELECT c.name FROM categories c WHERE c.slug IN (${placeholders})))`,
-              [...categorySlugs, ...categorySlugs]
-            )) as any[];
-            categoryTotal = catTotal?.cnt || 0;
+              AND (i.category IN (${sql.join(categorySlugs)}) OR i.category IN (SELECT c.name FROM categories c WHERE c.slug IN (${sql.join(categorySlugs)})))
+            `.execute(db)).rows as any[];
+            categoryTotal = Number(catTotalRow[0]?.cnt || 0);
           }
 
           // 简单合并（手动图片已去重排除分类图片中的重复）
-          total = (manualTotal?.cnt || 0) + categoryTotal;
+          const total = Number(manualTotalRow?.cnt || 0) + categoryTotal;
 
           // 使用第一个分类 slug 作为链接参数
           const linkCategory = categorySlugs[0] || zone.category || zone.key;
@@ -165,12 +178,11 @@ export async function PUT(request: NextRequest) {
 
     const configValue = JSON.stringify(zones);
 
-    await query(
-      `INSERT INTO system_settings (setting_key, setting_value, description)
-       VALUES ('theme_zones', ?, '主题专区配置')
-       ON DUPLICATE KEY UPDATE setting_value = ?`,
-      [configValue, configValue]
-    );
+    await sql`
+      INSERT INTO system_settings (setting_key, setting_value, description)
+       VALUES ('theme_zones', ${configValue}, '主题专区配置')
+       ON DUPLICATE KEY UPDATE setting_value = ${configValue}
+    `.execute(db);
 
     return NextResponse.json({ message: "主题专区已更新" });
   } catch (error: any) {

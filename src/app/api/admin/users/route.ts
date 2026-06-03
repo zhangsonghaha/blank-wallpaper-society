@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query, safeQuery } from "@/lib/db";
+import { db, safeExecute } from "@/lib/db";
+import { sql } from "kysely";
 import { getCache, setCache, delCache, clearPattern } from "@/lib/redis";
 
 // GET /api/admin/users - 获取用户列表（分页、搜索、筛选）
@@ -30,45 +31,43 @@ export async function GET(request: NextRequest) {
     }
 
     // 构建查询条件
-    const conditions: string[] = [];
-    const params: any[] = [];
+    const whereParts: ReturnType<typeof sql>[] = [];
 
     if (search) {
-      conditions.push("(u.name LIKE ? OR u.email LIKE ?)");
-      params.push(`%${search}%`, `%${search}%`);
+      const searchPattern = `%${search}%`;
+      whereParts.push(sql`(u.name LIKE ${searchPattern} OR u.email LIKE ${searchPattern})`);
     }
 
     if (roleFilter) {
       const validRoles = ["admin", "moderator", "creator", "user"];
       if (validRoles.includes(roleFilter)) {
-        conditions.push("u.role = ?");
-        params.push(roleFilter);
+        whereParts.push(sql`u.role = ${roleFilter}`);
       }
     }
 
     if (statusFilter) {
       const validStatuses = ["active", "banned", "suspended", "pending_deletion", "deleted"];
       if (validStatuses.includes(statusFilter)) {
-        conditions.push("u.status = ?");
-        params.push(statusFilter);
+        whereParts.push(sql`u.status = ${statusFilter}`);
       }
     }
 
-    const whereClause =
-      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const whereClause = whereParts.length > 0
+      ? sql`WHERE ${sql.join(whereParts, sql` AND `)}`
+      : sql``;
 
     // 获取总数（独立容错）
-    const countResult = await safeQuery(
-      `SELECT COUNT(*) as count FROM users u ${whereClause}`,
-      params,
-      [{ count: 0 }]
+    const countResult = await safeExecute(
+      () => sql<{ count: string | number }>`SELECT COUNT(*) as count FROM users u ${whereClause}`.execute(db),
+      { rows: [{ count: 0 }] },
+      "users-count"
     );
-    const total = Number((countResult as any[])?.[0]?.count ?? 0);
+    const total = Number(countResult.rows?.[0]?.count ?? 0);
     const totalPages = Math.ceil(total / limit) || 1;
 
     // 获取用户列表 + 统计信息（独立容错）
-    const users = await safeQuery(
-      `SELECT 
+    const users = await safeExecute(
+      () => sql<Record<string, any>>`SELECT 
         u.id, u.email, u.name, u.avatar, u.role, u.status,
         u.banned_reason, u.banned_at, u.created_at, u.updated_at,
         u.deletion_requested_at, u.deletion_scheduled_at,
@@ -88,13 +87,13 @@ export async function GET(request: NextRequest) {
       ) fav_stats ON u.id = fav_stats.user_id
       ${whereClause}
       ORDER BY u.created_at DESC
-      LIMIT ${limit} OFFSET ${offset}`,
-      params,
-      []
+      LIMIT ${limit} OFFSET ${offset}`.execute(db),
+      { rows: [] } as { rows: any[] },
+      "users-list"
     );
 
     // 邮箱脱敏处理
-    const maskedUsers = (Array.isArray(users) ? users : []).map((user: any) => ({
+    const maskedUsers = (Array.isArray(users.rows) ? users.rows : []).map((user: any) => ({
       ...user,
       email: maskEmail(user?.email),
     }));
@@ -150,11 +149,11 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // 检查目标用户是否是管理员
-    const targetUser = (await query(
-      "SELECT id, role, status FROM users WHERE id = ?",
-      [userId]
-    )) as any[];
+    // 检查目标用户
+    const targetUser = await db.selectFrom("users")
+      .where("id", "=", Number(userId))
+      .select(["id", "role", "status"])
+      .execute();
 
     if (targetUser.length === 0) {
       return NextResponse.json(
@@ -172,8 +171,7 @@ export async function PATCH(request: NextRequest) {
 
     // 记录操作日志
     const logDetail: any = {};
-    const updates: string[] = [];
-    const updateParams: any[] = [];
+    const updates: Record<string, any> = {};
 
     if (role !== undefined) {
       const validRoles = ["admin", "moderator", "creator", "user"];
@@ -185,8 +183,7 @@ export async function PATCH(request: NextRequest) {
       }
       logDetail.from_role = targetUser[0].role;
       logDetail.to_role = role;
-      updates.push("role = ?");
-      updateParams.push(role);
+      updates.role = role;
     }
 
     if (status !== undefined) {
@@ -201,27 +198,27 @@ export async function PATCH(request: NextRequest) {
       logDetail.to_status = status;
 
       if (status === "banned") {
-        updates.push("status = ?, banned_reason = ?, banned_at = NOW()");
-        updateParams.push(status, bannedReason || "管理员封禁");
+        updates.status = status;
+        updates.banned_reason = bannedReason || "管理员封禁";
+        updates.banned_at = sql`NOW()`;
       } else {
-        updates.push("status = ?, banned_reason = NULL, banned_at = NULL");
-        updateParams.push(status);
+        updates.status = status;
+        updates.banned_reason = null;
+        updates.banned_at = null;
       }
     }
 
-    if (updates.length === 0) {
+    if (Object.keys(updates).length === 0) {
       return NextResponse.json(
         { error: "没有需要更新的字段" },
         { status: 400 }
       );
     }
 
-    updateParams.push(userId);
-
-    await query(
-      `UPDATE users SET ${updates.join(", ")} WHERE id = ?`,
-      updateParams
-    );
+    await db.updateTable("users")
+      .set(updates)
+      .where("id", "=", Number(userId))
+      .execute();
 
     // 清除用户列表缓存
     await clearPattern("admin:users:*");
@@ -231,10 +228,14 @@ export async function PATCH(request: NextRequest) {
       : status === "active" && targetUser[0].status === "banned" ? "unban_user"
       : role ? "change_role" : "update_user";
 
-    await query(
-      "INSERT INTO admin_operation_logs (operator_id, target_user_id, operation, detail) VALUES (?, ?, ?, ?)",
-      [operatorId, userId, operation, JSON.stringify(logDetail)]
-    );
+    await db.insertInto("admin_operation_logs")
+      .values({
+        operator_id: operatorId,
+        target_user_id: Number(userId),
+        operation,
+        detail: JSON.stringify(logDetail),
+      })
+      .execute();
 
     return NextResponse.json({ message: "更新成功" });
   } catch (error) {

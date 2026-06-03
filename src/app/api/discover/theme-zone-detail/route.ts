@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // GET /api/discover/theme-zone-detail?zone_key=xxx&page=1&limit=24
 export async function GET(request: NextRequest) {
@@ -14,9 +15,11 @@ export async function GET(request: NextRequest) {
     }
 
     // 从 system_settings 读取主题专区配置
-    const settings = (await query(
-      "SELECT setting_value FROM system_settings WHERE setting_key = 'theme_zones'"
-    )) as any[];
+    const settings = await db
+      .selectFrom("system_settings")
+      .select("setting_value")
+      .where("setting_key", "=", "theme_zones")
+      .execute();
 
     let themeZones: any[] = [];
     if (settings.length > 0 && settings[0].setting_value) {
@@ -36,52 +39,67 @@ export async function GET(request: NextRequest) {
         : [];
 
     // 获取手动关联图片 ID（用于去重）
-    const manualIds = (await query(
-      `SELECT DISTINCT image_id FROM theme_zone_images WHERE zone_key = ?`,
-      [zoneKey]
-    )) as any[];
-    const manualIdList = manualIds.map((r: any) => r.image_id);
+    const manualIds = await db
+      .selectFrom("theme_zone_images")
+      .select("image_id")
+      .where("zone_key", "=", zoneKey)
+      .distinct()
+      .execute();
+    const manualIdList = manualIds.map((r) => r.image_id);
 
     // 手动关联图片（当前页）
-    const manualImages = (await query(
-      `SELECT i.id, i.title, i.url, i.thumbnail_url, i.width, i.height,
-        i.category, i.view_count, i.download_count, i.dominant_color, i.tags,
-        i.author
-      FROM theme_zone_images tzi
-      JOIN images i ON tzi.image_id = i.id
-      WHERE tzi.zone_key = ? AND i.status = 'approved' AND i.media_type != 'video'
-      ORDER BY tzi.sort_order ASC, i.download_count DESC`,
-      [zoneKey]
-    )) as any[];
+    const manualImages = await db
+      .selectFrom("theme_zone_images as tzi")
+      .innerJoin("images as i", "i.id", "tzi.image_id")
+      .select([
+        "i.id",
+        "i.title",
+        "i.url",
+        "i.thumbnail_url",
+        "i.width",
+        "i.height",
+        "i.category",
+        "i.view_count",
+        "i.download_count",
+        "i.dominant_color",
+        "i.tags",
+        "i.author",
+      ])
+      .where("tzi.zone_key", "=", zoneKey)
+      .where("i.status", "=", "approved")
+      .where("i.media_type", "!=", "video")
+      .orderBy("tzi.sort_order", "asc")
+      .orderBy("i.download_count", "desc")
+      .execute();
 
     // 分类匹配图片（排除手动关联的，避免重复）
     let categoryImages: any[] = [];
     if (categorySlugs.length > 0) {
-      const placeholders = categorySlugs.map(() => "?").join(", ");
       const excludeClause = manualIdList.length > 0
-        ? `AND i.id NOT IN (${manualIdList.map(() => "?").join(", ")})`
-        : "";
+        ? sql`AND i.id NOT IN (${sql.join(manualIdList)})`
+        : sql``;
 
-      categoryImages = (await query(
-        `SELECT i.id, i.title, i.url, i.thumbnail_url, i.width, i.height,
+      categoryImages = (await sql`
+        SELECT i.id, i.title, i.url, i.thumbnail_url, i.width, i.height,
           i.category, i.view_count, i.download_count, i.dominant_color, i.tags,
           i.author
         FROM images i
         WHERE i.status = 'approved' AND i.media_type != 'video'
-        AND (i.category IN (${placeholders}) OR i.category IN (SELECT c.name FROM categories c WHERE c.slug IN (${placeholders})))
+        AND (i.category IN (${sql.join(categorySlugs)}) OR i.category IN (SELECT c.name FROM categories c WHERE c.slug IN (${sql.join(categorySlugs)})))
         ${excludeClause}
-        ORDER BY i.download_count DESC, i.view_count DESC`,
-        [...categorySlugs, ...categorySlugs, ...manualIdList]
-      )) as any[];
+        ORDER BY i.download_count DESC, i.view_count DESC
+      `.execute(db)).rows as any[];
     }
 
     // 获取封面图
     let coverImage: any = null;
     if (zone.cover_image_id) {
-      const coverResult = (await query(
-        `SELECT id, url, thumbnail_url FROM images WHERE id = ? AND status = 'approved'`,
-        [zone.cover_image_id]
-      )) as any[];
+      const coverResult = await db
+        .selectFrom("images")
+        .select(["id", "url", "thumbnail_url"])
+        .where("id", "=", zone.cover_image_id)
+        .where("status", "=", "approved")
+        .execute();
       if (coverResult.length > 0) coverImage = coverResult[0];
     }
     // 无自定义封面时使用第一张图作为封面

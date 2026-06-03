@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { hexToRgb, colorDistance } from "@/lib/color-extract";
 
 // GET /api/images/search/color - 按颜色搜索图片
@@ -32,18 +32,20 @@ export async function GET(request: NextRequest) {
     const targetRgb = hexToRgb(color);
 
     // 查询有颜色信息的图片
-    let sql = "SELECT * FROM images WHERE dominant_color IS NOT NULL AND status = 'approved'";
-    const params: any[] = [];
+    let query = db
+      .selectFrom("images")
+      .where("dominant_color", "is not", null)
+      .where("status", "=", "approved")
+      .selectAll();
 
     if (category && category !== "all") {
-      sql += " AND category = ?";
-      params.push(category);
+      query = query.where("category", "=", category);
     }
 
-    const rows = (await query(sql, params)) as any[];
+    const rows = await query.execute();
 
     // 应用层筛选：计算色差
-    const matched = rows.filter((row: any) => {
+    const matched = rows.filter((row) => {
       if (!row.dominant_color) return false;
 
       const dominantRgb = hexToRgb(row.dominant_color);
@@ -71,9 +73,9 @@ export async function GET(request: NextRequest) {
     });
 
     // 按色差排序（越接近的排越前）
-    matched.sort((a: any, b: any) => {
-      const distA = colorDistance(targetRgb, hexToRgb(a.dominant_color));
-      const distB = colorDistance(targetRgb, hexToRgb(b.dominant_color));
+    matched.sort((a, b) => {
+      const distA = colorDistance(targetRgb, hexToRgb(a.dominant_color!));
+      const distB = colorDistance(targetRgb, hexToRgb(b.dominant_color!));
       return distA - distB;
     });
 

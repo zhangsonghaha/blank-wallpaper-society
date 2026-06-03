@@ -1,4 +1,5 @@
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { notFound } from "next/navigation";
 import { getUserLevel } from "@/lib/user-level";
 import UserClient from "./UserClient";
@@ -8,14 +9,14 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const userId = parseInt(id);
   if (isNaN(userId)) return { title: "用户主页" };
 
-  const users = (await query(
-    "SELECT id, name, bio FROM users WHERE id = ?",
-    [userId]
-  )) as any[];
+  const user = await db
+    .selectFrom("users")
+    .select(["id", "name", "bio"])
+    .where("id", "=", userId)
+    .executeTakeFirst();
 
-  if (users.length === 0) return { title: "用户不存在" };
+  if (!user) return { title: "用户不存在" };
 
-  const user = users[0];
   return {
     title: `${user.name} - 用户主页`,
     description: user.bio || `${user.name}的壁纸主页`,
@@ -32,16 +33,16 @@ export default async function UserPage({
   if (isNaN(userId)) notFound();
 
   // 获取用户基本信息
-  const users = (await query(
-    `SELECT id, name, avatar, banner, bio, social_links, featured_collections,
-      is_verified, role, created_at
-    FROM users WHERE id = ?`,
-    [userId]
-  )) as any[];
+  const user = await db
+    .selectFrom("users")
+    .select([
+      "id", "name", "avatar", "banner", "bio", "social_links",
+      "featured_collections", "is_verified", "role", "created_at",
+    ])
+    .where("id", "=", userId)
+    .executeTakeFirst();
 
-  if (users.length === 0) notFound();
-
-  const user = users[0];
+  if (!user) notFound();
 
   // 解析 JSON 字段
   let socialLinks = null;
@@ -55,38 +56,38 @@ export default async function UserPage({
   } catch { featuredCollections = []; }
 
   // 统计数据
-  const [stats] = (await query(
-    `SELECT
-      COUNT(*) as totalImages,
-      COALESCE(SUM(view_count), 0) as totalViews,
-      COALESCE(SUM(download_count), 0) as totalDownloads,
-      COALESCE(SUM(favorite_count), 0) as totalFavorites
-    FROM images WHERE uploaded_by = ? AND status = 'approved'`,
-    [userId]
-  )) as any[];
+  const stats = await db
+    .selectFrom("images")
+    .select((eb) => [
+      eb.fn.countAll().as("totalImages"),
+      eb.fn.coalesce(eb.fn.sum("view_count"), eb.val(0)).as("totalViews"),
+      eb.fn.coalesce(eb.fn.sum("download_count"), eb.val(0)).as("totalDownloads"),
+      eb.fn.coalesce(eb.fn.sum("favorite_count"), eb.val(0)).as("totalFavorites"),
+    ])
+    .where("uploaded_by", "=", userId)
+    .where("status", "=", "approved")
+    .executeTakeFirst();
 
   // 粉丝/关注数
-  const [followStats] = (await query(
-    `SELECT
-      (SELECT COUNT(*) FROM user_follows WHERE following_id = ?) as followers,
-      (SELECT COUNT(*) FROM user_follows WHERE follower_id = ?) as following`,
-    [userId, userId]
-  )) as any[];
+  const followStats = await sql<{ followers: number; following: number }>`
+    SELECT
+      (SELECT COUNT(*) FROM user_follows WHERE following_id = ${userId}) as followers,
+      (SELECT COUNT(*) FROM user_follows WHERE follower_id = ${userId}) as following
+  `.execute(db).then(r => r.rows[0]);
 
   // 精选合集详情
   let featuredCollectionDetails: any[] = [];
   if (featuredCollections.length > 0) {
     const validIds = featuredCollections.filter((cid: any) => !isNaN(Number(cid)));
     if (validIds.length > 0) {
-      featuredCollectionDetails = (await query(
-        `SELECT c.id, c.name, c.description,
+      featuredCollectionDetails = await sql`
+        SELECT c.id, c.title as name, c.description,
           i.url as cover_url, i.thumbnail_url as cover_thumbnail_url,
           (SELECT COUNT(*) FROM collection_images WHERE collection_id = c.id) as image_count
         FROM collections c
         LEFT JOIN images i ON c.cover_image_id = i.id
-        WHERE c.id IN (${validIds.map(() => "?").join(",")}) AND c.is_public = TRUE`,
-        validIds
-      )) as any[];
+        WHERE c.id IN (${sql.join(validIds)}) AND c.is_public = 1
+      `.execute(db).then(r => r.rows as any[]);
       featuredCollectionDetails.sort((a: any, b: any) =>
         featuredCollections.indexOf(a.id) - featuredCollections.indexOf(b.id)
       );
@@ -110,17 +111,19 @@ export default async function UserPage({
   // 获取会员信息
   let membershipInfo = null;
   try {
-    const memberRows = (await query(
-      "SELECT plan, started_at, expires_at, status FROM memberships WHERE user_id = ? AND status = 'active' LIMIT 1",
-      [userId]
-    )) as any[];
-    if (memberRows.length > 0) {
-      const m = memberRows[0];
+    const m = await db
+      .selectFrom("memberships")
+      .select(["plan", "started_at", "expires_at", "status"])
+      .where("user_id", "=", userId)
+      .where("status", "=", "active")
+      .limit(1)
+      .executeTakeFirst();
+    if (m) {
       membershipInfo = {
-        plan: m.plan,
-        startedAt: m.started_at,
-        expiresAt: m.expires_at,
-        status: m.status,
+        plan: m.plan || "free",
+        startedAt: m.started_at instanceof Date ? m.started_at.toISOString() : m.started_at,
+        expiresAt: m.expires_at instanceof Date ? m.expires_at.toISOString() : m.expires_at,
+        status: m.status || "active",
       };
     }
     // 管理员也显示会员标识
@@ -130,10 +133,14 @@ export default async function UserPage({
   } catch { membershipInfo = null; }
 
   // 已通过的壁纸（分页）
-  const images = (await query(
-    "SELECT id, title, url, thumbnail_url, view_count, download_count FROM images WHERE uploaded_by = ? AND status = 'approved' ORDER BY created_at DESC LIMIT 24",
-    [userId]
-  )) as any[];
+  const images = await db
+    .selectFrom("images")
+    .select(["id", "title", "url", "thumbnail_url", "view_count", "download_count"])
+    .where("uploaded_by", "=", userId)
+    .where("status", "=", "approved")
+    .orderBy("created_at", "desc")
+    .limit(24)
+    .execute();
 
   // JSON-LD
   const jsonLd = {
@@ -159,18 +166,18 @@ export default async function UserPage({
           banner: user.banner,
           bio: user.bio,
           socialLinks,
-          isVerified: user.is_verified,
+          isVerified: user.is_verified || 0,
           role: user.role,
-          createdAt: user.created_at,
+          createdAt: user.created_at instanceof Date ? user.created_at.toISOString() : String(user.created_at),
         }}
         stats={{
-          totalImages: stats?.totalImages || 0,
-          totalViews: stats?.totalViews || 0,
-          totalDownloads: stats?.totalDownloads || 0,
-          totalFavorites: stats?.totalFavorites || 0,
+          totalImages: Number(stats?.totalImages || 0),
+          totalViews: Number(stats?.totalViews || 0),
+          totalDownloads: Number(stats?.totalDownloads || 0),
+          totalFavorites: Number(stats?.totalFavorites || 0),
         }}
-        followers={followStats?.followers || 0}
-        following={followStats?.following || 0}
+        followers={Number(followStats?.followers || 0)}
+        following={Number(followStats?.following || 0)}
         featuredCollections={featuredCollectionDetails}
         images={images}
         levelData={levelData}

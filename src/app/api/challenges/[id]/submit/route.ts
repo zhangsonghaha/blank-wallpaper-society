@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
 // POST /api/challenges/[id]/submit - 投稿参赛
@@ -29,10 +29,12 @@ export async function POST(
     }
 
     // 验证活动存在且正在进行
-    const challenge = (await query(
-      "SELECT * FROM challenges WHERE id = ? AND status = 'active'",
-      [challengeId]
-    )) as any[];
+    const challenge = await db
+      .selectFrom("challenges")
+      .selectAll()
+      .where("id", "=", challengeId)
+      .where("status", "=", "active")
+      .execute();
 
     if (challenge.length === 0) {
       return NextResponse.json({ error: "活动不存在或未开始" }, { status: 404 });
@@ -44,10 +46,12 @@ export async function POST(
     }
 
     // 验证图片属于当前用户（允许 approved 和 pending 状态）
-    const image = (await query(
-      "SELECT id, status FROM images WHERE id = ? AND uploaded_by = ?",
-      [imageId, userId]
-    )) as any[];
+    const image = await db
+      .selectFrom("images")
+      .select(["id", "status"])
+      .where("id", "=", imageId)
+      .where("uploaded_by", "=", userId)
+      .execute();
 
     if (image.length === 0) {
       return NextResponse.json({ error: "图片不存在或不属于你" }, { status: 400 });
@@ -57,29 +61,42 @@ export async function POST(
     const submissionStatus = image[0].status === "approved" ? "approved" : "pending";
 
     // 检查投稿数量限制
-    const existingSubs = (await query(
-      "SELECT COUNT(*) as count FROM challenge_submissions WHERE challenge_id = ? AND user_id = ?",
-      [challengeId, userId]
-    )) as any[];
+    const existingSubs = await db
+      .selectFrom("challenge_submissions")
+      .select((eb) => [eb.fn.countAll().as("count")])
+      .where("challenge_id", "=", challengeId)
+      .where("user_id", "=", userId)
+      .execute();
 
-    if (existingSubs[0]?.count >= (challenge[0].max_submissions || 3)) {
-      return NextResponse.json({ error: `每人最多投稿${challenge[0].max_submissions || 3}次` }, { status: 400 });
+    if (Number(existingSubs[0]?.count ?? 0) >= (challenge[0].max_submissions || 3)) {
+      return NextResponse.json(
+        { error: `每人最多投稿${challenge[0].max_submissions || 3}次` },
+        { status: 400 }
+      );
     }
 
     // 检查是否重复投稿
-    const duplicate = (await query(
-      "SELECT id FROM challenge_submissions WHERE challenge_id = ? AND user_id = ? AND image_id = ?",
-      [challengeId, userId, imageId]
-    )) as any[];
+    const duplicate = await db
+      .selectFrom("challenge_submissions")
+      .select(["id"])
+      .where("challenge_id", "=", challengeId)
+      .where("user_id", "=", userId)
+      .where("image_id", "=", imageId)
+      .execute();
 
     if (duplicate.length > 0) {
       return NextResponse.json({ error: "该图片已投稿" }, { status: 409 });
     }
 
-    await query(
-      "INSERT INTO challenge_submissions (challenge_id, user_id, image_id, status) VALUES (?, ?, ?, ?)",
-      [challengeId, userId, imageId, submissionStatus]
-    );
+    await db
+      .insertInto("challenge_submissions")
+      .values({
+        challenge_id: challengeId,
+        user_id: userId,
+        image_id: imageId,
+        status: submissionStatus,
+      })
+      .executeTakeFirst();
 
     const responseMessage = submissionStatus === "pending"
       ? "投稿成功，图片审核通过后作品将自动展示"

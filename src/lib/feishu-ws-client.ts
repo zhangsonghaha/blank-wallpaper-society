@@ -11,7 +11,8 @@
  */
 
 import * as Lark from "@larksuiteoapi/node-sdk";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { chatWithBot } from "@/lib/ai-chat";
 import { logBotMessage } from "@/lib/bot-notification";
 
@@ -182,20 +183,25 @@ async function handleAiReply(
     await replyMessage(appId, chatId, replyText, botConfig.id);
 
     // 更新发送计数
-    await query(
-      "UPDATE bot_configs SET last_sent_at = NOW(), send_count = send_count + 1 WHERE id = ?",
-      [botConfig.id]
-    ).catch(() => {});
+    await db.updateTable("bot_configs")
+      .set({
+        last_sent_at: sql`NOW()`,
+        send_count: sql`send_count + 1`,
+      })
+      .where("id", "=", botConfig.id)
+      .execute()
+      .catch(() => {});
 
     console.log(`[FeishuWs] AI回复成功: chat=${chatId}, len=${replyText.length}`);
   } catch (error: unknown) {
     console.error("[FeishuWs] AI回复处理失败:", error);
     await replyMessage(appId, chatId, "抱歉，AI服务暂时不可用，请稍后再试。", botConfig.id);
 
-    await query(
-      "UPDATE bot_configs SET fail_count = fail_count + 1 WHERE id = ?",
-      [botConfig.id]
-    ).catch(() => {});
+    await db.updateTable("bot_configs")
+      .set({ fail_count: sql`fail_count + 1` })
+      .where("id", "=", botConfig.id)
+      .execute()
+      .catch(() => {});
   }
 }
 
@@ -207,9 +213,12 @@ async function handleAiReply(
  */
 export async function startFeishuWsClients(): Promise<void> {
   try {
-    const botConfigs = (await query(
-      "SELECT * FROM bot_configs WHERE type = 'feishu' AND auth_mode = 'app' AND enabled = 1"
-    )) as BotConfigRow[];
+    const botConfigs = await db.selectFrom("bot_configs")
+      .where("type", "=", "feishu")
+      .where("auth_mode", "=", "app")
+      .where("enabled", "=", 1)
+      .selectAll()
+      .execute() as BotConfigRow[];
 
     if (botConfigs.length === 0) {
       console.log("[FeishuWs] 没有已启用的飞书 App 模式机器人，跳过长连接启动");

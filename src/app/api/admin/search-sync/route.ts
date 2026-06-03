@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import {
   isMeilisearchAvailable,
   ensureIndexConfig,
@@ -32,9 +32,11 @@ export async function POST(request: NextRequest) {
     await ensureIndexConfig();
 
     // 获取所有 approved 图片
-    const images = (await query(
-      "SELECT * FROM images WHERE status = 'approved'"
-    )) as any[];
+    const images = await db
+      .selectFrom("images")
+      .selectAll()
+      .where("status", "=", "approved")
+      .execute();
 
     if (images.length === 0) {
       return NextResponse.json({
@@ -98,9 +100,11 @@ export async function DELETE(request: NextRequest) {
     await ensureIndexConfig();
 
     // 重新同步所有 approved 图片
-    const images = (await query(
-      "SELECT * FROM images WHERE status = 'approved'"
-    )) as any[];
+    const images = await db
+      .selectFrom("images")
+      .selectAll()
+      .where("status", "=", "approved")
+      .execute();
 
     if (images.length === 0) {
       return NextResponse.json({
@@ -144,10 +148,12 @@ export async function GET(request: NextRequest) {
     const stats = await getIndexStats();
 
     // 获取数据库中 approved 图片数量
-    const countResult = (await query(
-      "SELECT COUNT(*) as total FROM images WHERE status = 'approved'"
-    )) as any[];
-    const dbTotal = countResult[0]?.total || 0;
+    const countResult = await db
+      .selectFrom("images")
+      .select((eb) => eb.fn.countAll().as("total"))
+      .where("status", "=", "approved")
+      .executeTakeFirst();
+    const dbTotal = Number(countResult?.total ?? 0);
 
     return NextResponse.json({
       available: true,

@@ -1,18 +1,23 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import ImageDetailClient from "./ImageDetailClient";
 
 // 获取图片数据的辅助函数
 async function getImageData(id: string) {
-  const rows = (await query(
-    "SELECT i.*, u.name as uploader_name, u.avatar as uploader_avatar FROM images i LEFT JOIN users u ON i.uploaded_by = u.id WHERE i.id = ? AND i.status = 'approved'",
-    [id]
-  )) as any[];
+  const image = await db
+    .selectFrom("images as i")
+    .leftJoin("users as u", "u.id", "i.uploaded_by")
+    .selectAll("i")
+    .select([
+      "u.name as uploader_name",
+      "u.avatar as uploader_avatar",
+    ])
+    .where("i.id", "=", Number(id))
+    .where("i.status", "=", "approved")
+    .executeTakeFirst();
 
-  if (rows.length === 0) return null;
-
-  const image = rows[0];
+  if (!image) return null;
 
   // 获取分类和标签
   const tags = image.tags
@@ -25,8 +30,7 @@ async function getImageData(id: string) {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://imagegallery.app";
   const imageUrl = image.url
     || (image.storage_key ? `https://qq.qinqin.asia/storage/${image.storage_key}` : "");
-  const thumbnailUrl = image.thumbnail_url
-    || (image.thumbnail_key ? `https://qq.qinqin.asia/storage/${image.thumbnail_key}` : imageUrl);
+  const thumbnailUrl = image.thumbnail_url || imageUrl;
 
   return {
     id: image.id,
@@ -44,7 +48,7 @@ async function getImageData(id: string) {
     dominantColor: image.dominant_color || "",
     downloadCount: image.download_count || 0,
     viewCount: image.view_count || 0,
-    createdAt: image.created_at,
+    createdAt: image.created_at instanceof Date ? image.created_at.toISOString() : String(image.created_at),
     mediaType: image.media_type || "image",
     baseUrl,
   };

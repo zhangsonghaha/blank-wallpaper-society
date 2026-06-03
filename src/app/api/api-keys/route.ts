@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { getApiKeyUsageStats } from "@/lib/rate-limit";
+import { sql } from "kysely";
 
 // 生成随机API Key
 function generateApiKey(): { rawKey: string; keyHash: string; keyPrefix: string } {
@@ -26,18 +27,17 @@ export async function GET() {
 
     const userId = (session.user as any).id;
 
-    const rows = (await query(
-      `SELECT id, key_prefix, name, rate_limit, is_active, created_at, last_used_at, expires_at
-       FROM api_keys 
-       WHERE user_id = ? 
-       ORDER BY created_at DESC`,
-      [userId]
-    )) as any[];
+    const rows = await db
+      .selectFrom("api_keys")
+      .select(["id", "key_prefix", "name", "rate_limit", "is_active", "created_at", "last_used_at", "expires_at"])
+      .where("user_id", "=", userId)
+      .orderBy("created_at", "desc")
+      .execute();
 
     // 标记已过期的Key为不活跃，并遮蔽敏感信息
     const now = new Date();
     const processedRows = rows.map((row) => {
-      const isExpired = row.expires_at && new Date(row.expires_at) < now;
+      const isExpired = row.expires_at && new Date(row.expires_at as any) < now;
       return {
         ...row,
         is_active: isExpired ? false : row.is_active,
@@ -82,12 +82,17 @@ export async function POST(request: NextRequest) {
     }
 
     // 检查用户已有Key数量（最多5个，不含已过期的）
-    const existing = (await query(
-      "SELECT COUNT(*) as count FROM api_keys WHERE user_id = ? AND (expires_at IS NULL OR expires_at > NOW())",
-      [userId]
-    )) as any[];
+    const existing = await db
+      .selectFrom("api_keys")
+      .select((eb) => [eb.fn.count<number>("id").as("count")])
+      .where("user_id", "=", userId)
+      .where((eb) => eb.or([
+        eb("expires_at", "is", null),
+        eb("expires_at", ">", sql<Date>`NOW()`),
+      ]))
+      .executeTakeFirst();
 
-    if (existing[0]?.count >= 5) {
+    if (Number(existing?.count ?? 0) >= 5) {
       return NextResponse.json(
         { error: "每个用户最多创建5个有效API Key" },
         { status: 400 }
@@ -100,20 +105,26 @@ export async function POST(request: NextRequest) {
     // 计算过期时间：默认90天，0表示永不过期
     const expiryDays = expires_in_days !== undefined ? expires_in_days : DEFAULT_KEY_EXPIRY_DAYS;
     const expiresAt = expiryDays > 0
-      ? new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ")
+      ? new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000)
       : null;
 
-    const result = (await query(
-      `INSERT INTO api_keys (user_id, key_hash, key_prefix, name, rate_limit, expires_at) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [userId, keyHash, keyPrefix, name.trim(), limit, expiresAt]
-    )) as any;
+    const result = await db
+      .insertInto("api_keys")
+      .values({
+        user_id: userId,
+        key_hash: keyHash,
+        key_prefix: keyPrefix,
+        name: name.trim(),
+        rate_limit: limit,
+        expires_at: expiresAt,
+      })
+      .executeTakeFirst();
 
     // 创建后只返回一次完整Key
     return NextResponse.json(
       {
         data: {
-          id: result.insertId,
+          id: Number(result.insertId),
           key_prefix: keyPrefix,
           name: name.trim(),
           rate_limit: limit,

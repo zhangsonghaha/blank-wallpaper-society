@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // GET - 获取通知公告列表
 export async function GET(request: NextRequest) {
@@ -10,35 +11,31 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get("type");
     const is_published = searchParams.get("is_published");
 
-    let whereClause = "WHERE 1=1";
-    const params: any[] = [];
-
-    if (type) {
-      whereClause += " AND type = ?";
-      params.push(type);
-    }
+    const whereParts: ReturnType<typeof sql>[] = [];
+    if (type) whereParts.push(sql`type = ${type}`);
     if (is_published !== null && is_published !== undefined && is_published !== '') {
-      whereClause += " AND is_published = ?";
-      params.push(Number(is_published));
+      whereParts.push(sql`is_published = ${Number(is_published)}`);
     }
+
+    const whereClause = whereParts.length > 0
+      ? sql`WHERE ${sql.join(whereParts, sql` AND `)}`
+      : sql``;
 
     // 获取总数
-    const countResult = await query(
-      `SELECT COUNT(*) as total FROM sys_announcements ${whereClause}`,
-      params
-    ) as any[];
+    const countResult = await sql<{ total: string | number }>`SELECT COUNT(*) as total FROM sys_announcements ${whereClause}`.execute(db);
 
     // 获取列表
     const offset = (page - 1) * pageSize;
-    const list = await query(
-      `SELECT a.*, u.name as author_name FROM sys_announcements a LEFT JOIN users u ON a.author_id = u.id ${whereClause} ORDER BY a.created_at DESC LIMIT ${pageSize} OFFSET ${offset}`,
-      params
-    ) as any[];
+    const list = await sql<{
+      id: number; title: string; content: string; type: string; priority: string;
+      is_published: number; start_time: string; end_time: string; author_id: number;
+      created_at: string; updated_at: string; author_name: string;
+    }>`SELECT a.*, u.name as author_name FROM sys_announcements a LEFT JOIN users u ON a.author_id = u.id ${whereClause} ORDER BY a.created_at DESC LIMIT ${pageSize} OFFSET ${offset}`.execute(db);
 
     return NextResponse.json({
       success: true,
-      data: list,
-      total: countResult[0]?.total || 0,
+      data: list.rows,
+      total: Number(countResult.rows[0]?.total || 0),
       page,
       pageSize,
     });
@@ -58,13 +55,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "标题和内容不能为空" }, { status: 400 });
     }
 
-    const result = await query(
-      `INSERT INTO sys_announcements (title, content, type, priority, is_published, start_time, end_time, author_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [title, content, type || 'notice', priority || 'normal', is_published ?? 0, start_time || null, end_time || null, author_id || null]
-    ) as any;
+    const result = await db.insertInto("sys_announcements")
+      .values({
+        title,
+        content,
+        type: type || 'notice',
+        priority: priority || 'normal',
+        is_published: is_published ?? 0,
+        start_time: start_time || null,
+        end_time: end_time || null,
+        author_id: author_id || null,
+      })
+      .executeTakeFirst();
 
-    return NextResponse.json({ success: true, data: { id: result.insertId, ...body } });
+    return NextResponse.json({ success: true, data: { id: Number(result.insertId), ...body } });
   } catch (error) {
     console.error("新增通知公告失败:", error);
     return NextResponse.json({ success: false, error: "新增通知公告失败" }, { status: 500 });
@@ -81,10 +85,18 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: "公告ID不能为空" }, { status: 400 });
     }
 
-    await query(
-      `UPDATE sys_announcements SET title=?, content=?, type=?, priority=?, is_published=?, start_time=?, end_time=? WHERE id=?`,
-      [title, content, type || 'notice', priority || 'normal', is_published ?? 0, start_time || null, end_time || null, id]
-    );
+    await db.updateTable("sys_announcements")
+      .set({
+        title,
+        content,
+        type: type || 'notice',
+        priority: priority || 'normal',
+        is_published: is_published ?? 0,
+        start_time: start_time || null,
+        end_time: end_time || null,
+      })
+      .where("id", "=", id)
+      .execute();
 
     return NextResponse.json({ success: true, data: body });
   } catch (error) {
@@ -103,7 +115,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: "公告ID不能为空" }, { status: 400 });
     }
 
-    await query("DELETE FROM sys_announcements WHERE id = ?", [Number(id)]);
+    await db.deleteFrom("sys_announcements").where("id", "=", Number(id)).execute();
 
     return NextResponse.json({ success: true });
   } catch (error) {

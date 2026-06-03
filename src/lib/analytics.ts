@@ -4,7 +4,7 @@
  * 服务端事件追踪 + 客户端配置
  */
 
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // === 分析事件类型 ===
 
@@ -59,16 +59,16 @@ export async function getAnalyticsConfig(): Promise<AnalyticsConfig> {
   };
 
   try {
-    const rows = (await query(
-      "SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN (?, ?, ?, ?, ?)",
-      [
+    const rows = await db.selectFrom("system_settings")
+      .where("setting_key", "in", [
         "analytics_provider",
         "analytics_umami_website_id",
         "analytics_umami_api_url",
         "analytics_posthog_api_key",
         "analytics_posthog_api_host",
-      ]
-    )) as any[];
+      ])
+      .select(["setting_key", "setting_value"])
+      .execute();
 
     const settings: Record<string, string> = {};
     for (const row of rows) {

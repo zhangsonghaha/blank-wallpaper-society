@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // ========== 默认水印配置 ==========
 const DEFAULT_CONFIG = {
@@ -27,12 +27,15 @@ interface WatermarkConfig {
  */
 export async function getWatermarkConfig(): Promise<WatermarkConfig> {
   try {
-    const rows = (await query(
-      `SELECT setting_key, setting_value FROM system_settings 
-       WHERE setting_key IN ('watermark_enabled', 'watermark_text', 'watermark_opacity', 'watermark_position', 'watermark_color', 'watermark_tiled')`
-    )) as any[];
+    const rows = await db.selectFrom("system_settings")
+      .where("setting_key", "in", [
+        "watermark_enabled", "watermark_text", "watermark_opacity",
+        "watermark_position", "watermark_color", "watermark_tiled",
+      ])
+      .select(["setting_key", "setting_value"])
+      .execute();
 
-    const settingsMap = new Map(rows.map((r: any) => [r.setting_key, r.setting_value]));
+    const settingsMap = new Map(rows.map((r) => [r.setting_key, r.setting_value]));
 
     return {
       text: settingsMap.get("watermark_text") || DEFAULT_CONFIG.text,
@@ -52,9 +55,10 @@ export async function getWatermarkConfig(): Promise<WatermarkConfig> {
  */
 export async function isWatermarkEnabled(): Promise<boolean> {
   try {
-    const rows = (await query(
-      "SELECT setting_value FROM system_settings WHERE setting_key = 'watermark_enabled'"
-    )) as any[];
+    const rows = await db.selectFrom("system_settings")
+      .where("setting_key", "=", "watermark_enabled")
+      .select(["setting_value"])
+      .execute();
 
     if (rows.length > 0) {
       return rows[0].setting_value === "true" || rows[0].setting_value === "1";

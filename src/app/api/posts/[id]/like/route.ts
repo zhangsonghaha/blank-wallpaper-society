@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 
 // POST /api/posts/[id]/like - 点赞/取消点赞
@@ -18,26 +19,47 @@ export async function POST(
     const postId = parseInt(id);
 
     // 检查帖子是否存在
-    const post = await query("SELECT id FROM posts WHERE id = ?", [postId]) as any[];
+    const post = await db
+      .selectFrom("posts")
+      .select(["id"])
+      .where("id", "=", postId)
+      .execute();
     if (post.length === 0) {
       return NextResponse.json({ error: "帖子不存在" }, { status: 404 });
     }
 
     // 检查是否已点赞
-    const existing = await query(
-      "SELECT id FROM post_likes WHERE post_id = ? AND user_id = ?",
-      [postId, userId]
-    ) as any[];
+    const existing = await db
+      .selectFrom("post_likes")
+      .select(["id"])
+      .where("post_id", "=", postId)
+      .where("user_id", "=", userId)
+      .execute();
 
     if (existing.length > 0) {
       // 取消点赞
-      await query("DELETE FROM post_likes WHERE post_id = ? AND user_id = ?", [postId, userId]);
-      await query("UPDATE posts SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = ?", [postId]);
+      await db
+        .deleteFrom("post_likes")
+        .where("post_id", "=", postId)
+        .where("user_id", "=", userId)
+        .executeTakeFirst();
+      await db
+        .updateTable("posts")
+        .set({ likes_count: sql`GREATEST(likes_count - 1, 0)` })
+        .where("id", "=", postId)
+        .executeTakeFirst();
       return NextResponse.json({ liked: false, message: "已取消点赞" });
     } else {
       // 点赞
-      await query("INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)", [postId, userId]);
-      await query("UPDATE posts SET likes_count = likes_count + 1 WHERE id = ?", [postId]);
+      await db
+        .insertInto("post_likes")
+        .values({ post_id: postId, user_id: userId })
+        .executeTakeFirst();
+      await db
+        .updateTable("posts")
+        .set({ likes_count: sql`likes_count + 1` })
+        .where("id", "=", postId)
+        .executeTakeFirst();
       return NextResponse.json({ liked: true, message: "点赞成功" });
     }
 

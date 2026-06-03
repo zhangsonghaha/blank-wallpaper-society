@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { getObject } from "@/lib/minio";
 import { generateAndUploadVariants } from "@/lib/image-variants";
@@ -21,17 +22,16 @@ export async function POST(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
 
     // 查询未生成变体的图片（variants 为 NULL 或为空）
-    const images = await query(
-      `SELECT id, storage_key, width, height, mime_type FROM images 
+    const images = await sql<{
+      id: number; storage_key: string; width: number; height: number; mime_type: string;
+    }>`SELECT id, storage_key, width, height, mime_type FROM images 
        WHERE (variants IS NULL OR JSON_LENGTH(variants) = 0) 
        AND width > 0 AND height > 0 
        AND (mime_type IS NULL OR mime_type LIKE 'image/%')
        ORDER BY id ASC 
-       LIMIT ${limit}`,
-      []
-    ) as any[];
+       LIMIT ${limit}`.execute(db);
 
-    if (images.length === 0) {
+    if (images.rows.length === 0) {
       return NextResponse.json({
         message: "没有需要生成变体的图片",
         processed: 0,
@@ -41,20 +41,18 @@ export async function POST(request: NextRequest) {
     }
 
     // 查询总待处理数量
-    const totalResult = await query(
-      `SELECT COUNT(*) as count FROM images 
+    const totalResult = await sql<{ count: string | number }>`SELECT COUNT(*) as count FROM images 
        WHERE (variants IS NULL OR JSON_LENGTH(variants) = 0) 
        AND width > 0 AND height > 0 
-       AND (mime_type IS NULL OR mime_type LIKE 'image/%')`
-    ) as any[];
-    const totalPending = totalResult[0]?.count || 0;
+       AND (mime_type IS NULL OR mime_type LIKE 'image/%')`.execute(db);
+    const totalPending = Number(totalResult.rows[0]?.count || 0);
 
     let processed = 0;
     let failed = 0;
     const errors: { id: number; error: string }[] = [];
 
     // 逐个处理（避免并发过大导致服务器压力）
-    for (const image of images) {
+    for (const image of images.rows) {
       try {
         // 从 MinIO 获取原图
         const originalBuffer = await getObject(image.storage_key);
@@ -83,10 +81,13 @@ export async function POST(request: NextRequest) {
         );
 
         // 更新数据库
-        await query(
-          "UPDATE images SET variants = ?, thumbnails = ? WHERE id = ?",
-          [JSON.stringify(variants), JSON.stringify(thumbnails), image.id]
-        );
+        await db.updateTable("images")
+          .set({
+            variants: JSON.stringify(variants),
+            thumbnails: JSON.stringify(thumbnails),
+          })
+          .where("id", "=", image.id)
+          .execute();
 
         processed++;
       } catch (err: any) {
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
       processed,
       failed,
       totalPending: totalPending - processed,
-      errors: errors.length > 0 ? errors.slice(0, 10) : undefined, // 最多返回10条错误
+      errors: errors.length > 0 ? errors.slice(0, 10) : undefined,
     });
   } catch (error: any) {
     console.error("批量生成变体API错误:", error);
@@ -124,29 +125,29 @@ export async function GET(request: NextRequest) {
     }
 
     // 统计已有变体的图片数
-    const withVariants = await query(
-      `SELECT COUNT(*) as count FROM images WHERE variants IS NOT NULL AND JSON_LENGTH(variants) > 0`
-    ) as any[];
+    const withVariants = await sql<{ count: string | number }>`SELECT COUNT(*) as count FROM images WHERE variants IS NOT NULL AND JSON_LENGTH(variants) > 0`.execute(db);
 
     // 统计未生成变体的图片数
-    const withoutVariants = await query(
-      `SELECT COUNT(*) as count FROM images 
+    const withoutVariants = await sql<{ count: string | number }>`SELECT COUNT(*) as count FROM images 
        WHERE (variants IS NULL OR JSON_LENGTH(variants) = 0) 
        AND width > 0 AND height > 0 
-       AND (mime_type IS NULL OR mime_type LIKE 'image/%')`
-    ) as any[];
+       AND (mime_type IS NULL OR mime_type LIKE 'image/%')`.execute(db);
 
     // 总图片数
-    const totalImages = await query(
-      `SELECT COUNT(*) as count FROM images`
-    ) as any[];
+    const totalImages = await db.selectFrom("images")
+      .select((eb) => eb.fn.countAll().as("count"))
+      .executeTakeFirst();
+
+    const total = Number(totalImages?.count || 0);
+    const withV = Number(withVariants.rows[0]?.count || 0);
+    const withoutV = Number(withoutVariants.rows[0]?.count || 0);
 
     return NextResponse.json({
-      totalImages: totalImages[0]?.count || 0,
-      withVariants: withVariants[0]?.count || 0,
-      withoutVariants: withoutVariants[0]?.count || 0,
-      progress: totalImages[0]?.count > 0
-        ? Math.round((withVariants[0]?.count / totalImages[0]?.count) * 100)
+      totalImages: total,
+      withVariants: withV,
+      withoutVariants: withoutV,
+      progress: total > 0
+        ? Math.round((withV / total) * 100)
         : 0,
     });
   } catch (error: any) {

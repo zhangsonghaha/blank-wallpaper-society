@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { extractColors } from "@/lib/color-extract";
 
 // POST /api/images/[id]/extract-color - 为指定图片提取颜色信息并更新数据库
@@ -16,15 +16,15 @@ export async function POST(
     }
 
     // 查询图片信息
-    const rows = (await query("SELECT * FROM images WHERE id = ?", [
-      imageId,
-    ])) as any[];
+    const image = await db
+      .selectFrom("images")
+      .where("id", "=", imageId)
+      .selectAll()
+      .executeTakeFirst();
 
-    if (!rows || rows.length === 0) {
+    if (!image) {
       return NextResponse.json({ error: "图片不存在" }, { status: 404 });
     }
-
-    const image = rows[0];
 
     // 从URL获取图片数据
     const imageUrl = image.url;
@@ -53,10 +53,14 @@ export async function POST(
     const { dominant, palette } = await extractColors(buffer);
 
     // 更新数据库
-    await query(
-      "UPDATE images SET dominant_color = ?, color_palette = ? WHERE id = ?",
-      [dominant, JSON.stringify(palette), imageId]
-    );
+    await db
+      .updateTable("images")
+      .set({
+        dominant_color: dominant,
+        color_palette: JSON.stringify(palette),
+      })
+      .where("id", "=", imageId)
+      .execute();
 
     return NextResponse.json({
       id: imageId,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { isEmailConfigured, sendNotificationEmail } from "@/lib/email";
 
@@ -18,46 +19,45 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get("type");
     const userId = searchParams.get("userId");
 
-    let sql = `
-      SELECT n.*, u.name as user_name, u.email as user_email
-      FROM notifications n
-      LEFT JOIN users u ON n.user_id = u.id
-      WHERE 1=1
-    `;
-    const params: any[] = [];
+    // Build dynamic WHERE
+    const whereParts: ReturnType<typeof sql>[] = [];
+    if (type) whereParts.push(sql`n.type = ${type}`);
+    if (userId) whereParts.push(sql`n.user_id = ${parseInt(userId)}`);
 
-    if (type) {
-      sql += " AND n.type = ?";
-      params.push(type);
-    }
-    if (userId) {
-      sql += " AND n.user_id = ?";
-      params.push(userId);
-    }
+    const whereClause = whereParts.length > 0
+      ? sql`WHERE ${sql.join(whereParts, sql` AND `)}`
+      : sql``;
 
     // 获取总数
-    const countSql = `SELECT COUNT(*) as total FROM notifications n WHERE 1=1${type ? " AND n.type = ?" : ""}${userId ? " AND n.user_id = ?" : ""}`;
-    const countResult = (await query(countSql, params)) as any[];
-    const total = countResult[0]?.total || 0;
+    const countResult = await sql<{ total: string | number }>`SELECT COUNT(*) as total FROM notifications n ${whereClause}`.execute(db);
+    const total = Number(countResult.rows[0]?.total || 0);
 
     // 获取未读数
-    const unreadResult = (await query(
-      "SELECT COUNT(*) as count FROM notifications WHERE is_read = 0"
-    )) as any[];
-    const unreadCount = unreadResult[0]?.count || 0;
+    const unreadResult = await db.selectFrom("notifications")
+      .where("is_read", "=", 0)
+      .select((eb) => eb.fn.countAll().as("count"))
+      .executeTakeFirst();
+    const unreadCount = Number(unreadResult?.count || 0);
 
     // 获取类型分布
-    const typeDist = (await query(
-      "SELECT type, COUNT(*) as count FROM notifications GROUP BY type ORDER BY count DESC"
-    )) as any[];
+    const typeDist = await db.selectFrom("notifications")
+      .select((eb) => ["type", eb.fn.countAll().as("count")])
+      .groupBy("type")
+      .orderBy("count", "desc")
+      .execute();
 
-    sql += " ORDER BY n.created_at DESC LIMIT ? OFFSET ?";
-    params.push(limit, offset);
-
-    const rows = await query(sql, params);
+    const rows = await sql<{
+      id: number; user_id: number; type: string; title: string; content: string;
+      is_read: number; related_id: number; related_type: string; created_at: string;
+      user_name: string; user_email: string;
+    }>`SELECT n.*, u.name as user_name, u.email as user_email
+      FROM notifications n
+      LEFT JOIN users u ON n.user_id = u.id
+      ${whereClause}
+      ORDER BY n.created_at DESC LIMIT ${limit} OFFSET ${offset}`.execute(db);
 
     return NextResponse.json({
-      data: rows,
+      data: rows.rows,
       total,
       unreadCount,
       typeDistribution: typeDist,
@@ -94,13 +94,10 @@ export async function POST(request: NextRequest) {
     let notificationInserted = 0;
     if (sendMode === "notification" || sendMode === "both") {
       // 批量插入通知
-      const values = userIds
-        .map((uid: number) => `(${uid}, '${type}', '${title.trim().replace(/'/g, "\\'")}', ${content ? `'${content.trim().replace(/'/g, "\\'")}'` : "NULL"})`)
-        .join(", ");
-
-      await query(
-        `INSERT INTO notifications (user_id, type, title, content) VALUES ${values}`
+      const tuples = userIds.map((uid: number) =>
+        sql`(${uid}, ${type}, ${title.trim()}, ${content?.trim() || null})`
       );
+      await sql`INSERT INTO notifications (user_id, type, title, content) VALUES ${sql.join(tuples)}`.execute(db);
       notificationInserted = userIds.length;
     }
 
@@ -110,18 +107,15 @@ export async function POST(request: NextRequest) {
       const emailConfigured = await isEmailConfigured();
       if (emailConfigured) {
         // 获取用户邮箱和邮件通知偏好
-        const userIdList = userIds.map((uid: number) => String(uid)).join(",");
-        const users = (await query(
-          `SELECT u.id, u.email, COALESCE(ns.email_system, 1) as email_enabled
+        const users = await sql<{ id: number; email: string; email_enabled: number }>`SELECT u.id, u.email, COALESCE(ns.email_system, 1) as email_enabled
            FROM users u
            LEFT JOIN notification_settings ns ON u.id = ns.user_id
-           WHERE u.id IN (${userIdList})`
-        )) as any[];
+           WHERE u.id IN (${sql.join(userIds.map((uid: number) => sql`${uid}`))})`.execute(db);
 
-        // 异步并行发送邮件（不阻塞响应）
-        const emailPromises = users
-          .filter((u: any) => u.email && u.email_enabled)
-          .map((u: any) =>
+        // 异步并行发送邮件
+        const emailPromises = users.rows
+          .filter((u) => u.email && u.email_enabled)
+          .map((u) =>
             sendNotificationEmail(u.email, title.trim(), content?.trim() || "").then(
               () => { emailSent++; },
               (err) => { console.error(`[AdminNotify] 邮件发送失败 (user:${u.id}):`, err); }
@@ -174,8 +168,11 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "缺少通知ID" }, { status: 400 });
     }
 
-    const result = await query("DELETE FROM notifications WHERE id = ?", [id]);
-    if ((result as any).affectedRows === 0) {
+    const result = await db.deleteFrom("notifications")
+      .where("id", "=", id)
+      .execute();
+
+    if ((result as any)[0]?.affectedRows === 0) {
       return NextResponse.json({ error: "通知不存在" }, { status: 404 });
     }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { uploadFile, BUCKET_NAME, PUBLIC_URL_BASE, getMinioClient } from "@/lib/minio";
 import { extractColors } from "@/lib/color-extract";
@@ -23,27 +24,28 @@ export async function POST(request: NextRequest) {
     }
 
     // 获取选中的预览项
-    const items = await query(
-      `SELECT * FROM crawl_preview_items WHERE session_id = ? AND is_selected = 1`,
-      [session_id]
-    ) as any[];
+    const items = await db.selectFrom("crawl_preview_items")
+      .where("session_id", "=", session_id)
+      .where("is_selected", "=", 1)
+      .selectAll()
+      .execute();
 
     if (items.length === 0) {
       return NextResponse.json({ error: "没有选中的图片" }, { status: 400 });
     }
 
     // 更新会话状态为 importing
-    await query(
-      `UPDATE crawl_sessions SET status = 'importing' WHERE id = ?`,
-      [session_id]
-    );
+    await db.updateTable("crawl_sessions")
+      .set({ status: "importing" })
+      .where("id", "=", session_id)
+      .execute();
 
     let successCount = 0;
     let failCount = 0;
 
     for (const item of items) {
       try {
-        const result = await processPreviewItem(item, userId);
+        const result = await processPreviewItem(item as any, userId);
         if (result) {
           successCount++;
         } else {
@@ -56,10 +58,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 更新会话状态为 completed
-    await query(
-      `UPDATE crawl_sessions SET status = 'completed', imported_count = ? WHERE id = ?`,
-      [successCount, session_id]
-    );
+    await db.updateTable("crawl_sessions")
+      .set({ status: "completed", imported_count: successCount })
+      .where("id", "=", session_id)
+      .execute();
 
     return NextResponse.json({
       success: true,
@@ -182,38 +184,39 @@ async function processPreviewItem(
   const tagsStr = item.tags || "";
   const description = `[crawl] 从 ${item.source} 爬取 | 源地址: ${item.source_url}${isVideo ? " | 动态壁纸" : ""}`;
 
-  const result = await query(
-    `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by, media_type, video_url, poster_url)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      item.title || `从${item.source}爬取的${isVideo ? "动态壁纸" : "图片"}`,
+  const result = await db.insertInto("images")
+    .values({
+      title: item.title || `从${item.source}爬取的${isVideo ? "动态壁纸" : "图片"}`,
       description,
-      safeName,
-      storageKey,
-      isVideo ? (thumbnailUrl || storedUrl) : storedUrl,
-      thumbnailUrl || null,
+      filename: safeName,
+      storage_key: storageKey,
+      url: isVideo ? (thumbnailUrl || storedUrl) : storedUrl,
+      thumbnail_url: thumbnailUrl || null,
       width,
       height,
-      imageBuffer.length,
-      contentType,
-      `crawler-${item.source}`,
-      tagsStr,
-      item.category || "",
-      "approved",
-      dominantColor,
-      colorPalette,
-      userId,
-      isVideo ? "video" : "image",
-      isVideo ? storedUrl : null,
-      isVideo ? (thumbnailUrl || null) : null,
-    ]
-  );
+      file_size: imageBuffer.length,
+      mime_type: contentType,
+      author: `crawler-${item.source}`,
+      tags: tagsStr,
+      category: item.category || "",
+      status: "approved",
+      dominant_color: dominantColor,
+      color_palette: colorPalette,
+      uploaded_by: userId,
+      media_type: isVideo ? "video" : "image",
+      video_url: isVideo ? storedUrl : null,
+      poster_url: isVideo ? (thumbnailUrl || null) : null,
+    })
+    .executeTakeFirst();
 
-  const insertId = (result as any).insertId;
+  const insertId = Number(result.insertId);
 
   // 7. 同步搜索索引
   try {
-    const insertedRows = await query(`SELECT * FROM images WHERE id = ?`, [insertId]) as any[];
+    const insertedRows = await db.selectFrom("images")
+      .where("id", "=", insertId)
+      .selectAll()
+      .execute();
     if (insertedRows.length > 0) {
       indexImage(dbRowToSearchData(insertedRows[0])).catch(() => {});
     }

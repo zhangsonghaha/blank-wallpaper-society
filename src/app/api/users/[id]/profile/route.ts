@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // GET /api/users/[id]/profile - 获取用户公开主页信息（不需要登录）
 export async function GET(
@@ -14,12 +16,22 @@ export async function GET(
     }
 
     // 获取用户基本信息
-    const users = (await query(
-      `SELECT id, name, avatar, banner, bio, social_links, featured_collections,
-        is_verified, role, created_at
-      FROM users WHERE id = ?`,
-      [userId]
-    )) as any[];
+    const users = await db
+      .selectFrom("users")
+      .select([
+        "id",
+        "name",
+        "avatar",
+        "banner",
+        "bio",
+        "social_links",
+        "featured_collections",
+        "is_verified",
+        "role",
+        "created_at",
+      ])
+      .where("id", "=", userId)
+      .execute();
 
     if (users.length === 0) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
@@ -31,50 +43,75 @@ export async function GET(
     let socialLinks = null;
     let featuredCollections: number[] = [];
     try {
-      socialLinks = user.social_links ? (typeof user.social_links === "string" ? JSON.parse(user.social_links) : user.social_links) : null;
-    } catch { socialLinks = null; }
+      socialLinks = user.social_links
+        ? typeof user.social_links === "string"
+          ? JSON.parse(user.social_links)
+          : user.social_links
+        : null;
+    } catch {
+      socialLinks = null;
+    }
     try {
-      featuredCollections = user.featured_collections ? (typeof user.featured_collections === "string" ? JSON.parse(user.featured_collections) : user.featured_collections) : [];
+      featuredCollections = user.featured_collections
+        ? typeof user.featured_collections === "string"
+          ? JSON.parse(user.featured_collections)
+          : (user.featured_collections as number[])
+        : [];
       if (!Array.isArray(featuredCollections)) featuredCollections = [];
-    } catch { featuredCollections = []; }
+    } catch {
+      featuredCollections = [];
+    }
 
     // 获取统计数据
-    const [stats] = (await query(
-      `SELECT
+    const statsRows = await sql<{
+      totalImages: number;
+      totalViews: number;
+      totalDownloads: number;
+      totalFavorites: number;
+    }>`
+      SELECT
         COUNT(*) as totalImages,
         COALESCE(SUM(view_count), 0) as totalViews,
         COALESCE(SUM(download_count), 0) as totalDownloads,
         COALESCE(SUM(favorite_count), 0) as totalFavorites
-      FROM images WHERE uploaded_by = ? AND status = 'approved'`,
-      [userId]
-    )) as any[];
+      FROM images WHERE uploaded_by = ${userId} AND status = 'approved'
+    `.execute(db);
+    const stats = statsRows.rows[0];
 
     // 获取粉丝/关注数
-    const [followStats] = (await query(
-      `SELECT
-        (SELECT COUNT(*) FROM user_follows WHERE following_id = ?) as followers,
-        (SELECT COUNT(*) FROM user_follows WHERE follower_id = ?) as following`,
-      [userId, userId]
-    )) as any[];
+    const followStatsRows = await sql<{ followers: number; following: number }>`
+      SELECT
+        (SELECT COUNT(*) FROM user_follows WHERE following_id = ${userId}) as followers,
+        (SELECT COUNT(*) FROM user_follows WHERE follower_id = ${userId}) as following
+    `.execute(db);
+    const followStats = followStatsRows.rows[0];
 
     // 获取精选合集详情
     let featuredCollectionDetails: any[] = [];
     if (featuredCollections.length > 0) {
-      const validIds = featuredCollections.filter((id: any) => !isNaN(Number(id)));
+      const validIds = featuredCollections.filter(
+        (id: any) => !isNaN(Number(id))
+      );
       if (validIds.length > 0) {
-        featuredCollectionDetails = (await query(
-          `SELECT c.id, c.name, c.description, c.is_public,
+        const idList = sql.join(
+          validIds.map((id: any) => sql`${Number(id)}`)
+        );
+        const collRows = await sql<any>`
+          SELECT c.id, c.title as name, c.description, c.is_public,
             i.url as cover_url, i.thumbnail_url as cover_thumbnail_url,
             (SELECT COUNT(*) FROM collection_images WHERE collection_id = c.id) as image_count,
             (SELECT COUNT(*) FROM collection_subscriptions WHERE collection_id = c.id) as subscriber_count
           FROM collections c
           LEFT JOIN images i ON c.cover_image_id = i.id
-          WHERE c.id IN (${validIds.map(() => "?").join(",")}) AND c.is_public = TRUE`,
-          validIds
-        )) as any[];
+          WHERE c.id IN (${idList}) AND c.is_public = 1
+        `.execute(db);
+        featuredCollectionDetails = collRows.rows;
         // 按用户指定的顺序排列
         featuredCollectionDetails.sort((a: any, b: any) => {
-          return featuredCollections.indexOf(a.id) - featuredCollections.indexOf(b.id);
+          return (
+            featuredCollections.indexOf(a.id) -
+            featuredCollections.indexOf(b.id)
+          );
         });
       }
     }
@@ -101,6 +138,9 @@ export async function GET(
     });
   } catch (error: any) {
     console.error("GET /api/users/[id]/profile error:", error);
-    return NextResponse.json({ error: error.message || "获取失败" }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "获取失败" },
+      { status: 500 }
+    );
   }
 }

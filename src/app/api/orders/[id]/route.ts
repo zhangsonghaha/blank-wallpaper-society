@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // GET /api/orders/[id] - 获取订单详情
 export async function GET(
@@ -16,10 +16,12 @@ export async function GET(
     const userId = (session.user as any).id;
     const { id } = await params;
 
-    const rows = (await query(
-      "SELECT * FROM orders WHERE id = ? AND user_id = ?",
-      [id, userId]
-    )) as any[];
+    const rows = await db
+      .selectFrom("orders")
+      .selectAll()
+      .where("id", "=", Number(id))
+      .where("user_id", "=", Number(userId))
+      .execute();
 
     if (rows.length === 0) {
       return NextResponse.json({ error: "订单不存在" }, { status: 404 });

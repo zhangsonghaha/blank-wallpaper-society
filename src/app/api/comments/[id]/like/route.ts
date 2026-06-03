@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 
 // POST /api/comments/[id]/like - 点赞评论
@@ -17,9 +18,20 @@ export async function POST(
     if (isNaN(commentId)) {
       return NextResponse.json({ error: "无效的评论ID" }, { status: 400 });
     }
-    await query("UPDATE comments SET like_count = like_count + 1 WHERE id = ?", [commentId]);
-    const rows = (await query("SELECT like_count FROM comments WHERE id = ?", [commentId])) as any[];
-    return NextResponse.json({ success: true, likeCount: rows[0]?.like_count || 0 });
+    await db
+      .updateTable("comments")
+      .set({ like_count: sql`like_count + 1` })
+      .where("id", "=", commentId)
+      .executeTakeFirst();
+    const rows = await db
+      .selectFrom("comments")
+      .select(["like_count"])
+      .where("id", "=", commentId)
+      .execute();
+    return NextResponse.json({
+      success: true,
+      likeCount: rows[0]?.like_count ?? 0,
+    });
   } catch (error: any) {
     console.error("POST /api/comments/[id]/like error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

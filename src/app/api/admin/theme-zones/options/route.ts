@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // GET /api/admin/theme-zones/options - 获取可用分类和标签选项
 export async function GET() {
@@ -11,8 +12,7 @@ export async function GET() {
     }
 
     // 获取所有分类及其图片数量（兼容 category 字段存储 slug 或中文名两种情况）
-    const categories = (await query(
-      `SELECT 
+    const categories = await sql<{ id: string; name: string; count: number }>`SELECT 
         c.slug as id, 
         c.name as name, 
         COUNT(i.id) as count
@@ -21,17 +21,16 @@ export async function GET() {
         AND i.status = 'approved' 
         AND i.media_type != 'video'
       GROUP BY c.slug, c.name
-      ORDER BY count DESC`
-    )) as any[];
+      ORDER BY count DESC`.execute(db);
 
     // 获取热门标签（从 tags 字段提取）
-    const allTags = (await query(
-      `SELECT tags FROM images 
-      WHERE status = 'approved' 
-        AND media_type != 'video'
-        AND tags IS NOT NULL
-        AND tags != ''`
-    )) as any[];
+    const allTags = await db.selectFrom("images")
+      .where("status", "=", "approved")
+      .where("media_type", "!=", "video")
+      .where("tags", "is not", null)
+      .where("tags", "!=", "")
+      .select(["tags"])
+      .execute();
 
     // 统计标签频率
     const tagCounts = new Map<string, number>();
@@ -48,7 +47,7 @@ export async function GET() {
             tags = row.tags.split(',').map((t: string) => t.trim());
           }
         } else if (Array.isArray(row.tags)) {
-          tags = row.tags;
+          tags = row.tags as unknown as string[];
         }
 
         tags.forEach(tag => {
@@ -66,7 +65,7 @@ export async function GET() {
       .slice(0, 20); // 取前 20 个
 
     return NextResponse.json({
-      categories,
+      categories: categories.rows,
       popular_tags: popularTags,
     });
   } catch (error: any) {

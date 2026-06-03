@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadFile } from "@/lib/minio";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { extractColors } from "@/lib/color-extract";
 import { addWatermark, isWatermarkEnabled, getWatermarkText } from "@/lib/watermark";
@@ -58,11 +58,13 @@ export async function POST(request: NextRequest) {
     if (!isAdmin) {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      const todayCount = await query(
-        "SELECT COUNT(*) as count FROM images WHERE uploaded_by = ? AND created_at >= ?",
-        [userId, todayStart.toISOString().slice(0, 19).replace("T", " ")]
-      );
-      if ((todayCount as any[])[0]?.count >= DAILY_UPLOAD_LIMIT) {
+      const todayCountRow = await db
+        .selectFrom("images")
+        .select((eb) => [eb.fn.count<number>("id").as("count")])
+        .where("uploaded_by", "=", userId)
+        .where("created_at", ">=", todayStart)
+        .executeTakeFirst();
+      if (Number(todayCountRow?.count ?? 0) >= DAILY_UPLOAD_LIMIT) {
         return NextResponse.json(
           { error: `每日上传限制为${DAILY_UPLOAD_LIMIT}张，请明天再试` },
           { status: 429 }
@@ -129,9 +131,13 @@ export async function POST(request: NextRequest) {
         try {
           phash = await computePHash(buffer);
           if (phash) {
-            const existingImages = await query("SELECT id, phash FROM images WHERE phash IS NOT NULL") as any[];
+            const existingImages = await db
+              .selectFrom("images")
+              .select(["id", "phash"])
+              .where("phash", "is not", null)
+              .execute();
             for (const existing of existingImages) {
-              if (existing.phash && hammingDistance(phash, existing.phash) <= PHASH_THRESHOLD) {
+              if (existing.phash && hammingDistance(phash, existing.phash as string) <= PHASH_THRESHOLD) {
                 isDuplicate = true;
                 break;
               }
@@ -161,13 +167,33 @@ export async function POST(request: NextRequest) {
         const status = isAdmin ? "approved" : "pending";
         const mediaType = isVideo ? "video" : "image";
 
-        const result = await query(
-          `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by, phash, exif, media_type)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [title, description, file.name, storageKey, url, thumbnailUrl || null, width, height, file.size, file.type, userName, tags, category, status, dominantColor, colorPalette, userId, phash, exifJson, mediaType]
-        );
+        const result = await db
+          .insertInto("images")
+          .values({
+            title,
+            description,
+            filename: file.name,
+            storage_key: storageKey,
+            url,
+            thumbnail_url: thumbnailUrl || null,
+            width,
+            height,
+            file_size: file.size,
+            mime_type: file.type,
+            author: userName,
+            tags,
+            category,
+            status,
+            dominant_color: dominantColor,
+            color_palette: colorPalette,
+            uploaded_by: userId,
+            phash,
+            exif: exifJson,
+            media_type: mediaType,
+          })
+          .executeTakeFirst();
 
-        const insertId = (result as any).insertId;
+        const insertId = Number(result.insertId);
 
         // NSFW 检测
         let finalStatus = status;
@@ -182,16 +208,23 @@ export async function POST(request: NextRequest) {
         addExp(userId, 10).catch(() => {});
         checkAchievements(userId).catch(() => {});
         if (isAdmin) {
-          query("SELECT * FROM images WHERE id = ?", [insertId]).then((newImage) => {
-            if ((newImage as any[]).length > 0) {
-              indexImage(dbRowToSearchData((newImage as any[])[0])).catch(() => {});
+          db.selectFrom("images").selectAll().where("id", "=", insertId).execute().then((newImage) => {
+            if (newImage.length > 0) {
+              indexImage(dbRowToSearchData(newImage[0] as any)).catch(() => {});
             }
           }).catch(() => {});
         }
         if (width > 0 && height > 0) {
           generateAndUploadVariants(insertId, processedBuffer, width, height)
             .then(async ({ variants, thumbnails }) => {
-              await query("UPDATE images SET variants = ?, thumbnails = ? WHERE id = ?", [JSON.stringify(variants), JSON.stringify(thumbnails), insertId]);
+              await db
+                .updateTable("images")
+                .set({
+                  variants: JSON.stringify(variants),
+                  thumbnails: JSON.stringify(thumbnails),
+                })
+                .where("id", "=", insertId)
+                .executeTakeFirst();
             })
             .catch(() => {});
         }

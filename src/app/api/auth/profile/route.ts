@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { getMinioClient, PUBLIC_URL_BASE, BUCKET_NAME } from "@/lib/minio";
 import sharp from "sharp";
 import { sanitizeName } from "@/lib/sanitize";
@@ -58,7 +58,11 @@ export async function PATCH(request: NextRequest) {
       const avatarUrl = `${PUBLIC_URL_BASE}/${BUCKET_NAME}/${storageKey}`;
 
       // 更新数据库
-      await query("UPDATE users SET avatar = ? WHERE id = ?", [avatarUrl, userId]);
+      await db
+        .updateTable("users")
+        .set({ avatar: avatarUrl })
+        .where("id", "=", userId)
+        .execute();
 
       return NextResponse.json({
         message: "头像已更新",
@@ -77,22 +81,25 @@ export async function PATCH(request: NextRequest) {
       }
 
       // 验证当前密码
-      const users = (await query("SELECT password FROM users WHERE id = ?", [
-        userId,
-      ])) as any[];
-      if (users.length === 0) {
+      const user = await db
+        .selectFrom("users")
+        .select("password")
+        .where("id", "=", userId)
+        .executeTakeFirst();
+      if (!user) {
         return NextResponse.json({ error: "用户不存在" }, { status: 404 });
       }
-      const { valid, upgradedHash } = await verifyPassword(currentPassword, users[0].password);
+      const { valid, upgradedHash } = await verifyPassword(currentPassword, user.password);
       if (!valid) {
         return NextResponse.json({ error: "当前密码不正确" }, { status: 400 });
       }
 
       const newHash = await hashPassword(newPassword);
-      await query("UPDATE users SET password = ? WHERE id = ?", [
-        upgradedHash || newHash,
-        userId,
-      ]);
+      await db
+        .updateTable("users")
+        .set({ password: upgradedHash || newHash })
+        .where("id", "=", userId)
+        .execute();
 
       return NextResponse.json({ message: "密码修改成功" });
     }
@@ -106,7 +113,11 @@ export async function PATCH(request: NextRequest) {
       if (cleanName.length > 50) {
         return NextResponse.json({ error: "昵称最长 50 个字符" }, { status: 400 });
       }
-      await query("UPDATE users SET name = ? WHERE id = ?", [cleanName.trim(), userId]);
+      await db
+        .updateTable("users")
+        .set({ name: cleanName.trim() })
+        .where("id", "=", userId)
+        .execute();
     }
 
     return NextResponse.json({ message: "更新成功" });
@@ -124,15 +135,16 @@ export async function GET() {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
     const userId = (session.user as any).id;
-    const users = (await query(
-      "SELECT id, email, name, avatar, role, created_at FROM users WHERE id = ?",
-      [userId]
-    )) as any[];
+    const user = await db
+      .selectFrom("users")
+      .select(["id", "email", "name", "avatar", "role", "created_at"])
+      .where("id", "=", userId)
+      .executeTakeFirst();
 
-    if (users.length === 0) {
+    if (!user) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
-    return NextResponse.json(users[0]);
+    return NextResponse.json(user);
   } catch (error: any) {
     console.error("GET /api/auth/profile error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

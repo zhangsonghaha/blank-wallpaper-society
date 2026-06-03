@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { getCampaigns, createCampaign, updateCampaign, sendCampaign, generateWeeklyDigestHtml } from "@/lib/email-marketing";
 
 // GET /api/admin/email-marketing/campaigns - 获取营销活动列表
@@ -18,25 +19,27 @@ export async function GET(request: NextRequest) {
     const result = await getCampaigns(page, limit);
 
     // 获取订阅统计
-    const [subStats] = (await query(
-      `SELECT
-        COUNT(*) as total,
-        SUM(weekly_digest) as weekly_subscribers,
-        SUM(activity_notice) as activity_subscribers,
-        SUM(creator_update) as creator_subscribers,
-        SUM(is_unsubscribed) as unsubscribed
-      FROM email_subscriptions`
-    )) as any[];
+    const subStatsRows = await db
+      .selectFrom("email_subscriptions")
+      .select((eb) => [
+        eb.fn.countAll().as("total"),
+        sql<number>`SUM(weekly_digest)`.as("weekly_subscribers"),
+        sql<number>`SUM(activity_notice)`.as("activity_subscribers"),
+        sql<number>`SUM(creator_update)`.as("creator_subscribers"),
+        sql<number>`SUM(is_unsubscribed)`.as("unsubscribed"),
+      ])
+      .execute();
+    const subStats = subStatsRows[0];
 
     return NextResponse.json({
       data: result.data,
       total: result.total,
       subscriptionStats: {
-        total: subStats?.total || 0,
-        weeklySubscribers: subStats?.weekly_subscribers || 0,
-        activitySubscribers: subStats?.activity_subscribers || 0,
-        creatorSubscribers: subStats?.creator_subscribers || 0,
-        unsubscribed: subStats?.unsubscribed || 0,
+        total: Number(subStats?.total ?? 0),
+        weeklySubscribers: Number(subStats?.weekly_subscribers ?? 0),
+        activitySubscribers: Number(subStats?.activity_subscribers ?? 0),
+        creatorSubscribers: Number(subStats?.creator_subscribers ?? 0),
+        unsubscribed: Number(subStats?.unsubscribed ?? 0),
       },
     });
   } catch (error: any) {

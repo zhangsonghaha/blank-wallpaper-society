@@ -1,6 +1,6 @@
 /**
  * 消息 API
- * 
+ *
  * GET  /api/messages?conversationId=1 — 获取对话中的消息
  * POST /api/messages — 发送消息
  * GET  /api/messages/unread — 获取未读消息数
@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { sendMessage, getMessages, getUnreadMessageCount, canSendMessage } from "@/lib/private-message";
 import { pushNotification } from "@/lib/notification";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // GET /api/messages — 获取消息 / 未读数
 export async function GET(request: NextRequest) {
@@ -89,10 +89,12 @@ export async function POST(request: NextRequest) {
     // 向接收者推送通知
     try {
       // 获取对话中的另一个用户
-      const participants = await query(
-        "SELECT user_id FROM conversation_participants WHERE conversation_id = ? AND user_id != ?",
-        [parseInt(conversationId), userId]
-      ) as any[];
+      const participants = await db
+        .selectFrom("conversation_participants")
+        .select("user_id")
+        .where("conversation_id", "=", parseInt(conversationId))
+        .where("user_id", "!=", userId)
+        .execute();
 
       if (participants.length > 0) {
         const receiverId = participants[0].user_id;

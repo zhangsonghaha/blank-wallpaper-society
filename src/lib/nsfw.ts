@@ -7,7 +7,8 @@
  * 默认行为：pending（标记+设为待审核状态，需管理员确认）
  */
 
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // NSFW 分类类型
 export interface NSFWClassification {
@@ -55,9 +56,10 @@ export async function getNSFWSettings(): Promise<{
   }
 
   try {
-    const rows = (await query(
-      "SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('nsfw_enabled', 'nsfw_threshold', 'nsfw_action')"
-    )) as any[];
+    const rows = await db.selectFrom("system_settings")
+      .select(["setting_key", "setting_value"])
+      .where("setting_key", "in", ["nsfw_enabled", "nsfw_threshold", "nsfw_action"])
+      .execute();
 
     const settingsMap: Record<string, string> = {};
     for (const row of rows) {
@@ -233,10 +235,13 @@ export async function processNSFWDetection(
     const result = await detectNSFW(imageBuffer, settings.threshold);
 
     // 存储检测结果
-    await query(
-      "UPDATE images SET nsfw_score = ?, nsfw_flagged = ? WHERE id = ?",
-      [JSON.stringify(result.classifications), result.flagged ? 1 : 0, imageId]
-    );
+    await db.updateTable("images")
+      .set({
+        nsfw_score: JSON.stringify(result.classifications),
+        nsfw_flagged: result.flagged ? 1 : 0,
+      })
+      .where("id", "=", imageId)
+      .execute();
 
     if (result.flagged) {
       console.log(
@@ -245,10 +250,10 @@ export async function processNSFWDetection(
 
       if (settings.action === "reject") {
         // 自动拒绝违规内容
-        await query(
-          "UPDATE images SET status = 'rejected', reject_reason = 'NSFW自动审核：内容可能违规' WHERE id = ?",
-          [imageId]
-        );
+        await db.updateTable("images")
+          .set({ status: "rejected", reject_reason: "NSFW自动审核：内容可能违规" })
+          .where("id", "=", imageId)
+          .execute();
         // 从搜索索引中删除
         try {
           const { deleteImage } = await import("@/lib/meilisearch");
@@ -263,10 +268,16 @@ export async function processNSFWDetection(
         };
       } else if (settings.action === "pending") {
         // 标记 + 设为待审核状态，需人工确认
-        await query(
-          "UPDATE images SET status = 'pending', reviewed_by = NULL, reviewed_at = NULL, reject_reason = NULL WHERE id = ? AND status != 'pending'",
-          [imageId]
-        );
+        await db.updateTable("images")
+          .set({
+            status: "pending",
+            reviewed_by: null,
+            reviewed_at: null,
+            reject_reason: null,
+          } as any)
+          .where("id", "=", imageId)
+          .where("status", "!=", "pending")
+          .execute();
         return {
           flagged: true,
           autoApproved: false,
@@ -287,17 +298,25 @@ export async function processNSFWDetection(
 
     // 内容安全 → 自动通过审核
     console.log(`[NSFW] 图片 #${imageId} 内容安全，自动通过审核`);
-    await query(
-      "UPDATE images SET status = 'approved', reviewed_by = NULL, reviewed_at = NOW() WHERE id = ? AND status = 'pending'",
-      [imageId]
-    );
+    await db.updateTable("images")
+      .set({
+        status: "approved",
+        reviewed_by: null,
+        reviewed_at: sql`NOW()`,
+      } as any)
+      .where("id", "=", imageId)
+      .where("status", "=", "pending")
+      .execute();
 
     // 自动通过 → 索引到搜索
     try {
-      const newImage = await query("SELECT * FROM images WHERE id = ?", [imageId]);
+      const newImage = await db.selectFrom("images")
+        .where("id", "=", imageId)
+        .selectAll()
+        .execute();
       const { indexImage, dbRowToSearchData } = await import("@/lib/meilisearch");
-      if ((newImage as any[]).length > 0) {
-        indexImage(dbRowToSearchData((newImage as any[])[0])).catch(() => {});
+      if (newImage.length > 0) {
+        indexImage(dbRowToSearchData(newImage[0] as any)).catch(() => {});
       }
     } catch {}
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { deleteFile } from "@/lib/minio";
 import { auth } from "@/lib/auth";
 import { indexImage, deleteImage as deleteSearchIndex, dbRowToSearchData } from "@/lib/meilisearch";
@@ -11,16 +12,26 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const rows = await query("SELECT * FROM images WHERE id = ?", [id]);
+    const imageId = Number(id);
 
-    if ((rows as any[]).length === 0) {
+    const image = await db
+      .selectFrom("images")
+      .where("id", "=", imageId)
+      .selectAll()
+      .executeTakeFirst();
+
+    if (!image) {
       return NextResponse.json({ error: "图片不存在" }, { status: 404 });
     }
 
     // 增加浏览次数
-    await query("UPDATE images SET view_count = view_count + 1 WHERE id = ?", [id]);
+    await db
+      .updateTable("images")
+      .set({ view_count: sql`view_count + 1` })
+      .where("id", "=", imageId)
+      .execute();
 
-    return NextResponse.json((rows as any[])[0]);
+    return NextResponse.json(image);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -33,6 +44,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+    const imageId = Number(id);
     const body = await request.json();
     const { title, description, author, tags, category, is_favorite } = body;
 
@@ -46,16 +58,14 @@ export async function PATCH(
 
       if (is_favorite) {
         // 添加收藏（忽略重复）
-        await query(
-          `INSERT IGNORE INTO favorites (user_id, image_id) VALUES (?, ?)`,
-          [userId, id]
-        );
+        await sql`INSERT IGNORE INTO favorites (user_id, image_id) VALUES (${userId}, ${imageId})`.execute(db);
       } else {
         // 取消收藏
-        await query(
-          `DELETE FROM favorites WHERE user_id = ? AND image_id = ?`,
-          [userId, id]
-        );
+        await db
+          .deleteFrom("favorites")
+          .where("user_id", "=", userId)
+          .where("image_id", "=", imageId)
+          .execute();
       }
 
       // 如果只有 is_favorite 字段，直接返回
@@ -70,49 +80,36 @@ export async function PATCH(
       }
     }
 
-    const updates: string[] = [];
-    const values: any[] = [];
+    // Build dynamic update object
+    const updateData: Record<string, any> = {};
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (author !== undefined) updateData.author = author;
+    if (tags !== undefined) updateData.tags = tags;
+    if (category !== undefined) updateData.category = category;
 
-    if (title !== undefined) {
-      updates.push("title = ?");
-      values.push(title);
-    }
-    if (description !== undefined) {
-      updates.push("description = ?");
-      values.push(description);
-    }
-    if (author !== undefined) {
-      updates.push("author = ?");
-      values.push(author);
-    }
-    if (tags !== undefined) {
-      updates.push("tags = ?");
-      values.push(tags);
-    }
-    if (category !== undefined) {
-      updates.push("category = ?");
-      values.push(category);
-    }
-
-    if (updates.length === 0) {
+    if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: "没有需要更新的字段" }, { status: 400 });
     }
 
-    values.push(id);
-    await query(
-      `UPDATE images SET ${updates.join(", ")} WHERE id = ?`,
-      values
-    );
+    await db
+      .updateTable("images")
+      .set(updateData)
+      .where("id", "=", imageId)
+      .execute();
 
     // 更新 Meilisearch 索引
     try {
-      const updatedImage = await query("SELECT * FROM images WHERE id = ?", [id]);
-      if ((updatedImage as any[]).length > 0) {
-        const img = (updatedImage as any[])[0];
-        if (img.status === "approved") {
-          indexImage(dbRowToSearchData(img)).catch(() => {});
+      const updatedImage = await db
+        .selectFrom("images")
+        .where("id", "=", imageId)
+        .selectAll()
+        .executeTakeFirst();
+      if (updatedImage) {
+        if (updatedImage.status === "approved") {
+          indexImage(dbRowToSearchData(updatedImage)).catch(() => {});
         } else {
-          deleteSearchIndex(Number(id)).catch(() => {});
+          deleteSearchIndex(imageId).catch(() => {});
         }
       }
     } catch {}
@@ -130,13 +127,17 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const rows = await query("SELECT * FROM images WHERE id = ?", [id]);
+    const imageId = Number(id);
 
-    if ((rows as any[]).length === 0) {
+    const image = await db
+      .selectFrom("images")
+      .where("id", "=", imageId)
+      .selectAll()
+      .executeTakeFirst();
+
+    if (!image) {
       return NextResponse.json({ error: "图片不存在" }, { status: 404 });
     }
-
-    const image = (rows as any[])[0];
 
     // 删除 MinIO 中的文件
     try {
@@ -150,10 +151,10 @@ export async function DELETE(
     }
 
     // 删除数据库记录
-    await query("DELETE FROM images WHERE id = ?", [id]);
+    await db.deleteFrom("images").where("id", "=", imageId).execute();
 
     // 从 Meilisearch 索引中删除
-    deleteSearchIndex(Number(id)).catch(() => {});
+    deleteSearchIndex(imageId).catch(() => {});
 
     return NextResponse.json({ message: "删除成功" });
   } catch (error: any) {

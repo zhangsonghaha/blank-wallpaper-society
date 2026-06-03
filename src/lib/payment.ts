@@ -1,5 +1,7 @@
-import { query } from "@/lib/db";
-import { withTransaction } from "@/lib/db-tx";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
+import type { Transaction } from "kysely";
+import type { DB } from "@/lib/db-types";
 import { MEMBERSHIP_PRICES } from "@/lib/earnings";
 
 /**
@@ -8,35 +10,42 @@ import { MEMBERSHIP_PRICES } from "@/lib/earnings";
  * @param paymentMethod 支付方式
  */
 export async function handlePaymentSuccess(orderId: number, paymentMethod: "wechat" | "alipay") {
-  return await withTransaction(async (conn) => {
+  return await db.transaction().execute(async (trx) => {
     // 1. 获取订单信息
-    const [orderRows] = await conn.execute(
-      "SELECT * FROM orders WHERE id = ? AND payment_status = 'pending'",
-      [orderId]
-    ) as [any[], any];
+    const orders = await trx
+      .selectFrom("orders")
+      .where("id", "=", orderId)
+      .where("payment_status", "=", "pending")
+      .selectAll()
+      .execute();
 
-    if (orderRows.length === 0) {
+    if (orders.length === 0) {
       throw new Error("订单不存在或已支付");
     }
 
-    const order = orderRows[0];
+    const order = orders[0];
 
     // 2. 更新订单状态为已支付
-    await conn.execute(
-      "UPDATE orders SET payment_status = 'paid', paid_at = CURRENT_TIMESTAMP, payment_method = ? WHERE id = ?",
-      [paymentMethod, orderId]
-    );
+    await trx
+      .updateTable("orders")
+      .set({
+        payment_status: "paid",
+        paid_at: sql`NOW()`,
+        payment_method: paymentMethod,
+      })
+      .where("id", "=", orderId)
+      .execute();
 
     // 3. 根据订单类型处理后续逻辑
     switch (order.type) {
       case "membership":
-        await handleMembershipPaymentSuccess(conn, order.user_id, order.amount);
+        await handleMembershipPaymentSuccess(trx, order.user_id, order.amount);
         break;
       case "paid_wallpaper":
-        await handlePaidWallpaperPaymentSuccess(conn, order.user_id, order.related_id);
+        await handlePaidWallpaperPaymentSuccess(trx, order.user_id, order.related_id!);
         break;
       case "tip":
-        await handleTipPaymentSuccess(conn, order.user_id, order.related_id, order.amount);
+        await handleTipPaymentSuccess(trx, order.user_id, order.related_id!, order.amount);
         break;
     }
 
@@ -47,7 +56,7 @@ export async function handlePaymentSuccess(orderId: number, paymentMethod: "wech
 /**
  * 处理会员支付成功
  */
-async function handleMembershipPaymentSuccess(conn: any, userId: number, amount: number) {
+async function handleMembershipPaymentSuccess(trx: Transaction<DB>, userId: number, amount: number | string) {
   // 确定会员套餐类型（使用近似比较避免浮点精度问题）
   // 注意：MySQL DECIMAL 类型通过 mysql2 返回字符串，需要转为数字
   const numAmount = Number(amount);
@@ -68,14 +77,16 @@ async function handleMembershipPaymentSuccess(conn: any, userId: number, amount:
   }
 
   // 检查是否已有有效会员
-  const [existingRows] = await conn.execute(
-    "SELECT id, expires_at FROM memberships WHERE user_id = ? AND status = 'active'",
-    [userId]
-  ) as [any[], any];
+  const existing = await trx
+    .selectFrom("memberships")
+    .select(["id", "expires_at"])
+    .where("user_id", "=", userId)
+    .where("status", "=", "active")
+    .execute();
 
   let startDate = new Date();
-  if (existingRows.length > 0 && new Date(existingRows[0].expires_at) > startDate) {
-    startDate = new Date(existingRows[0].expires_at); // 从当前到期日续期
+  if (existing.length > 0 && existing[0].expires_at && new Date(existing[0].expires_at) > startDate) {
+    startDate = new Date(existing[0].expires_at); // 从当前到期日续期
   }
 
   const endDate = new Date(startDate);
@@ -85,19 +96,18 @@ async function handleMembershipPaymentSuccess(conn: any, userId: number, amount:
     endDate.setFullYear(endDate.getFullYear() + 1);
   }
 
-  // 更新或创建会员记录
-  await conn.execute(
-    `INSERT INTO memberships (user_id, plan, started_at, expires_at, status)
-     VALUES (?, ?, ?, ?, 'active')
-     ON DUPLICATE KEY UPDATE plan = ?, started_at = ?, expires_at = ?, status = 'active'`,
-    [userId, plan, startDate, endDate, plan, startDate, endDate]
-  );
+  // 更新或创建会员记录 (INSERT ... ON DUPLICATE KEY UPDATE)
+  await sql`
+    INSERT INTO memberships (user_id, plan, started_at, expires_at, status)
+    VALUES (${userId}, ${plan}, ${startDate.toISOString()}, ${endDate.toISOString()}, 'active')
+    ON DUPLICATE KEY UPDATE plan = ${plan}, started_at = ${startDate.toISOString()}, expires_at = ${endDate.toISOString()}, status = 'active'
+  `.execute(trx);
 }
 
 /**
  * 处理付费壁纸支付成功
  */
-async function handlePaidWallpaperPaymentSuccess(conn: any, userId: number, imageId: number) {
+async function handlePaidWallpaperPaymentSuccess(trx: Transaction<DB>, userId: number, imageId: number) {
   // 记录到用户已购买的壁纸（如果有对应的表的话，这里暂时留空）
   // TODO: 如果有付费壁纸购买记录表，在这里添加记录
 }
@@ -105,30 +115,40 @@ async function handlePaidWallpaperPaymentSuccess(conn: any, userId: number, imag
 /**
  * 处理打赏支付成功
  */
-async function handleTipPaymentSuccess(conn: any, fromUserId: number, tipId: number, amount: number) {
+async function handleTipPaymentSuccess(trx: Transaction<DB>, fromUserId: number, tipId: number, amount: number | string) {
   // 更新打赏记录状态
-  await conn.execute(
-    "UPDATE tips SET status = 'completed' WHERE id = ?",
-    [tipId]
-  );
+  await trx
+    .updateTable("tips")
+    .set({ status: "completed" })
+    .where("id", "=", tipId)
+    .execute();
 
   // 记录收益
-  const platformFee = Math.round(amount * 0.15 * 100) / 100; // 平台抽成15%
-  const netAmount = amount - platformFee;
-  
+  const numAmount = Number(amount);
+  const platformFee = Math.round(numAmount * 0.15 * 100) / 100; // 平台抽成15%
+  const netAmount = numAmount - platformFee;
+
   // 获取打赏接收用户ID
-  const [tipRows] = await conn.execute(
-    "SELECT to_user_id FROM tips WHERE id = ?",
-    [tipId]
-  ) as [any[], any];
-  
-  if (tipRows.length > 0) {
-    const toUserId = tipRows[0].to_user_id;
-    await conn.execute(
-      `INSERT INTO earnings (user_id, type, related_id, amount, platform_fee, net_amount, status)
-       VALUES (?, 'tip', ?, ?, ?, ?, 'pending')`,
-      [toUserId, tipId, amount, platformFee, netAmount]
-    );
+  const tips = await trx
+    .selectFrom("tips")
+    .select(["to_user_id"])
+    .where("id", "=", tipId)
+    .execute();
+
+  if (tips.length > 0) {
+    const toUserId = tips[0].to_user_id;
+    await trx
+      .insertInto("earnings")
+      .values({
+        user_id: toUserId,
+        type: "tip",
+        related_id: tipId,
+        amount: numAmount,
+        platform_fee: platformFee,
+        net_amount: netAmount,
+        status: "pending",
+      })
+      .executeTakeFirst();
   }
 }
 
@@ -136,10 +156,11 @@ async function handleTipPaymentSuccess(conn: any, fromUserId: number, tipId: num
  * 根据订单号查询订单
  */
 export async function getOrderByPaymentId(paymentId: string) {
-  const rows = await query(
-    "SELECT * FROM orders WHERE payment_id = ?",
-    [paymentId]
-  ) as any[];
-  
+  const rows = await db
+    .selectFrom("orders")
+    .where("payment_id", "=", paymentId)
+    .selectAll()
+    .execute();
+
   return rows.length > 0 ? rows[0] : null;
 }

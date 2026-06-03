@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { notifyCommentReply } from "@/lib/notification";
 import { sanitizeComment } from "@/lib/sanitize";
@@ -23,35 +24,44 @@ export async function GET(
     const sort = searchParams.get("sort") || "latest"; // latest | hot
 
     // 获取评论总数
-    const countResult = (await query(
-      "SELECT COUNT(*) as total FROM comments WHERE image_id = ? AND parent_id IS NULL",
-      [id]
-    )) as any[];
-    const total = countResult[0]?.total || 0;
+    const countResult = await db
+      .selectFrom("comments")
+      .where("image_id", "=", id)
+      .where("parent_id", "is", null)
+      .select((eb) => eb.fn.countAll().as("count"))
+      .executeTakeFirst();
+    const total = Number(countResult?.count ?? 0);
 
     // 获取顶级评论（parent_id IS NULL）
-    const orderBy = sort === "hot" ? "c.like_count DESC, c.created_at DESC" : "c.created_at DESC";
-    const comments = (await query(
-      `SELECT c.*, u.name as user_name, u.avatar as user_avatar
-       FROM comments c
-       LEFT JOIN users u ON c.user_id = u.id
-       WHERE c.image_id = ? AND c.parent_id IS NULL
-       ORDER BY ${orderBy}
-       LIMIT ? OFFSET ?`,
-      [id, limit, offset]
-    )) as any[];
+    let commentsQuery = db
+      .selectFrom("comments as c")
+      .leftJoin("users as u", "c.user_id", "u.id")
+      .where("c.image_id", "=", id)
+      .where("c.parent_id", "is", null)
+      .selectAll("c")
+      .select(["u.name as user_name", "u.avatar as user_avatar"]);
+
+    if (sort === "hot") {
+      commentsQuery = commentsQuery
+        .orderBy("c.like_count", "desc")
+        .orderBy("c.created_at", "desc");
+    } else {
+      commentsQuery = commentsQuery.orderBy("c.created_at", "desc");
+    }
+
+    const comments = await commentsQuery.limit(limit).offset(offset).execute();
 
     // 获取每条顶级评论的回复
     const commentsWithReplies = await Promise.all(
       comments.map(async (comment: any) => {
-        const replies = (await query(
-          `SELECT c.*, u.name as user_name, u.avatar as user_avatar
-           FROM comments c
-           LEFT JOIN users u ON c.user_id = u.id
-           WHERE c.parent_id = ?
-           ORDER BY c.created_at ASC`,
-          [comment.id]
-        )) as any[];
+        const replies = await db
+          .selectFrom("comments as c")
+          .leftJoin("users as u", "c.user_id", "u.id")
+          .where("c.parent_id", "=", comment.id)
+          .orderBy("c.created_at", "asc")
+          .selectAll("c")
+          .select(["u.name as user_name", "u.avatar as user_avatar"])
+          .execute();
         return { ...comment, replies };
       })
     );
@@ -102,66 +112,83 @@ export async function POST(
     }
 
     // 验证图片存在
-    const images = (await query("SELECT id FROM images WHERE id = ?", [id])) as any[];
-    if (images.length === 0) {
+    const imageExists = await db
+      .selectFrom("images")
+      .where("id", "=", id)
+      .select("id")
+      .executeTakeFirst();
+    if (!imageExists) {
       return NextResponse.json({ error: "图片不存在" }, { status: 404 });
     }
 
     // 如果是回复，验证父评论存在
     if (parent_id) {
-      const parents = (await query(
-        "SELECT id FROM comments WHERE id = ? AND image_id = ?",
-        [parent_id, id]
-      )) as any[];
-      if (parents.length === 0) {
+      const parentExists = await db
+        .selectFrom("comments")
+        .where("id", "=", parent_id)
+        .where("image_id", "=", id)
+        .select("id")
+        .executeTakeFirst();
+      if (!parentExists) {
         return NextResponse.json({ error: "父评论不存在" }, { status: 404 });
       }
     }
 
-    const result = await query(
-      "INSERT INTO comments (image_id, user_id, content, parent_id) VALUES (?, ?, ?, ?)",
-      [id, userId, content.trim(), parent_id || null]
-    );
+    const result = await db
+      .insertInto("comments")
+      .values({
+        image_id: id,
+        user_id: userId,
+        content: content.trim(),
+        parent_id: parent_id || null,
+      })
+      .executeTakeFirst();
 
-    const insertId = (result as any).insertId;
+    const insertId = Number((result as any).insertId);
 
     // 获取新评论（含用户信息）
-    const newComment = (await query(
-      `SELECT c.*, u.name as user_name, u.avatar as user_avatar
-       FROM comments c
-       LEFT JOIN users u ON c.user_id = u.id
-       WHERE c.id = ?`,
-      [insertId]
-    )) as any[];
+    const newComment = await db
+      .selectFrom("comments as c")
+      .leftJoin("users as u", "c.user_id", "u.id")
+      .where("c.id", "=", insertId)
+      .selectAll("c")
+      .select(["u.name as user_name", "u.avatar as user_avatar"])
+      .executeTakeFirst();
 
     // 如果是回复别人的评论，给被回复者发通知
     if (parent_id) {
-      const parentComment = (await query(
-        "SELECT user_id FROM comments WHERE id = ?",
-        [parent_id]
-      )) as any[];
-      if (parentComment.length > 0 && parentComment[0].user_id !== userId) {
-        const imageInfo = (await query("SELECT title FROM images WHERE id = ?", [id])) as any[];
-        const imageTitle = imageInfo[0]?.title || `图片#${id}`;
+      const parentComment = await db
+        .selectFrom("comments")
+        .where("id", "=", parent_id)
+        .select("user_id")
+        .executeTakeFirst();
+      if (parentComment && parentComment.user_id !== userId) {
+        const imageInfo = await db
+          .selectFrom("images")
+          .where("id", "=", id)
+          .select("title")
+          .executeTakeFirst();
+        const imageTitle = imageInfo?.title || `图片#${id}`;
         const commenterName = (session.user as any).name || "用户";
-        notifyCommentReply(parentComment[0].user_id, commenterName, imageTitle, id).catch(() => {});
+        notifyCommentReply(parentComment.user_id, commenterName, imageTitle, id).catch(() => {});
       }
     } else {
       // 如果是顶级评论，给图片作者发通知
-      const imageInfo = (await query(
-        "SELECT uploaded_by, title FROM images WHERE id = ?",
-        [id]
-      )) as any[];
-      if (imageInfo.length > 0 && imageInfo[0].uploaded_by && imageInfo[0].uploaded_by !== userId) {
+      const imageInfo = await db
+        .selectFrom("images")
+        .where("id", "=", id)
+        .select(["uploaded_by", "title"])
+        .executeTakeFirst();
+      if (imageInfo && imageInfo.uploaded_by && imageInfo.uploaded_by !== userId) {
         const commenterName = (session.user as any).name || "用户";
-        const imageTitle = imageInfo[0]?.title || `图片#${id}`;
-        notifyCommentReply(imageInfo[0].uploaded_by, commenterName, imageTitle, id).catch(() => {});
+        const imageTitle = imageInfo?.title || `图片#${id}`;
+        notifyCommentReply(imageInfo.uploaded_by, commenterName, imageTitle, id).catch(() => {});
       }
     }
 
     return NextResponse.json(
       {
-        data: newComment[0] || { id: insertId },
+        data: newComment || { id: insertId },
         message: "评论成功",
       },
       { status: 201 }

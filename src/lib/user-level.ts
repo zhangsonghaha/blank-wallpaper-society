@@ -1,4 +1,4 @@
-import { query, getConnection } from "@/lib/db";
+import { db } from "@/lib/db";
 import { notifyAchievementUnlocked } from "@/lib/notification";
 
 // === 等级配置 ===
@@ -75,25 +75,37 @@ export function calculateLevel(exp: number): { level: number; title: string; nex
 
 // === 确保用户等级记录存在 ===
 async function ensureUserLevel(userId: number): Promise<void> {
-  const rows = await query("SELECT id FROM user_levels WHERE user_id = ?", [userId]) as any[];
+  const rows = await db
+    .selectFrom("user_levels")
+    .select("id")
+    .where("user_id", "=", userId)
+    .execute();
   if (rows.length === 0) {
-    await query("INSERT INTO user_levels (user_id, level, exp, title) VALUES (?, 1, 0, '新手')", [userId]);
+    await db
+      .insertInto("user_levels")
+      .values({ user_id: userId, level: 1, exp: 0, title: "新手" })
+      .execute();
   }
 }
 
 // === 增加经验值（使用事务） ===
 export async function addExp(userId: number, amount: number): Promise<LevelInfo> {
-  const conn = await getConnection();
-  try {
-    await conn.beginTransaction();
-
+  return db.transaction().execute(async (trx) => {
     // 确保记录存在
-    const [rows] = await conn.execute("SELECT id, exp FROM user_levels WHERE user_id = ? FOR UPDATE", [userId]) as [any[], any];
-    
+    const rows = await trx
+      .selectFrom("user_levels")
+      .select(["id", "exp"])
+      .where("user_id", "=", userId)
+      .forUpdate()
+      .execute();
+
     let currentExp: number;
     if (rows.length === 0) {
       currentExp = 0;
-      await conn.execute("INSERT INTO user_levels (user_id, level, exp, title) VALUES (?, 1, 0, '新手')", [userId]);
+      await trx
+        .insertInto("user_levels")
+        .values({ user_id: userId, level: 1, exp: 0, title: "新手" })
+        .execute();
     } else {
       currentExp = rows[0].exp;
     }
@@ -101,12 +113,11 @@ export async function addExp(userId: number, amount: number): Promise<LevelInfo>
     const newExp = currentExp + amount;
     const levelInfo = calculateLevel(newExp);
 
-    await conn.execute(
-      "UPDATE user_levels SET exp = ?, level = ?, title = ? WHERE user_id = ?",
-      [newExp, levelInfo.level, levelInfo.title, userId]
-    );
-
-    await conn.commit();
+    await trx
+      .updateTable("user_levels")
+      .set({ exp: newExp, level: levelInfo.level, title: levelInfo.title })
+      .where("user_id", "=", userId)
+      .execute();
 
     return {
       userId,
@@ -119,57 +130,59 @@ export async function addExp(userId: number, amount: number): Promise<LevelInfo>
         ? (newExp - levelInfo.prevExp) / (levelInfo.nextExp - levelInfo.prevExp)
         : 1,
     };
-  } catch (error) {
-    await conn.rollback();
-    throw error;
-  } finally {
-    conn.release();
-  }
+  });
 }
 
 // === 获取用户统计数据 ===
 export async function getUserStats(userId: number): Promise<UserStats> {
   // 上传数
-  const uploadRows = await query(
-    "SELECT COUNT(*) as count FROM images WHERE uploaded_by = ?",
-    [userId]
-  ) as any[];
-  const uploadCount = uploadRows[0]?.count || 0;
+  const uploadRow = await db
+    .selectFrom("images")
+    .select((eb) => eb.fn.countAll().as("count"))
+    .where("uploaded_by", "=", userId)
+    .executeTakeFirst();
+  const uploadCount = Number(uploadRow?.count || 0);
 
   // 下载总数（用户上传的图片被下载的总次数）
-  const downloadRows = await query(
-    "SELECT COALESCE(SUM(download_count), 0) as count FROM images WHERE uploaded_by = ?",
-    [userId]
-  ) as any[];
-  const downloadCount = downloadRows[0]?.count || 0;
+  const downloadRow = await db
+    .selectFrom("images")
+    .select((eb) => eb.fn.coalesce(eb.fn.sum("download_count"), eb.val(0)).as("count"))
+    .where("uploaded_by", "=", userId)
+    .executeTakeFirst();
+  const downloadCount = Number(downloadRow?.count || 0);
 
   // 被收藏总数（用户上传的图片被收藏的总次数）
-  const favoriteRows = await query(
-    `SELECT COUNT(*) as count FROM favorites f INNER JOIN images i ON f.image_id = i.id WHERE i.uploaded_by = ?`,
-    [userId]
-  ) as any[];
-  const favoriteCount = favoriteRows[0]?.count || 0;
+  const favoriteRow = await db
+    .selectFrom("favorites")
+    .innerJoin("images", "favorites.image_id", "images.id")
+    .select((eb) => eb.fn.countAll().as("count"))
+    .where("images.uploaded_by", "=", userId)
+    .executeTakeFirst();
+  const favoriteCount = Number(favoriteRow?.count || 0);
 
   // 粉丝数
-  const followerRows = await query(
-    "SELECT COUNT(*) as count FROM user_follows WHERE following_id = ?",
-    [userId]
-  ) as any[];
-  const followerCount = followerRows[0]?.count || 0;
+  const followerRow = await db
+    .selectFrom("user_follows")
+    .select((eb) => eb.fn.countAll().as("count"))
+    .where("following_id", "=", userId)
+    .executeTakeFirst();
+  const followerCount = Number(followerRow?.count || 0);
 
   // 关注数
-  const followingRows = await query(
-    "SELECT COUNT(*) as count FROM user_follows WHERE follower_id = ?",
-    [userId]
-  ) as any[];
-  const followingCount = followingRows[0]?.count || 0;
+  const followingRow = await db
+    .selectFrom("user_follows")
+    .select((eb) => eb.fn.countAll().as("count"))
+    .where("follower_id", "=", userId)
+    .executeTakeFirst();
+  const followingCount = Number(followingRow?.count || 0);
 
   // 用户收藏的图片数（收藏达人成就用）
-  const collectionRows = await query(
-    "SELECT COUNT(*) as count FROM favorites WHERE user_id = ?",
-    [userId]
-  ) as any[];
-  const collectionCount = collectionRows[0]?.count || 0;
+  const collectionRow = await db
+    .selectFrom("favorites")
+    .select((eb) => eb.fn.countAll().as("count"))
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
+  const collectionCount = Number(collectionRow?.count || 0);
 
   return {
     uploadCount,
@@ -198,15 +211,19 @@ export async function checkAchievements(userId: number): Promise<Achievement[]> 
     };
 
     // 获取所有成就定义
-    const allAchievements = await query("SELECT * FROM achievements") as any[];
+    const allAchievements = await db
+      .selectFrom("achievements")
+      .selectAll()
+      .execute();
 
     // 获取已解锁的成就
-    const unlockedRows = await query(
-      "SELECT achievement_id, unlocked_at FROM user_achievements WHERE user_id = ?",
-      [userId]
-    ) as any[];
-    const unlockedSet = new Set(unlockedRows.map((r: any) => r.achievement_id));
-    const unlockedAtMap = new Map(unlockedRows.map((r: any) => [r.achievement_id, r.unlocked_at]));
+    const unlockedRows = await db
+      .selectFrom("user_achievements")
+      .select(["achievement_id", "unlocked_at"])
+      .where("user_id", "=", userId)
+      .execute();
+    const unlockedSet = new Set(unlockedRows.map((r) => r.achievement_id));
+    const unlockedAtMap = new Map(unlockedRows.map((r) => [r.achievement_id, r.unlocked_at]));
 
     const newlyUnlocked: Achievement[] = [];
 
@@ -216,10 +233,10 @@ export async function checkAchievements(userId: number): Promise<Achievement[]> 
 
       if (met && !unlockedSet.has(ach.id)) {
         // 解锁成就
-        await query(
-          "INSERT INTO user_achievements (user_id, achievement_id) VALUES (?, ?)",
-          [userId, ach.id]
-        );
+        await db
+          .insertInto("user_achievements")
+          .values({ user_id: userId, achievement_id: ach.id })
+          .execute();
         // 成就经验奖励
         await addExp(userId, ach.exp_reward);
 
@@ -230,9 +247,9 @@ export async function checkAchievements(userId: number): Promise<Achievement[]> 
           id: ach.id,
           slug: ach.slug,
           name: ach.name,
-          description: ach.description,
-          icon: ach.icon,
-          category: ach.category,
+          description: ach.description ?? "",
+          icon: ach.icon ?? "",
+          category: ach.category ?? "",
           conditionType: ach.condition_type,
           conditionValue: ach.condition_value,
           expReward: ach.exp_reward,
@@ -255,7 +272,11 @@ export async function checkAchievements(userId: number): Promise<Achievement[]> 
 export async function getUserLevel(userId: number): Promise<LevelInfo> {
   await ensureUserLevel(userId);
 
-  const rows = await query("SELECT * FROM user_levels WHERE user_id = ?", [userId]) as any[];
+  const rows = await db
+    .selectFrom("user_levels")
+    .selectAll()
+    .where("user_id", "=", userId)
+    .execute();
   const row = rows[0];
 
   const levelInfo = calculateLevel(row.exp);
@@ -287,16 +308,22 @@ export async function getUserAchievements(userId: number): Promise<Achievement[]
   };
 
   // 所有成就定义
-  const allAchievements = await query("SELECT * FROM achievements ORDER BY category, condition_value") as any[];
+  const allAchievements = await db
+    .selectFrom("achievements")
+    .selectAll()
+    .orderBy("category")
+    .orderBy("condition_value")
+    .execute();
 
   // 已解锁
-  const unlockedRows = await query(
-    "SELECT achievement_id, unlocked_at FROM user_achievements WHERE user_id = ?",
-    [userId]
-  ) as any[];
-  const unlockedAtMap = new Map(unlockedRows.map((r: any) => [r.achievement_id, r.unlocked_at]));
+  const unlockedRows = await db
+    .selectFrom("user_achievements")
+    .select(["achievement_id", "unlocked_at"])
+    .where("user_id", "=", userId)
+    .execute();
+  const unlockedAtMap = new Map(unlockedRows.map((r) => [r.achievement_id, r.unlocked_at]));
 
-  return allAchievements.map((ach: any) => {
+  return allAchievements.map((ach) => {
     const currentValue = statsMap[ach.condition_type] ?? 0;
     const progress = Math.min(currentValue / ach.condition_value, 1);
     const unlocked = unlockedAtMap.has(ach.id);
@@ -305,14 +332,16 @@ export async function getUserAchievements(userId: number): Promise<Achievement[]
       id: ach.id,
       slug: ach.slug,
       name: ach.name,
-      description: ach.description,
-      icon: ach.icon,
-      category: ach.category,
+      description: ach.description ?? "",
+      icon: ach.icon ?? "",
+      category: ach.category ?? "",
       conditionType: ach.condition_type,
       conditionValue: ach.condition_value,
       expReward: ach.exp_reward,
       unlocked,
-      unlockedAt: unlockedAtMap.get(ach.id)?.toISOString?.() || unlockedAtMap.get(ach.id),
+      unlockedAt: unlockedAtMap.get(ach.id) instanceof Date
+        ? unlockedAtMap.get(ach.id)!.toISOString()
+        : (unlockedAtMap.get(ach.id) as string | undefined),
       progress,
       currentValue,
     };
@@ -323,11 +352,11 @@ export async function getUserAchievements(userId: number): Promise<Achievement[]
 export async function getUserLevelsBatch(userIds: number[]): Promise<Map<number, LevelInfo>> {
   if (userIds.length === 0) return new Map();
 
-  const placeholders = userIds.map(() => "?").join(",");
-  const rows = await query(
-    `SELECT * FROM user_levels WHERE user_id IN (${placeholders})`,
-    userIds
-  ) as any[];
+  const rows = await db
+    .selectFrom("user_levels")
+    .selectAll()
+    .where("user_id", "in", userIds)
+    .execute();
 
   const result = new Map<number, LevelInfo>();
   for (const row of rows) {

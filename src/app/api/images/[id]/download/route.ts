@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { getObject, objectExists, putBuffer, getPublicUrl } from "@/lib/minio";
 import { getResizedKey, RESOLUTION_MAP } from "@/lib/resolutions";
 import { addExp, checkAchievements } from "@/lib/user-level";
@@ -15,25 +16,29 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const imageId = Number(id);
     const { searchParams } = new URL(request.url);
     const resolution = searchParams.get("resolution"); // e.g. "1920x1080"
 
-    const rows = (await query("SELECT * FROM images WHERE id = ?", [
-      id,
-    ])) as any[];
-    if (rows.length === 0) {
+    const image = await db
+      .selectFrom("images")
+      .where("id", "=", imageId)
+      .selectAll()
+      .executeTakeFirst();
+
+    if (!image) {
       return NextResponse.json({ error: "图片不存在" }, { status: 404 });
     }
 
-    const image = rows[0];
-
     // === 付费壁纸权限检查 ===
-    const paidRows = (await query(
-      "SELECT price, is_paid FROM paid_wallpapers WHERE image_id = ? AND is_paid = 1",
-      [id]
-    )) as any[];
+    const paidRow = await db
+      .selectFrom("paid_wallpapers")
+      .where("image_id", "=", imageId)
+      .where("is_paid", "=", 1)
+      .select(["price", "is_paid"])
+      .executeTakeFirst();
 
-    if (paidRows.length > 0) {
+    if (paidRow) {
       // 这是付费壁纸，检查用户是否已购买或是否为作者
       const session = await auth();
       const userId = (session?.user as any)?.id;
@@ -43,18 +48,22 @@ export async function GET(
         // 作者本人，允许下载
       } else if (userId) {
         // 检查是否有已支付的订单
-        const orderRows = (await query(
-          "SELECT id FROM orders WHERE user_id = ? AND type = 'paid_wallpaper' AND related_id = ? AND payment_status = 'paid'",
-          [userId, id]
-        )) as any[];
-        if (orderRows.length === 0) {
+        const orderRow = await db
+          .selectFrom("orders")
+          .where("user_id", "=", userId)
+          .where("type", "=", "paid_wallpaper")
+          .where("related_id", "=", imageId)
+          .where("payment_status", "=", "paid")
+          .select("id")
+          .executeTakeFirst();
+        if (!orderRow) {
           // 未购买，返回付费信息
           return NextResponse.json(
             {
               error: "该壁纸为付费内容",
               is_paid_wallpaper: true,
-              price: parseFloat(paidRows[0].price),
-              image_id: parseInt(id),
+              price: parseFloat(String(paidRow.price)),
+              image_id: imageId,
             },
             { status: 402 }
           );
@@ -65,8 +74,8 @@ export async function GET(
           {
             error: "该壁纸为付费内容，请先登录",
             is_paid_wallpaper: true,
-            price: parseFloat(paidRows[0].price),
-            image_id: parseInt(id),
+            price: parseFloat(String(paidRow.price)),
+            image_id: imageId,
           },
           { status: 402 }
         );
@@ -74,7 +83,11 @@ export async function GET(
     }
 
     // 增加下载计数
-    await query("UPDATE images SET download_count = download_count + 1 WHERE id = ?", [id]);
+    await db
+      .updateTable("images")
+      .set({ download_count: sql`download_count + 1` })
+      .where("id", "=", imageId)
+      .execute();
 
     // 下载成功 → 图片作者 +2 exp + 检查成就（异步不阻塞）
     if (image.uploaded_by) {
@@ -92,10 +105,14 @@ export async function GET(
       if (ip.includes(":")) { const p = ip.split(":"); return `${p[0]}:${p[1]}:****`; }
       return "*.*.*.*";
     };
-    query(
-      "INSERT INTO download_logs (image_id, ip_address, resolution) VALUES (?, ?, ?)",
-      [id, maskIp(ipAddress), resolution || null]
-    ).catch(() => {});
+    db.insertInto("download_logs")
+      .values({
+        image_id: imageId,
+        ip_address: maskIp(ipAddress),
+        resolution: resolution || null,
+      })
+      .execute()
+      .catch(() => {});
 
     let buffer: Buffer;
     let mimeType: string;

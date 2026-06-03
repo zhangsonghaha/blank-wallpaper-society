@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query, safeQuery } from "@/lib/db";
+import { db, safeExecute } from "@/lib/db";
+import { sql } from "kysely";
 import { getCache, setCache, delCache, clearPattern } from "@/lib/redis";
 import { hashPassword } from "@/lib/password";
 
@@ -30,8 +31,8 @@ export async function GET(
     }
 
     // 获取用户详情 + 统计（独立容错）
-    const users = await safeQuery(
-      `SELECT 
+    const users = await safeExecute(
+      () => sql<Record<string, any>>`SELECT 
         u.id, u.email, u.name, u.avatar, u.role, u.status,
         u.banned_reason, u.banned_at, u.created_at, u.updated_at,
         u.deletion_requested_at, u.deletion_scheduled_at,
@@ -46,44 +47,45 @@ export async function GET(
         SELECT user_id, COUNT(*) as favorite_count 
         FROM favorites GROUP BY user_id
       ) fav_stats ON u.id = fav_stats.user_id
-      WHERE u.id = ?`,
-      [userId],
-      []
+      WHERE u.id = ${userId}`.execute(db),
+      { rows: [] } as { rows: any[] },
+      "user-detail"
     );
 
-    if (!Array.isArray(users) || users.length === 0) {
+    if (!Array.isArray(users.rows) || users.rows.length === 0) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
 
-    const user = users[0];
+    const user = users.rows[0];
 
     // 获取最近上传的图片（独立容错）
-    const recentImages = await safeQuery(
-      `SELECT id, title, url, thumbnail_url, created_at, status
-       FROM images 
-       WHERE uploaded_by = ? 
-       ORDER BY created_at DESC 
-       LIMIT 5`,
-      [userId],
-      []
+    const recentImages = await safeExecute(
+      () => db.selectFrom("images")
+        .where("uploaded_by", "=", userId)
+        .select(["id", "title", "url", "thumbnail_url", "created_at", "status"])
+        .orderBy("created_at", "desc")
+        .limit(5)
+        .execute(),
+      [] as any[],
+      "user-recent-images"
     );
 
     // 获取操作日志（独立容错）
-    const operationLogs = await safeQuery(
-      `SELECT aol.*, u.name as operator_name
+    const operationLogs = await safeExecute(
+      () => sql<Record<string, any>>`SELECT aol.*, u.name as operator_name
        FROM admin_operation_logs aol
        LEFT JOIN users u ON aol.operator_id = u.id
-       WHERE aol.target_user_id = ?
+       WHERE aol.target_user_id = ${userId}
        ORDER BY aol.created_at DESC
-       LIMIT 10`,
-      [userId],
-      []
+       LIMIT 10`.execute(db),
+      { rows: [] } as { rows: any[] },
+      "user-operation-logs"
     );
 
     const result = {
       ...user,
       recentImages: Array.isArray(recentImages) ? recentImages : [],
-      operationLogs: Array.isArray(operationLogs) ? operationLogs : [],
+      operationLogs: Array.isArray(operationLogs.rows) ? operationLogs.rows : [],
     };
 
     // 写入缓存，TTL 60秒
@@ -124,10 +126,10 @@ export async function PATCH(
     }
 
     // 检查目标用户
-    const targetUser = (await query(
-      "SELECT id, role, status FROM users WHERE id = ?",
-      [userId]
-    )) as any[];
+    const targetUser = await db.selectFrom("users")
+      .where("id", "=", userId)
+      .select(["id", "role", "status"])
+      .execute();
 
     if (targetUser.length === 0) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
@@ -144,16 +146,14 @@ export async function PATCH(
     const { role, status, bannedReason, resetPassword } = body;
 
     const logDetail: any = {};
-    const updates: string[] = [];
-    const updateParams: any[] = [];
+    const updates: Record<string, any> = {};
 
     if (resetPassword) {
       if (resetPassword.length < 6) {
         return NextResponse.json({ error: "密码至少6位" }, { status: 400 });
       }
       const hash = await hashPassword(resetPassword);
-      updates.push("password = ?");
-      updateParams.push(hash);
+      updates.password = hash;
       logDetail.operation = "reset_password";
     }
 
@@ -164,8 +164,7 @@ export async function PATCH(
       }
       logDetail.from_role = targetUser[0].role;
       logDetail.to_role = role;
-      updates.push("role = ?");
-      updateParams.push(role);
+      updates.role = role;
     }
 
     if (status !== undefined) {
@@ -177,27 +176,27 @@ export async function PATCH(
       logDetail.to_status = status;
 
       if (status === "banned" || status === "suspended") {
-        updates.push("status = ?, banned_reason = ?, banned_at = NOW()");
-        updateParams.push(status, bannedReason || "管理员封禁");
+        updates.status = status;
+        updates.banned_reason = bannedReason || "管理员封禁";
+        updates.banned_at = sql`NOW()`;
       } else {
-        updates.push("status = ?, banned_reason = NULL, banned_at = NULL");
-        updateParams.push(status);
+        updates.status = status;
+        updates.banned_reason = null;
+        updates.banned_at = null;
       }
     }
 
-    if (updates.length === 0) {
+    if (Object.keys(updates).length === 0) {
       return NextResponse.json(
         { error: "没有需要更新的字段" },
         { status: 400 }
       );
     }
 
-    updateParams.push(userId);
-
-    await query(
-      `UPDATE users SET ${updates.join(", ")} WHERE id = ?`,
-      updateParams
-    );
+    await db.updateTable("users")
+      .set(updates)
+      .where("id", "=", userId)
+      .execute();
 
     // 清除该用户的缓存和用户列表缓存
     await delCache(`admin:user:${userId}`);
@@ -217,10 +216,14 @@ export async function PATCH(
                 ? "change_role"
                 : "update_user";
 
-    await query(
-      "INSERT INTO admin_operation_logs (operator_id, target_user_id, operation, detail) VALUES (?, ?, ?, ?)",
-      [operatorId, userId, operation, JSON.stringify(logDetail)]
-    );
+    await db.insertInto("admin_operation_logs")
+      .values({
+        operator_id: operatorId,
+        target_user_id: userId,
+        operation,
+        detail: JSON.stringify(logDetail),
+      })
+      .execute();
 
     return NextResponse.json({ message: "更新成功" });
   } catch (error) {
@@ -257,10 +260,10 @@ export async function DELETE(
     }
 
     // 检查目标用户
-    const targetUser = (await query(
-      "SELECT id, role FROM users WHERE id = ?",
-      [userId]
-    )) as any[];
+    const targetUser = await db.selectFrom("users")
+      .where("id", "=", userId)
+      .select(["id", "role", "email", "name"])
+      .execute();
 
     if (targetUser.length === 0) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
@@ -273,32 +276,38 @@ export async function DELETE(
       );
     }
 
-    // 软删除：将用户标记为已删除状态，邮箱加后缀避免唯一约束冲突
+    // 软删除
     const deletedEmail = `deleted_${userId}_${Date.now()}@deleted.com`;
     const deletedName = `已删除用户`;
 
-    await query(
-      "UPDATE users SET email = ?, name = ?, avatar = NULL, status = 'banned', banned_reason = '账户已删除', banned_at = NOW() WHERE id = ?",
-      [deletedEmail, deletedName, userId]
-    );
+    await db.updateTable("users")
+      .set({
+        email: deletedEmail,
+        name: deletedName,
+        avatar: null,
+        status: "banned",
+        banned_reason: "账户已删除",
+        banned_at: sql`NOW()`,
+      })
+      .where("id", "=", userId)
+      .execute();
 
     // 清除该用户的缓存和用户列表缓存
     await delCache(`admin:user:${userId}`);
     await clearPattern("admin:users:*");
 
     // 记录操作日志
-    await query(
-      "INSERT INTO admin_operation_logs (operator_id, target_user_id, operation, detail) VALUES (?, ?, ?, ?)",
-      [
-        operatorId,
-        userId,
-        "delete_user",
-        JSON.stringify({
+    await db.insertInto("admin_operation_logs")
+      .values({
+        operator_id: operatorId,
+        target_user_id: userId,
+        operation: "delete_user",
+        detail: JSON.stringify({
           original_email: targetUser[0].email || "",
           original_name: targetUser[0].name || "",
         }),
-      ]
-    );
+      })
+      .execute();
 
     return NextResponse.json({ message: "用户已删除" });
   } catch (error) {

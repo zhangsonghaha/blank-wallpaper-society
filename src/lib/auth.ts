@@ -3,7 +3,8 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import GitHub from "next-auth/providers/github";
 import crypto from "crypto";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { checkLoginLock, recordLoginFailure, clearLoginFailures } from "@/lib/login-security";
 import { hashPassword, verifyPassword } from "@/lib/password";
 
@@ -13,7 +14,15 @@ import { hashPassword, verifyPassword } from "@/lib/password";
 const authSecret: string =
   process.env.AUTH_SECRET ||
   process.env.NEXTAUTH_SECRET ||
-  crypto.randomBytes(32).toString("hex");
+  (() => {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        "[auth] ⚠️ AUTH_SECRET 和 NEXTAUTH_SECRET 均未设置，使用随机密钥。" +
+        "每次重启/HMR 会导致已有会话失效。请在 .env.local 中设置 AUTH_SECRET。"
+      );
+    }
+    return crypto.randomBytes(32).toString("hex");
+  })();
 
 // OAuth 凭据：优先环境变量，其次数据库设置
 async function getOAuthConfig() {
@@ -23,13 +32,15 @@ async function getOAuthConfig() {
   let githubClientSecret = process.env.GITHUB_CLIENT_SECRET || "";
 
   try {
-    const settings = (await query(
-      "SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN (?, ?, ?, ?, ?, ?)",
-      ["google_client_id", "google_client_secret", "github_client_id", "github_client_secret", "google_login_enabled", "github_login_enabled"]
-    )) as any[];
+    const keys = ["google_client_id", "google_client_secret", "github_client_id", "github_client_secret", "google_login_enabled", "github_login_enabled"];
+    const settings = await db
+      .selectFrom("system_settings")
+      .select(["setting_key", "setting_value"])
+      .where("setting_key", "in", keys)
+      .execute();
 
     const settingMap = new Map<string, string>();
-    settings.forEach((s: any) => settingMap.set(s.setting_key, s.setting_value || ""));
+    settings.forEach((s) => settingMap.set(s.setting_key, s.setting_value || ""));
 
     // 数据库值作为回退（环境变量优先）
     if (!googleClientId && settingMap.get("google_client_id")) {
@@ -75,9 +86,11 @@ async function buildProviders() {
           throw new Error(`账号已被临时锁定，请${minutes}分钟后重试`);
         }
 
-        const rows = (await query("SELECT * FROM users WHERE email = ?", [
-          email,
-        ])) as any[];
+        const rows = await db
+          .selectFrom("users")
+          .where("email", "=", email)
+          .selectAll()
+          .execute();
 
         if (rows.length === 0) {
           recordLoginFailure(email);
@@ -97,7 +110,10 @@ async function buildProviders() {
 
         // 自动升级旧 SHA-256 哈希为 bcrypt
         if (upgradedHash) {
-          query("UPDATE users SET password = ? WHERE id = ?", [upgradedHash, user.id])
+          db.updateTable("users")
+            .set({ password: upgradedHash })
+            .where("id", "=", user.id)
+            .execute()
             .catch((err) => console.error("[auth] 密码哈希升级失败:", err));
         }
 
@@ -168,12 +184,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         try {
           const userId = parseInt(token.id as string);
           if (userId) {
-            const memberRows = (await query(
-              "SELECT plan, started_at, expires_at, status FROM memberships WHERE user_id = ? AND status = 'active' LIMIT 1",
-              [userId]
-            )) as any[];
-            if (memberRows.length > 0) {
-              const m = memberRows[0];
+            const m = await db
+              .selectFrom("memberships")
+              .select(["plan", "started_at", "expires_at", "status"])
+              .where("user_id", "=", userId)
+              .where("status", "=", "active")
+              .limit(1)
+              .executeTakeFirst();
+            if (m) {
               (session.user as any).membership = {
                 plan: m.plan,
                 startedAt: m.started_at,
@@ -199,10 +217,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }
 
         // 检查是否已有该邮箱的用户
-        const existingUsers = (await query(
-          "SELECT * FROM users WHERE email = ?",
-          [email]
-        )) as any[];
+        const existingUsers = await db
+          .selectFrom("users")
+          .where("email", "=", email)
+          .selectAll()
+          .execute();
 
         let userId: number;
 
@@ -229,32 +248,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           const name = user.name || email.split("@")[0];
           const avatar = user.image || null;
 
-          const result = (await query(
-            "INSERT INTO users (email, name, password, avatar, role) VALUES (?, ?, ?, ?, 'user')",
-            [email, name, hashedPassword, avatar]
-          )) as any;
+          const result = await db
+            .insertInto("users")
+            .values({ email, name, password: hashedPassword, avatar, role: "user" })
+            .executeTakeFirst();
 
-          userId = result.insertId;
+          userId = Number(result.insertId);
         }
 
         // 保存/更新 OAuth 关联
-        await query(
-          `INSERT INTO oauth_accounts (user_id, provider, provider_account_id, access_token, refresh_token)
-           VALUES (?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE access_token = VALUES(access_token), refresh_token = VALUES(refresh_token), updated_at = NOW()`,
-          [
-            userId,
-            account.provider,
-            account.providerAccountId,
-            account.access_token || null,
-            account.refresh_token || null,
-          ]
-        );
+        await sql`
+          INSERT INTO oauth_accounts (user_id, provider, provider_account_id, access_token, refresh_token)
+          VALUES (${userId}, ${account.provider}, ${account.providerAccountId}, ${account.access_token || null}, ${account.refresh_token || null})
+          ON DUPLICATE KEY UPDATE access_token = VALUES(access_token), refresh_token = VALUES(refresh_token), updated_at = NOW()
+        `.execute(db);
 
         // 设置用户信息供后续 callback 使用
-        const dbUser = (await query("SELECT * FROM users WHERE id = ?", [
-          userId,
-        ])) as any[];
+        const dbUser = await db
+          .selectFrom("users")
+          .where("id", "=", userId)
+          .selectAll()
+          .execute();
 
         if (dbUser.length > 0) {
           (user as any).id = String(userId);

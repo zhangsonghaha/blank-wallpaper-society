@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // GET /api/user/membership - 获取当前用户会员信息
 export async function GET() {
@@ -24,10 +24,13 @@ export async function GET() {
       });
     }
 
-    const rows = (await query(
-      "SELECT plan, started_at, expires_at, status FROM memberships WHERE user_id = ? AND status = 'active' LIMIT 1",
-      [userId]
-    )) as any[];
+    const rows = await db
+      .selectFrom("memberships")
+      .select(["plan", "started_at", "expires_at", "status"])
+      .where("user_id", "=", Number(userId))
+      .where("status", "=", "active")
+      .limit(1)
+      .execute();
 
     if (rows.length === 0) {
       return NextResponse.json({ membership: null });

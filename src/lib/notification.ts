@@ -1,4 +1,4 @@
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { isEmailConfigured, sendNotificationEmail } from "@/lib/email";
 import { pushBotNotification } from "@/lib/bot-notification";
 import { triggerWebhookAsync } from "@/lib/webhook";
@@ -50,11 +50,11 @@ export const NOTIFICATION_TYPE_ICONS: Record<string, string> = {
 // === 获取用户通知设置 ===
 export async function getNotificationSettings(
   userId: number
-): Promise<Record<string, number>> {
-  const rows = await query(
-    "SELECT * FROM notification_settings WHERE user_id = ?",
-    [userId]
-  ) as any[];
+): Promise<Record<string, any>> {
+  const rows = await db.selectFrom("notification_settings")
+    .where("user_id", "=", userId)
+    .selectAll()
+    .execute();
   if (rows.length === 0) {
     // 默认全部开启
     return {
@@ -99,29 +99,28 @@ export async function pushNotification(params: {
       return null; // 用户关闭了该类型通知
     }
 
-    const result = await query(
-      `INSERT INTO notifications (user_id, type, title, content, related_id, related_type)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        params.userId,
-        params.type,
-        params.title,
-        params.content || null,
-        params.relatedId || null,
-        params.relatedType || null,
-      ]
-    );
+    const result = await db.insertInto("notifications")
+      .values({
+        user_id: params.userId,
+        type: params.type,
+        title: params.title,
+        content: params.content || null,
+        related_id: params.relatedId || null,
+        related_type: params.relatedType || null,
+      })
+      .executeTakeFirst();
 
-    const insertId = (result as any).insertId;
+    const insertId = result.insertId ? Number(result.insertId) : null;
 
     // 如果邮件服务已配置且用户开启了该类型的邮件通知，发送邮件
     if (await isEmailConfigured()) {
       const settings = await getNotificationSettings(params.userId);
       if (settings[`email_${params.type}`]) {
         // 获取用户邮箱
-        const userRows = await query("SELECT email FROM users WHERE id = ?", [
-          params.userId,
-        ]) as any[];
+        const userRows = await db.selectFrom("users")
+          .where("id", "=", params.userId)
+          .select(["email"])
+          .execute();
         if (userRows.length > 0) {
           sendNotificationEmail(
             userRows[0].email,
@@ -288,9 +287,10 @@ export async function notifyNewOrder(params: {
   });
 
   // 2. 通知所有管理员（站内通知 + 邮件）
-  const adminRows = await query(
-    "SELECT id FROM users WHERE role = 'admin'"
-  ) as any[];
+  const adminRows = await db.selectFrom("users")
+    .where("role", "=", "admin")
+    .select(["id"])
+    .execute();
 
   for (const admin of adminRows) {
     await pushNotification({

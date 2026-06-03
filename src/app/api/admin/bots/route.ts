@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit-log";
 import { clearBotConfigCache, testBotNotification } from "@/lib/bot-notification";
@@ -13,12 +14,13 @@ export async function GET() {
       return NextResponse.json({ error: "无权访问" }, { status: 403 });
     }
 
-    const rows = (await query(
-      "SELECT * FROM bot_configs ORDER BY created_at DESC"
-    )) as any[];
+    const rows = await db.selectFrom("bot_configs")
+      .selectAll()
+      .orderBy("created_at", "desc")
+      .execute();
 
     // 解析 JSON 字段
-    const configs = rows.map((row: any) => ({
+    const configs = rows.map((row) => ({
       ...row,
       subscribe_events: row.subscribe_events
         ? typeof row.subscribe_events === "string"
@@ -71,27 +73,25 @@ export async function POST(request: NextRequest) {
       custom_body_template,
     } = validation.data;
 
-    const result = await query(
-      `INSERT INTO bot_configs (name, type, auth_mode, app_id, app_secret, chat_id, webhook_url, secret, enabled, subscribe_events, feishu_msg_type, qq_group_id, custom_method, custom_headers, custom_body_template)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
+    const result = await db.insertInto("bot_configs")
+      .values({
         name,
         type,
-        auth_mode || "webhook",
-        app_id || null,
-        app_secret || null,
-        chat_id || null,
-        webhook_url || "",
-        secret || null,
-        enabled !== undefined ? enabled : 1,
-        subscribe_events ? JSON.stringify(subscribe_events) : null,
-        feishu_msg_type || "interactive",
-        qq_group_id || null,
-        custom_method || "POST",
-        custom_headers ? JSON.stringify(custom_headers) : null,
-        custom_body_template || null,
-      ]
-    );
+        auth_mode: auth_mode || "webhook",
+        app_id: app_id || null,
+        app_secret: app_secret || null,
+        chat_id: chat_id || null,
+        webhook_url: webhook_url || "",
+        secret: secret || null,
+        enabled: enabled !== undefined ? enabled : 1,
+        subscribe_events: subscribe_events ? JSON.stringify(subscribe_events) : null,
+        feishu_msg_type: feishu_msg_type || "interactive",
+        qq_group_id: qq_group_id || null,
+        custom_method: custom_method || "POST",
+        custom_headers: custom_headers ? JSON.stringify(custom_headers) : null,
+        custom_body_template: custom_body_template || null,
+      })
+      .executeTakeFirst();
 
     clearBotConfigCache();
 
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       message: "机器人配置已创建",
-      id: (result as any).insertId,
+      id: Number(result.insertId),
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -147,39 +147,34 @@ export async function PATCH(request: NextRequest) {
     }
 
     // 检查是否存在
-    const existing = (await query("SELECT id FROM bot_configs WHERE id = ?", [
-      id,
-    ])) as any[];
+    const existing = await db.selectFrom("bot_configs")
+      .where("id", "=", id)
+      .select(["id"])
+      .execute();
     if (existing.length === 0) {
       return NextResponse.json({ error: "机器人配置不存在" }, { status: 404 });
     }
 
-    await query(
-      `UPDATE bot_configs SET
-        name = ?, type = ?, auth_mode = ?, app_id = ?, app_secret = ?, chat_id = ?,
-        webhook_url = ?, secret = ?, enabled = ?,
-        subscribe_events = ?, feishu_msg_type = ?, qq_group_id = ?,
-        custom_method = ?, custom_headers = ?, custom_body_template = ?
-       WHERE id = ?`,
-      [
+    await db.updateTable("bot_configs")
+      .set({
         name,
         type,
-        auth_mode || "webhook",
-        app_id || null,
-        app_secret || null,
-        chat_id || null,
-        webhook_url || "",
-        secret || null,
-        enabled !== undefined ? enabled : 1,
-        subscribe_events ? JSON.stringify(subscribe_events) : null,
-        feishu_msg_type || "interactive",
-        qq_group_id || null,
-        custom_method || "POST",
-        custom_headers ? JSON.stringify(custom_headers) : null,
-        custom_body_template || null,
-        id,
-      ]
-    );
+        auth_mode: auth_mode || "webhook",
+        app_id: app_id || null,
+        app_secret: app_secret || null,
+        chat_id: chat_id || null,
+        webhook_url: webhook_url || "",
+        secret: secret || null,
+        enabled: enabled !== undefined ? enabled : 1,
+        subscribe_events: subscribe_events ? JSON.stringify(subscribe_events) : null,
+        feishu_msg_type: feishu_msg_type || "interactive",
+        qq_group_id: qq_group_id || null,
+        custom_method: custom_method || "POST",
+        custom_headers: custom_headers ? JSON.stringify(custom_headers) : null,
+        custom_body_template: custom_body_template || null,
+      })
+      .where("id", "=", id)
+      .execute();
 
     clearBotConfigCache();
 
@@ -214,8 +209,11 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "缺少机器人ID" }, { status: 400 });
     }
 
-    const result = await query("DELETE FROM bot_configs WHERE id = ?", [id]);
-    if ((result as any).affectedRows === 0) {
+    const result = await db.deleteFrom("bot_configs")
+      .where("id", "=", Number(id))
+      .execute();
+
+    if ((result as any)[0]?.affectedRows === 0) {
       return NextResponse.json({ error: "机器人配置不存在" }, { status: 404 });
     }
 

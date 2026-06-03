@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { sql } from "kysely";
 
 // GET /api/daily-wallpaper/personal - 基于用户偏好的个性化每日推荐
 export async function GET(request: NextRequest) {
@@ -13,32 +14,37 @@ export async function GET(request: NextRequest) {
     const userId = (session.user as any).id;
 
     // 1. 统计用户收藏图片的分类偏好
-    const categoryPrefs = (await query(
-      `SELECT i.category, COUNT(*) as cnt
-       FROM favorites f
-       INNER JOIN images i ON f.image_id = i.id
-       WHERE f.user_id = ? AND i.category IS NOT NULL AND i.category != ''
-       GROUP BY i.category
-       ORDER BY cnt DESC
-       LIMIT 5`,
-      [userId]
-    )) as any[];
+    const categoryPrefs = await db
+      .selectFrom("favorites as f")
+      .innerJoin("images as i", "i.id", "f.image_id")
+      .select([
+        "i.category",
+        (eb: any) => eb.fn.count("i.id").as("cnt"),
+      ])
+      .where("f.user_id", "=", userId)
+      .where("i.category", "is not", null)
+      .where("i.category", "!=", "")
+      .groupBy("i.category")
+      .orderBy("cnt", "desc")
+      .limit(5)
+      .execute();
 
     // 2. 统计用户收藏图片的标签偏好
-    const tagPrefs = (await query(
-      `SELECT i.tags
-       FROM favorites f
-       INNER JOIN images i ON f.image_id = i.id
-       WHERE f.user_id = ? AND i.tags IS NOT NULL AND i.tags != ''
-       LIMIT 100`,
-      [userId]
-    )) as any[];
+    const tagPrefs = await db
+      .selectFrom("favorites as f")
+      .innerJoin("images as i", "i.id", "f.image_id")
+      .select("i.tags")
+      .where("f.user_id", "=", userId)
+      .where("i.tags", "is not", null)
+      .where("i.tags", "!=", "")
+      .limit(100)
+      .execute();
 
     // 提取并统计标签频率
     const tagCounts: Record<string, number> = {};
     for (const row of tagPrefs) {
       if (row.tags) {
-        const tags = row.tags.split(",").map((t: string) => t.trim()).filter(Boolean);
+        const tags = (row.tags as string).split(",").map((t: string) => t.trim()).filter(Boolean);
         for (const tag of tags) {
           tagCounts[tag] = (tagCounts[tag] || 0) + 1;
         }
@@ -50,11 +56,12 @@ export async function GET(request: NextRequest) {
       .map(([tag]) => tag);
 
     // 3. 获取用户已收藏的图片 ID（用于排除）
-    const favoritedIds = (await query(
-      `SELECT image_id FROM favorites WHERE user_id = ?`,
-      [userId]
-    )) as any[];
-    const excludeIds = favoritedIds.map((r: any) => r.image_id);
+    const favoritedIds = await db
+      .selectFrom("favorites")
+      .select("image_id")
+      .where("user_id", "=", userId)
+      .execute();
+    const excludeIds = favoritedIds.map((r) => r.image_id);
 
     // 4. 基于偏好查询推荐图片
     let recommendedImages: any[] = [];
@@ -62,57 +69,52 @@ export async function GET(request: NextRequest) {
     if (categoryPrefs.length > 0) {
       // 按偏好分类权重查询
       const categories = categoryPrefs.map((c: any) => c.category);
-      const placeholders = categories.map(() => "?").join(",");
 
       // 构建标签 LIKE 条件
-      let tagConditions = "";
-      const tagParams: string[] = [];
-      if (topTags.length > 0) {
-        tagConditions = topTags.map(() => " OR i.tags LIKE ?").join("");
-        topTags.forEach((tag) => tagParams.push(`%${tag}%`));
-      }
+      const tagConditions = topTags.length > 0
+        ? sql` OR ${sql.join(topTags.map((tag) => sql`i.tags LIKE ${`%${tag}%`}`))}`
+        : sql``;
 
-      const excludePlaceholders = excludeIds.length > 0
-        ? excludeIds.map(() => "?").join(",")
-        : "0";
+      const excludeList = excludeIds.length > 0
+        ? sql`AND i.id NOT IN (${sql.join(excludeIds)})`
+        : sql`AND i.id NOT IN (0)`;
 
-      let sql = `
-        SELECT i.id, i.title, i.description, i.url, i.thumbnail_url, 
+      const recResult = await sql`
+        SELECT i.id, i.title, i.description, i.url, i.thumbnail_url,
                i.width, i.height, i.category, i.tags, i.author,
-               i.view_count, i.download_count, i.favorite_count, 
+               i.view_count, i.download_count, i.favorite_count,
                i.created_at, i.dominant_color, i.media_type, i.video_url
         FROM images i
         WHERE i.status = 'approved'
-          AND i.id NOT IN (${excludePlaceholders})
-          AND (i.category IN (${placeholders})${tagConditions})
+          ${excludeList}
+          AND (i.category IN (${sql.join(categories)})${tagConditions})
         ORDER BY COALESCE(i.favorite_count, 0) * 5 + COALESCE(i.download_count, 0) * 2 + COALESCE(i.view_count, 0) * 0.1 DESC
         LIMIT 20
-      `;
-
-      const params = [...excludeIds, ...categories, ...tagParams];
-      recommendedImages = (await query(sql, params)) as any[];
+      `.execute(db);
+      recommendedImages = (recResult as any).rows;
     }
 
     // 5. 如果偏好推荐不够，补充热门图片
     if (recommendedImages.length < 5) {
       const existingIds = new Set(recommendedImages.map((img: any) => img.id));
       const allExcludeIds = [...excludeIds, ...Array.from(existingIds)];
-      const excludePlaceholders = allExcludeIds.length > 0
-        ? allExcludeIds.map(() => "?").join(",")
-        : "0";
+      const excludeList = allExcludeIds.length > 0
+        ? sql`AND id NOT IN (${sql.join(allExcludeIds)})`
+        : sql`AND id NOT IN (0)`;
+      const needed = 10 - recommendedImages.length;
 
-      const fallbackImages = (await query(
-        `SELECT id, title, description, url, thumbnail_url, 
+      const fallbackResult = await sql`
+        SELECT id, title, description, url, thumbnail_url,
                 width, height, category, tags, author,
-                view_count, download_count, favorite_count, 
+                view_count, download_count, favorite_count,
                 created_at, dominant_color, media_type, video_url
          FROM images
          WHERE status = 'approved'
-           AND id NOT IN (${excludePlaceholders})
+           ${excludeList}
          ORDER BY COALESCE(favorite_count, 0) * 5 + COALESCE(download_count, 0) * 2 + COALESCE(view_count, 0) * 0.1 DESC
-         LIMIT ?`,
-        [...allExcludeIds, String(10 - recommendedImages.length)]
-      )) as any[];
+         LIMIT ${needed}
+      `.execute(db);
+      const fallbackImages = (fallbackResult as any).rows;
 
       recommendedImages = [...recommendedImages, ...fallbackImages];
     }
@@ -129,7 +131,7 @@ export async function GET(request: NextRequest) {
       preferences: {
         categories: categoryPrefs.map((c: any) => ({
           name: c.category,
-          count: c.cnt,
+          count: Number(c.cnt),
         })),
         tags: topTags.slice(0, 5),
       },

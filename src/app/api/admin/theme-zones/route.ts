@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 
 // GET /api/admin/theme-zones - 获取所有主题专区（管理端）
 export async function GET() {
@@ -11,9 +12,10 @@ export async function GET() {
     }
 
     // 从 system_settings 读取主题专区配置
-    const settings = (await query(
-      "SELECT setting_value FROM system_settings WHERE setting_key = 'theme_zones'"
-    )) as any[];
+    const settings = await db.selectFrom("system_settings")
+      .where("setting_key", "=", "theme_zones")
+      .select(["setting_value"])
+      .execute();
 
     let zones: any[] = [];
     if (settings.length > 0 && settings[0].setting_value) {
@@ -38,54 +40,46 @@ export async function GET() {
     const zonesWithData = await Promise.all(
       zones.map(async (zone: any) => {
         try {
-          // 构建查询条件
-          const conditions: string[] = [];
-          const params: any[] = [];
+          // Build dynamic WHERE clause using sql template tag
+          const whereParts: ReturnType<typeof sql>[] = [
+            sql`i.status = 'approved'`,
+            sql`i.media_type != 'video'`,
+          ];
 
-          conditions.push("i.status = 'approved'");
-          conditions.push("i.media_type != 'video'");
-
-          // 多分类匹配（兼容 category 字段存储 slug 或中文名两种情况）
+          // 多分类匹配
           if (zone.categories && Array.isArray(zone.categories) && zone.categories.length > 0) {
-            const placeholders = zone.categories.map(() => "?").join(", ");
-            conditions.push(`(i.category IN (${placeholders}) OR i.category IN (SELECT c.name FROM categories c WHERE c.slug IN (${placeholders})))`);
-            params.push(...zone.categories, ...zone.categories);
+            const catValues = zone.categories.map((c: string) => sql`${c}`);
+            whereParts.push(sql`(i.category IN (${sql.join(catValues)}) OR i.category IN (SELECT c.name FROM categories c WHERE c.slug IN (${sql.join(catValues)})))`);
           } else if (zone.category) {
-            // 兼容旧版单分类
-            conditions.push("(i.category = ? OR i.category = (SELECT c.name FROM categories c WHERE c.slug = ?))");
-            params.push(zone.category, zone.category);
+            whereParts.push(sql`(i.category = ${zone.category} OR i.category = (SELECT c.name FROM categories c WHERE c.slug = ${zone.category}))`);
           }
 
-          // 标签匹配（可选）
+          // 标签匹配
           if (zone.tags && Array.isArray(zone.tags) && zone.tags.length > 0) {
-            const tagConditions = zone.tags.map(() => "i.tags LIKE ?").join(" OR ");
-            conditions.push(`(${tagConditions})`);
-            params.push(...zone.tags.map((tag: string) => `%${tag}%`));
+            const tagConditions = zone.tags.map((tag: string) => sql`i.tags LIKE ${`%${tag}%`}`);
+            whereParts.push(sql`(${sql.join(tagConditions, sql` OR `)})`);
           }
 
-          const whereClause = conditions.join(" AND ");
+          const whereClause = sql.join(whereParts, sql` AND `);
 
           // 查询图片数量
-          const [countResult] = (await query(
-            `SELECT COUNT(*) as total FROM images i WHERE ${whereClause}`,
-            params
-          )) as any[];
+          const countResult = await sql<{ total: string | number }>`SELECT COUNT(*) as total FROM images i WHERE ${whereClause}`.execute(db);
 
           // 查询手动添加的图片数量
-          const [manualCountResult] = (await query(
-            `SELECT COUNT(*) as total FROM theme_zone_images WHERE zone_key = ?`,
-            [zone.key]
-          )) as any[];
+          const manualCountResult = await db.selectFrom("theme_zone_images")
+            .where("zone_key", "=", zone.key)
+            .select((eb) => eb.fn.countAll().as("total"))
+            .executeTakeFirst();
 
-          // 封面图：优先使用自定义封面，否则取下载量最高的图片
+          // 封面图
           let coverUrl = null;
           let coverThumbnailUrl = null;
 
           if (zone.cover_image_id) {
-            const coverImage = (await query(
-              `SELECT url, thumbnail_url FROM images WHERE id = ?`,
-              [zone.cover_image_id]
-            )) as any[];
+            const coverImage = await db.selectFrom("images")
+              .where("id", "=", zone.cover_image_id)
+              .select(["url", "thumbnail_url"])
+              .execute();
             if (coverImage.length > 0) {
               coverUrl = coverImage[0].url;
               coverThumbnailUrl = coverImage[0].thumbnail_url;
@@ -93,23 +87,20 @@ export async function GET() {
           }
 
           if (!coverUrl) {
-            const coverImages = (await query(
-              `SELECT i.id, i.url, i.thumbnail_url, i.width, i.height
+            const coverImages = await sql<{ id: number; url: string; thumbnail_url: string; width: number; height: number }>`SELECT i.id, i.url, i.thumbnail_url, i.width, i.height
               FROM images i
               WHERE ${whereClause}
               ORDER BY i.download_count DESC, i.view_count DESC
-              LIMIT 1`,
-              params
-            )) as any[];
-            coverUrl = coverImages[0]?.url || null;
-            coverThumbnailUrl = coverImages[0]?.thumbnail_url || null;
+              LIMIT 1`.execute(db);
+            coverUrl = coverImages.rows[0]?.url || null;
+            coverThumbnailUrl = coverImages.rows[0]?.thumbnail_url || null;
           }
 
           return {
             ...zone,
             categories: zone.categories || (zone.category ? [zone.category] : []),
-            image_count: (countResult?.total || 0) + (manualCountResult?.total || 0),
-            manual_image_count: manualCountResult?.total || 0,
+            image_count: (Number(countResult.rows[0]?.total) || 0) + (Number(manualCountResult?.total) || 0),
+            manual_image_count: Number(manualCountResult?.total) || 0,
             cover_url: coverUrl,
             cover_thumbnail_url: coverThumbnailUrl,
           };
@@ -170,7 +161,7 @@ export async function PUT(request: NextRequest) {
       }
 
       if (!keyRegex.test(zone.key)) {
-        return NextResponse.json({ error: `Key "${zone.key}" 格式无效，必须为小写字母和数字，长度 2-30` }, { status: 400 });
+        return NextResponse.json({ error: `Key "${zone.key}" 格式无效，必须为小写字母和数字，长度 2-3` }, { status: 400 });
       }
 
       if (keys.has(zone.key)) {
@@ -199,15 +190,11 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // 保存到数据库
+    // 保存到数据库 — ON DUPLICATE KEY UPDATE requires raw SQL
     const configValue = JSON.stringify(zones);
-
-    await query(
-      `INSERT INTO system_settings (setting_key, setting_value, description)
-       VALUES ('theme_zones', ?, '主题专区配置')
-       ON DUPLICATE KEY UPDATE setting_value = ?`,
-      [configValue, configValue]
-    );
+    await sql`INSERT INTO system_settings (setting_key, setting_value, description)
+       VALUES (${'theme_zones'}, ${configValue}, ${'主题专区配置'})
+       ON DUPLICATE KEY UPDATE setting_value = ${configValue}`.execute(db);
 
     return NextResponse.json({ 
       message: "主题专区配置已更新", 

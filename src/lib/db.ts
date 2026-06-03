@@ -23,6 +23,7 @@ const pool = mysql.createPool({
 const RETRYABLE_ERRORS = ["ETIMEDOUT", "ECONNRESET", "PROTOCOL_CONNECTION_LOST", "EPIPE"];
 
 // Kysely 实例 — 类型安全的查询入口
+// 注意：Kysely 0.29.x 的 Plugin API 不支持 next 回调，重试逻辑由 safeExecute 和各兼容函数自行处理
 export const db = new Kysely<DB>({
   dialect: new MysqlDialect({ pool: pool.pool }),
 });

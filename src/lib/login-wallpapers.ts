@@ -96,14 +96,15 @@ export interface LoginWallpaperConfig {
  */
 export async function getLoginWallpaperConfig(): Promise<LoginWallpaperConfig> {
   try {
-    const { query } = await import("@/lib/db");
-    const rows = (await query(
-      "SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN (?, ?)",
-      [SETTING_SOURCE_KEY, SETTING_URLS_KEY]
-    )) as any[];
+    const { db } = await import("@/lib/db");
+    const rows = await db
+      .selectFrom("system_settings")
+      .select(["setting_key", "setting_value"])
+      .where("setting_key", "in", [SETTING_SOURCE_KEY, SETTING_URLS_KEY])
+      .execute();
 
     const map = new Map<string, string>();
-    rows.forEach((r: any) => map.set(r.setting_key, r.setting_value || ""));
+    rows.forEach((r) => map.set(r.setting_key, r.setting_value || ""));
 
     const source = (map.get(SETTING_SOURCE_KEY) || "unsplash") as WallpaperSource;
     let customUrls: string[] = [];

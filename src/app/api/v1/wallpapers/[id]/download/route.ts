@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { authenticateApiRequest, recordUsage } from "@/lib/api-auth";
 
 // GET /api/v1/wallpapers/[id]/download - 获取壁纸下载链接
@@ -15,13 +16,16 @@ export async function GET(
 
   try {
     const { id } = await params;
+    const wallpaperId = parseInt(id);
     const { searchParams } = new URL(request.url);
     const resolution = searchParams.get("resolution"); // e.g. "1920x1080"
 
-    const rows = (await query(
-      "SELECT * FROM images WHERE id = ? AND status = 'approved'",
-      [id]
-    )) as any[];
+    const rows = await db
+      .selectFrom("images")
+      .selectAll()
+      .where("id", "=", wallpaperId)
+      .where("status", "=", "approved")
+      .execute();
 
     if (rows.length === 0) {
       recordUsage(auth.apiKeyInfo?.id, `/api/v1/wallpapers/${id}/download`, auth.ipAddress, 404);
@@ -31,10 +35,14 @@ export async function GET(
       );
     }
 
-    const image = rows[0];
+    const image = rows[0] as any;
 
     // 增加下载计数
-    await query("UPDATE images SET download_count = download_count + 1 WHERE id = ?", [id]);
+    await db
+      .updateTable("images")
+      .set({ download_count: sql`download_count + 1` })
+      .where("id", "=", wallpaperId)
+      .executeTakeFirst();
 
     // 构建下载URL（指向内部下载API）
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || request.nextUrl.origin;

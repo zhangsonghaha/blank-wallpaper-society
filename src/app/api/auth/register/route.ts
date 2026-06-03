@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { verifyAltchaSolution } from "@/lib/altcha";
 import { sendWelcomeEmail } from "@/lib/email";
 import { sanitizeName, sanitizeEmail } from "@/lib/sanitize";
-import { withTransaction } from "@/lib/db-tx";
 import { hashPassword } from "@/lib/password";
 
 export async function POST(request: NextRequest) {
@@ -45,9 +45,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 检查邮箱是否已注册
-    const existing = (await query("SELECT id FROM users WHERE email = ?", [
-      cleanEmail,
-    ])) as any[];
+    const existing = await db
+      .selectFrom("users")
+      .select("id")
+      .where("email", "=", cleanEmail)
+      .execute();
 
     if (existing.length > 0) {
       return NextResponse.json(
@@ -58,20 +60,27 @@ export async function POST(request: NextRequest) {
 
     // 创建用户（默认角色为 user）- 使用事务保护
     const hashedPassword = await hashPassword(password);
-    const result = await withTransaction(async (conn) => {
-      // 在事务内再次检查邮箱，防止并发注册
-      const [recheck] = await conn.execute(
-        "SELECT id FROM users WHERE email = ? FOR UPDATE",
-        [cleanEmail]
-      );
-      if ((recheck as any[]).length > 0) {
+    const result = await db.transaction().execute(async (trx) => {
+      // 在事务内部再次检查邮箱，防止并发注册
+      const recheck = await trx
+        .selectFrom("users")
+        .select("id")
+        .where("email", "=", cleanEmail)
+        .forUpdate()
+        .execute();
+      if (recheck.length > 0) {
         throw new Error("CONFLICT:该邮箱已被注册");
       }
 
-      const [insertResult] = await conn.execute(
-        "INSERT INTO users (email, name, password, role) VALUES (?, ?, ?, 'user')",
-        [cleanEmail, cleanName || cleanEmail.split("@")[0], hashedPassword]
-      );
+      const insertResult = await trx
+        .insertInto("users")
+        .values({
+          email: cleanEmail,
+          name: cleanName || cleanEmail.split("@")[0],
+          password: hashedPassword,
+          role: "user",
+        })
+        .executeTakeFirst();
       return insertResult;
     });
 
@@ -83,7 +92,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        id: (result as any).insertId,
+        id: Number(result.insertId),
         message: "注册成功",
       },
       { status: 201 }

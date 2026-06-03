@@ -8,7 +8,8 @@
  * 配置存储在 bot_configs 表，支持按事件类型订阅
  */
 
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import crypto from "crypto";
 
 // === 类型定义 ===
@@ -72,9 +73,19 @@ export async function getEnabledBotConfigs(): Promise<BotConfig[]> {
   if (botConfigCache && Date.now() < botConfigCache.expiresAt) {
     return botConfigCache.configs;
   }
-  const rows = (await query("SELECT * FROM bot_configs WHERE enabled = 1")) as any[];
-  const configs: BotConfig[] = rows.map((row: any) => ({
+  const rows = await db.selectFrom("bot_configs")
+    .where("enabled", "=", 1)
+    .selectAll()
+    .execute();
+  const configs: BotConfig[] = rows.map((row) => ({
     ...row,
+    feishu_msg_type: row.feishu_msg_type ?? "",
+    custom_method: row.custom_method ?? "",
+    last_sent_at: row.last_sent_at ? row.last_sent_at.toISOString() : null,
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
+    send_count: row.send_count ?? 0,
+    fail_count: row.fail_count ?? 0,
     subscribe_events: parseJsonField(row.subscribe_events),
     custom_headers: parseJsonField(row.custom_headers),
   }));
@@ -313,24 +324,22 @@ export async function logBotMessage(params: {
 }): Promise<void> {
   try {
     console.log(`[BotMessage] 记录消息: bot=${params.bot_config_id}, dir=${params.direction}, platform=${params.platform}, event=${params.event_type}, status=${params.status}`);
-    await query(
-      `INSERT INTO bot_messages (bot_config_id, direction, platform, chat_id, sender_id, sender_name, message_type, title, content, event_type, status, error_message)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        params.bot_config_id,
-        params.direction,
-        params.platform,
-        params.chat_id || null,
-        params.sender_id || null,
-        params.sender_name || null,
-        params.message_type || "text",
-        params.title || null,
-        params.content || null,
-        params.event_type || null,
-        params.status || "success",
-        params.error_message || null,
-      ]
-    );
+    await db.insertInto("bot_messages")
+      .values({
+        bot_config_id: params.bot_config_id,
+        direction: params.direction,
+        platform: params.platform,
+        chat_id: params.chat_id || null,
+        sender_id: params.sender_id || null,
+        sender_name: params.sender_name || null,
+        message_type: params.message_type || "text",
+        title: params.title || null,
+        content: params.content || null,
+        event_type: params.event_type || null,
+        status: params.status || "success",
+        error_message: params.error_message || null,
+      })
+      .execute();
   } catch (err) {
     console.error("[BotMessage] 记录消息留痕失败:", err);
   }
@@ -422,7 +431,13 @@ async function sendToBot(config: BotConfig, title: string, content: string, type
       });
       return { success: false, error: errMsg };
     }
-    await query("UPDATE bot_configs SET last_sent_at = NOW(), send_count = send_count + 1 WHERE id = ?", [config.id]);
+    await db.updateTable("bot_configs")
+      .set({
+        last_sent_at: sql`NOW()`,
+        send_count: sql`send_count + 1`,
+      })
+      .where("id", "=", config.id)
+      .execute();
     // 记录发送成功留痕
     await logBotMessage({
       bot_config_id: config.id,
@@ -437,7 +452,11 @@ async function sendToBot(config: BotConfig, title: string, content: string, type
     });
     return { success: true };
   } catch (error: any) {
-    await query("UPDATE bot_configs SET fail_count = fail_count + 1 WHERE id = ?", [config.id]).catch(() => {});
+    await db.updateTable("bot_configs")
+      .set({ fail_count: sql`fail_count + 1` })
+      .where("id", "=", config.id)
+      .execute()
+      .catch(() => {});
     await logBotMessage({
       bot_config_id: config.id,
       direction: "outbound",
@@ -471,20 +490,26 @@ export async function pushBotNotification(params: { type: NotificationEventType;
 // === 测试发送 ===
 
 export async function testBotNotification(configId: number): Promise<{ success: boolean; error?: string }> {
-  const rows = (await query("SELECT * FROM bot_configs WHERE id = ?", [configId])) as any[];
+  const rows = await db.selectFrom("bot_configs")
+    .where("id", "=", configId)
+    .selectAll()
+    .execute();
   if (rows.length === 0) return { success: false, error: "机器人配置不存在" };
   const row = rows[0];
-  const config: BotConfig = { ...row, subscribe_events: parseJsonField(row.subscribe_events), custom_headers: parseJsonField(row.custom_headers) };
+  const config: BotConfig = { ...row, feishu_msg_type: row.feishu_msg_type ?? "", custom_method: row.custom_method ?? "", last_sent_at: row.last_sent_at ? row.last_sent_at.toISOString() : null, created_at: row.created_at.toISOString(), updated_at: row.updated_at.toISOString(), send_count: row.send_count ?? 0, fail_count: row.fail_count ?? 0, subscribe_events: parseJsonField(row.subscribe_events), custom_headers: parseJsonField(row.custom_headers) };
   return sendToBot(config, "🔔 测试通知", `这是一条测试消息，来自「${config.name}」机器人。\n认证模式: ${config.auth_mode === "app" ? "App API" : "Webhook"}\n⏰ ${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`, "system");
 }
 
 // === 测试连通性（不发送消息，仅验证连接/认证） ===
 
 export async function testBotConnection(configId: number): Promise<{ success: boolean; error?: string; latency?: number }> {
-  const rows = (await query("SELECT * FROM bot_configs WHERE id = ?", [configId])) as any[];
+  const rows = await db.selectFrom("bot_configs")
+    .where("id", "=", configId)
+    .selectAll()
+    .execute();
   if (rows.length === 0) return { success: false, error: "机器人配置不存在" };
   const row = rows[0];
-  const config: BotConfig = { ...row, subscribe_events: parseJsonField(row.subscribe_events), custom_headers: parseJsonField(row.custom_headers) };
+  const config: BotConfig = { ...row, feishu_msg_type: row.feishu_msg_type ?? "", custom_method: row.custom_method ?? "", last_sent_at: row.last_sent_at ? row.last_sent_at.toISOString() : null, created_at: row.created_at.toISOString(), updated_at: row.updated_at.toISOString(), send_count: row.send_count ?? 0, fail_count: row.fail_count ?? 0, subscribe_events: parseJsonField(row.subscribe_events), custom_headers: parseJsonField(row.custom_headers) };
 
   const startTime = Date.now();
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { clearEmailConfigCache } from "@/lib/email";
 import { logAudit } from "@/lib/audit-log";
@@ -14,7 +14,7 @@ export async function GET() {
       return NextResponse.json({ error: "无权访问" }, { status: 403 });
     }
 
-    const rows = await query("SELECT * FROM system_settings ORDER BY id ASC");
+    const rows = await db.selectFrom("system_settings").selectAll().orderBy("id", "asc").execute();
     return NextResponse.json(rows);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -38,10 +38,10 @@ export async function PATCH(request: NextRequest) {
 
     // 批量更新
     const updates = Object.entries(settings).map(([key, value]) =>
-      query(
-        "UPDATE system_settings SET setting_value = ? WHERE setting_key = ?",
-        [value, key]
-      )
+      db.updateTable("system_settings")
+        .set({ setting_value: value })
+        .where("setting_key", "=", key)
+        .execute()
     );
 
     await Promise.all(updates);

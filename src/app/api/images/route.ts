@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { hexToRgb, colorDistance } from "@/lib/color-extract";
 import {
@@ -44,28 +45,6 @@ export async function GET(request: NextRequest) {
 
     // 默认只显示已通过审核的图片（前台用户可见）
     const showAll = searchParams.get("showAll") === "true";
-
-    let sql = "SELECT * FROM images WHERE 1=1";
-    const params: any[] = [];
-
-    // "我的图片"模式：按用户过滤，显示所有状态
-    if (myImages && myUserId) {
-      sql += " AND uploaded_by = ?";
-      params.push(myUserId);
-    } else {
-      if (!showAll) {
-        sql += " AND status = 'approved'";
-      }
-    }
-
-    if (category && category !== "all") {
-      if (category === "uncategorized") {
-        sql += " AND (category IS NULL OR category = '')";
-      } else {
-        sql += " AND category = ?";
-        params.push(category);
-      }
-    }
 
     // 优先使用 Meilisearch 搜索（仅在有搜索关键词且无高级筛选时）
     const useMeilisearch =
@@ -126,104 +105,111 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Build query with Kysely
+    let query = db.selectFrom("images").selectAll();
+
+    // "我的图片"模式：按用户过滤，显示所有状态
+    if (myImages && myUserId) {
+      query = query.where("uploaded_by", "=", myUserId);
+    } else {
+      if (!showAll) {
+        query = query.where("status", "=", "approved");
+      }
+    }
+
+    if (category && category !== "all") {
+      if (category === "uncategorized") {
+        query = query.where((eb) =>
+          eb.or([
+            eb("category", "is", null),
+            eb("category", "=", ""),
+          ])
+        );
+      } else {
+        query = query.where("category", "=", category);
+      }
+    }
+
     if (search) {
-      sql += " AND (title LIKE ? OR description LIKE ? OR tags LIKE ?)";
       const like = `%${search}%`;
-      params.push(like, like, like);
+      query = query.where((eb) =>
+        eb.or([
+          eb("title", "like", like),
+          eb("description", "like", like),
+          eb("tags", "like", like),
+        ])
+      );
     }
 
     // 颜色筛选支持
     if (color) {
-      sql += " AND dominant_color IS NOT NULL";
+      query = query.where("dominant_color", "is not", null);
     }
 
     // 分辨率筛选
     if (resolutionPreset) {
       const [w, h] = resolutionPreset.split("x").map(Number);
       if (w && h) {
-        sql += " AND ((width = ? AND height = ?) OR (width = ? AND height = ?))";
-        params.push(String(w), String(h), String(h), String(w));
+        query = query.where((eb) =>
+          eb.or([
+            eb.and([eb("width", "=", w), eb("height", "=", h)]),
+            eb.and([eb("width", "=", h), eb("height", "=", w)]),
+          ])
+        );
       }
     }
     if (minWidth) {
-      sql += " AND width >= ?";
-      params.push(String(minWidth));
+      query = query.where("width", ">=", minWidth);
     }
     if (maxWidth) {
-      sql += " AND width <= ?";
-      params.push(String(maxWidth));
+      query = query.where("width", "<=", maxWidth);
     }
     if (minHeight) {
-      sql += " AND height >= ?";
-      params.push(String(minHeight));
+      query = query.where("height", ">=", minHeight);
     }
     if (maxHeight) {
-      sql += " AND height <= ?";
-      params.push(String(maxHeight));
+      query = query.where("height", "<=", maxHeight);
     }
 
     // 时间范围筛选
     if (dateFrom) {
-      sql += " AND created_at >= ?";
-      params.push(dateFrom);
+      query = query.where("created_at", ">=", new Date(dateFrom));
     }
     if (dateTo) {
-      sql += " AND created_at <= ?";
-      params.push(`${dateTo} 23:59:59`);
+      query = query.where("created_at", "<=", new Date(`${dateTo}T23:59:59`));
     }
 
     // 标签筛选
     if (tags) {
       const tagList = tags.split(",").map((t) => sanitizeStrict(t.trim())).filter(Boolean);
       if (tagList.length > 0) {
-        const tagConditions = tagList.map(() => "tags LIKE ?").join(" AND ");
-        sql += ` AND (${tagConditions})`;
-        tagList.forEach((tag) => params.push(`%${tag}%`));
+        query = query.where((eb) =>
+          eb.and(
+            tagList.map((tag) => eb("tags", "like", `%${tag}%`))
+          )
+        );
       }
     }
 
-    // 获取总数 - 使用独立的参数数组
-    const countParams: any[] = [];
-    let countWhereClause = "";
-    if (!showAll && !myImages) {
-      countWhereClause += " AND status = 'approved'";
-    }
-    if (myImages && myUserId) {
-      countWhereClause += " AND uploaded_by = ?";
-      countParams.push(myUserId);
-    }
-    if (category && category !== "all") {
-      if (category === "uncategorized") {
-        countWhereClause += " AND (category IS NULL OR category = '')";
-      } else {
-        countWhereClause += " AND category = ?";
-        countParams.push(category);
-      }
-    }
-    if (search) {
-      countWhereClause += " AND (title LIKE ? OR description LIKE ? OR tags LIKE ?)";
-      const like = `%${search}%`;
-      countParams.push(like, like, like);
-    }
-    if (color) {
-      countWhereClause += " AND dominant_color IS NOT NULL";
-    }
-    const countResult = await query(
-      `SELECT COUNT(*) as total FROM images WHERE 1=1${countWhereClause}`,
-      countParams
-    );
+    // 获取总数（需要清除 selectAll 以避免 SELECT *, count(*) 冲突）
+    const countResult = await query
+      .clearSelect()
+      .select((eb) => eb.fn.countAll().as("count"))
+      .executeTakeFirst();
+    let total = Number(countResult?.count ?? 0);
 
-    sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-    params.push(limit, offset);
-
-    const rows = (await query(sql, params)) as any[];
+    // 获取分页数据
+    const rows = await query
+      .orderBy("created_at", "desc")
+      .limit(limit)
+      .offset(offset)
+      .execute();
 
     // 应用层颜色筛选
     let filteredRows = rows;
-    let total = (countResult as any[])[0]?.total || 0;
     if (color) {
       const targetRgb = hexToRgb(color);
-      filteredRows = rows.filter((row: any) => {
+      filteredRows = rows.filter((row) => {
         if (!row.dominant_color) return false;
         const dominantRgb = hexToRgb(row.dominant_color);
         const dist = colorDistance(targetRgb, dominantRgb);
@@ -247,9 +233,9 @@ export async function GET(request: NextRequest) {
         return dist <= colorThreshold || paletteMatch;
       });
       // 按色差排序
-      filteredRows.sort((a: any, b: any) => {
-        const distA = colorDistance(targetRgb, hexToRgb(a.dominant_color));
-        const distB = colorDistance(targetRgb, hexToRgb(b.dominant_color));
+      filteredRows.sort((a, b) => {
+        const distA = colorDistance(targetRgb, hexToRgb(a.dominant_color!));
+        const distB = colorDistance(targetRgb, hexToRgb(b.dominant_color!));
         return distA - distB;
       });
       total = filteredRows.length;
@@ -258,9 +244,13 @@ export async function GET(request: NextRequest) {
     // 零结果推荐：搜索无结果时返回随机8张推荐
     let recommendations: any[] | null = null;
     if (search && filteredRows.length === 0) {
-      const recRows = (await query(
-        "SELECT * FROM images WHERE status = 'approved' ORDER BY RAND() LIMIT 8"
-      )) as any[];
+      const recRows = await db
+        .selectFrom("images")
+        .where("status", "=", "approved")
+        .orderBy(sql`RAND()`)
+        .limit(8)
+        .selectAll()
+        .execute();
       recommendations = recRows;
     }
 
@@ -305,25 +295,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await query(
-      `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        title || "",
-        description || "",
-        filename || "",
+    const result = await db
+      .insertInto("images")
+      .values({
+        title: title || "",
+        description: description || "",
+        filename: filename || "",
         storage_key,
         url,
-        thumbnail_url || null,
-        width || 0,
-        height || 0,
-        file_size || 0,
-        mime_type || "image/jpeg",
-        author || "",
-        tags || "",
-        category || "",
-      ]
-    );
+        thumbnail_url: thumbnail_url || null,
+        width: width || 0,
+        height: height || 0,
+        file_size: file_size || 0,
+        mime_type: mime_type || "image/jpeg",
+        author: author || "",
+        tags: tags || "",
+        category: category || "",
+      })
+      .executeTakeFirst();
 
     const insertId = (result as any).insertId;
 

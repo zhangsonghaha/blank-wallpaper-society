@@ -4,7 +4,7 @@
  * 提供模板 CRUD 和变量快捷插入功能
  */
 
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // === 模板变量定义 ===
 export interface TemplateVariable {
@@ -148,13 +148,14 @@ export function getGlobalVariableDefaults(): Record<string, string> {
  */
 export async function getEmailTemplate(templateKey: string): Promise<EmailTemplate | null> {
   try {
-    const rows = await query(
-      "SELECT * FROM email_templates WHERE template_key = ? AND is_active = 1",
-      [templateKey]
-    ) as EmailTemplateRow[];
+    const rows = await db.selectFrom("email_templates")
+      .where("template_key", "=", templateKey)
+      .where("is_active", "=", 1)
+      .selectAll()
+      .execute();
 
     if (rows.length === 0) return null;
-    return parseTemplateRow(rows[0]);
+    return parseTemplateRow(rows[0] as unknown as EmailTemplateRow);
   } catch (error) {
     console.error("[EmailTemplate] 获取模板失败:", error);
     return null;
@@ -166,18 +167,16 @@ export async function getEmailTemplate(templateKey: string): Promise<EmailTempla
  */
 export async function listEmailTemplates(category?: TemplateCategory): Promise<EmailTemplate[]> {
   try {
-    let sql = "SELECT * FROM email_templates";
-    const params: any[] = [];
+    let qb = db.selectFrom("email_templates").selectAll();
 
     if (category) {
-      sql += " WHERE category = ?";
-      params.push(category);
+      qb = qb.where("category", "=", category);
     }
 
-    sql += " ORDER BY category, template_key";
+    qb = qb.orderBy("category").orderBy("template_key");
 
-    const rows = await query(sql, params) as EmailTemplateRow[];
-    return rows.map(parseTemplateRow);
+    const rows = await qb.execute();
+    return (rows as unknown as EmailTemplateRow[]).map(parseTemplateRow);
   } catch (error) {
     console.error("[EmailTemplate] 获取模板列表失败:", error);
     return [];
@@ -221,22 +220,20 @@ export async function createEmailTemplate(params: {
   variables: TemplateVariable[];
   category: TemplateCategory;
 }): Promise<number> {
-  const result = await query(
-    `INSERT INTO email_templates (template_key, name, description, subject, body_html, body_text, variables, category)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      params.template_key,
-      params.name,
-      params.description || null,
-      params.subject,
-      params.body_html,
-      params.body_text || null,
-      JSON.stringify(params.variables),
-      params.category,
-    ]
-  );
+  const result = await db.insertInto("email_templates")
+    .values({
+      template_key: params.template_key,
+      name: params.name,
+      description: params.description || null,
+      subject: params.subject,
+      body_html: params.body_html,
+      body_text: params.body_text || null,
+      variables: JSON.stringify(params.variables),
+      category: params.category,
+    })
+    .executeTakeFirst();
 
-  return (result as any).insertId;
+  return Number(result.insertId);
 }
 
 /**
@@ -255,27 +252,25 @@ export async function updateEmailTemplate(
     is_active?: boolean;
   }
 ): Promise<boolean> {
-  const fields: string[] = [];
-  const values: any[] = [];
+  const fields: Record<string, unknown> = {};
 
-  if (params.name !== undefined) { fields.push("name = ?"); values.push(params.name); }
-  if (params.description !== undefined) { fields.push("description = ?"); values.push(params.description); }
-  if (params.subject !== undefined) { fields.push("subject = ?"); values.push(params.subject); }
-  if (params.body_html !== undefined) { fields.push("body_html = ?"); values.push(params.body_html); }
-  if (params.body_text !== undefined) { fields.push("body_text = ?"); values.push(params.body_text); }
-  if (params.variables !== undefined) { fields.push("variables = ?"); values.push(JSON.stringify(params.variables)); }
-  if (params.category !== undefined) { fields.push("category = ?"); values.push(params.category); }
-  if (params.is_active !== undefined) { fields.push("is_active = ?"); values.push(params.is_active ? 1 : 0); }
+  if (params.name !== undefined) fields.name = params.name;
+  if (params.description !== undefined) fields.description = params.description;
+  if (params.subject !== undefined) fields.subject = params.subject;
+  if (params.body_html !== undefined) fields.body_html = params.body_html;
+  if (params.body_text !== undefined) fields.body_text = params.body_text;
+  if (params.variables !== undefined) fields.variables = JSON.stringify(params.variables);
+  if (params.category !== undefined) fields.category = params.category;
+  if (params.is_active !== undefined) fields.is_active = params.is_active ? 1 : 0;
 
-  if (fields.length === 0) return false;
+  if (Object.keys(fields).length === 0) return false;
 
-  values.push(id);
-  const result = await query(
-    `UPDATE email_templates SET ${fields.join(", ")} WHERE id = ?`,
-    values
-  );
+  const result = await db.updateTable("email_templates")
+    .set(fields as any)
+    .where("id", "=", id)
+    .executeTakeFirst();
 
-  return (result as any).affectedRows > 0;
+  return Number(result.numUpdatedRows) > 0;
 }
 
 /**
@@ -283,10 +278,15 @@ export async function updateEmailTemplate(
  */
 export async function deleteEmailTemplate(id: number): Promise<boolean> {
   // 检查是否为内置模板
-  const rows = await query("SELECT is_builtin FROM email_templates WHERE id = ?", [id]) as any[];
+  const rows = await db.selectFrom("email_templates")
+    .where("id", "=", id)
+    .select("is_builtin")
+    .execute();
   if (rows.length === 0) return false;
   if (rows[0].is_builtin) return false;
 
-  const result = await query("DELETE FROM email_templates WHERE id = ?", [id]);
-  return (result as any).affectedRows > 0;
+  const result = await db.deleteFrom("email_templates")
+    .where("id", "=", id)
+    .executeTakeFirst();
+  return Number(result.numDeletedRows) > 0;
 }

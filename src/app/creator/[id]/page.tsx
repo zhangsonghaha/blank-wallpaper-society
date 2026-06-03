@@ -1,4 +1,4 @@
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { notFound } from "next/navigation";
 import CreatorClient from "./CreatorClient";
 
@@ -8,30 +8,39 @@ export default async function CreatorPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const creatorId = Number(id);
 
   // 获取用户信息
-  const users = (await query(
-    "SELECT id, name, avatar, role, created_at FROM users WHERE id = ?",
-    [id]
-  )) as any[];
+  const user = await db
+    .selectFrom("users")
+    .select(["id", "name", "avatar", "role", "created_at"])
+    .where("id", "=", creatorId)
+    .executeTakeFirst();
 
-  if (users.length === 0) {
+  if (!user) {
     notFound();
   }
 
-  const user = users[0];
-
   // 获取已通过的壁纸
-  const images = (await query(
-    "SELECT * FROM images WHERE uploaded_by = ? AND status = 'approved' ORDER BY created_at DESC",
-    [id]
-  )) as any[];
+  const images = await db
+    .selectFrom("images")
+    .selectAll()
+    .where("uploaded_by", "=", creatorId)
+    .where("status", "=", "approved")
+    .orderBy("created_at", "desc")
+    .execute();
 
   // 统计数据
-  const [stats] = (await query(
-    "SELECT COUNT(*) as totalImages, COALESCE(SUM(view_count), 0) as totalViews, COALESCE(SUM(download_count), 0) as totalDownloads FROM images WHERE uploaded_by = ? AND status = 'approved'",
-    [id]
-  )) as any[];
+  const stats = await db
+    .selectFrom("images")
+    .select((eb) => [
+      eb.fn.countAll().as("totalImages"),
+      eb.fn.coalesce(eb.fn.sum("view_count"), eb.val(0)).as("totalViews"),
+      eb.fn.coalesce(eb.fn.sum("download_count"), eb.val(0)).as("totalDownloads"),
+    ])
+    .where("uploaded_by", "=", creatorId)
+    .where("status", "=", "approved")
+    .executeTakeFirst();
 
   return (
     <CreatorClient
@@ -40,13 +49,13 @@ export default async function CreatorPage({
         name: user.name,
         avatar: user.avatar,
         role: user.role,
-        createdAt: user.created_at,
+        createdAt: user.created_at instanceof Date ? user.created_at.toISOString() : String(user.created_at),
       }}
       images={images}
       stats={{
-        totalImages: stats?.totalImages || 0,
-        totalViews: stats?.totalViews || 0,
-        totalDownloads: stats?.totalDownloads || 0,
+        totalImages: Number(stats?.totalImages || 0),
+        totalViews: Number(stats?.totalViews || 0),
+        totalDownloads: Number(stats?.totalDownloads || 0),
       }}
     />
   );

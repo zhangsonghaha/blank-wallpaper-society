@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { indexImage, dbRowToSearchData } from "@/lib/meilisearch";
 
@@ -17,35 +18,26 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "20");
     const offset = (page - 1) * limit;
 
-    // 获取爬取的图片（description包含 [crawl] 的）
-    let statusCondition = "";
-    const params: any[] = [];
+    // Build status condition
+    const statusCondition = status === "pending"
+      ? sql`AND i.status = 'pending'`
+      : status === "approved"
+        ? sql`AND i.status = 'approved'`
+        : sql``;
 
-    if (status === "pending") {
-      statusCondition = "AND i.status = 'pending'";
-    } else if (status === "approved") {
-      statusCondition = "AND i.status = 'approved'";
-    }
-
-    const rows = await query(
-      `SELECT i.* FROM images i
+    const rows = await sql<Record<string, any>>`SELECT i.* FROM images i
        WHERE i.description LIKE '%[crawl]%' ${statusCondition}
        ORDER BY i.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
-    );
+       LIMIT ${limit} OFFSET ${offset}`.execute(db);
 
-    const countResult = await query(
-      `SELECT COUNT(*) as total FROM images i
-       WHERE i.description LIKE '%[crawl]%' ${statusCondition}`,
-      params
-    ) as any[];
+    const countResult = await sql<{ total: string | number }>`SELECT COUNT(*) as total FROM images i
+       WHERE i.description LIKE '%[crawl]%' ${statusCondition}`.execute(db);
 
     return NextResponse.json({
-      data: rows,
-      total: countResult[0]?.total || 0,
+      data: rows.rows,
+      total: Number(countResult.rows[0]?.total || 0),
       page,
-      totalPages: Math.ceil((countResult[0]?.total || 0) / limit),
+      totalPages: Math.ceil(Number(countResult.rows[0]?.total || 0) / limit),
     });
   } catch (error: any) {
     console.error("GET /api/admin/crawl/review error:", error);
@@ -73,36 +65,26 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "无效的操作" }, { status: 400 });
     }
 
-    const placeholders = imageIds.map(() => "?").join(",");
+    const idValues = imageIds.map((id: number) => sql`${id}`);
 
     if (action === "approve") {
-      await query(
-        `UPDATE images SET status = 'approved', reviewed_by = ?, reviewed_at = NOW() WHERE id IN (${placeholders}) AND status = 'pending'`,
-        [adminId, ...imageIds]
-      );
+      await sql`UPDATE images SET status = 'approved', reviewed_by = ${adminId}, reviewed_at = NOW() WHERE id IN (${sql.join(idValues)}) AND status = 'pending'`.execute(db);
 
       // 同步搜索索引
       try {
-        const approvedImages = await query(
-          `SELECT * FROM images WHERE id IN (${placeholders}) AND status = 'approved'`,
-          imageIds
-        ) as any[];
-        for (const img of approvedImages) {
+        const approvedImages = await sql<Record<string, any>>`SELECT * FROM images WHERE id IN (${sql.join(idValues)}) AND status = 'approved'`.execute(db);
+        for (const img of approvedImages.rows) {
           indexImage(dbRowToSearchData(img)).catch(() => {});
         }
       } catch {
         // 索引失败不影响主流程
       }
     } else if (action === "reject") {
-      await query(
-        `UPDATE images SET status = 'rejected', reviewed_by = ?, reviewed_at = NOW() WHERE id IN (${placeholders})`,
-        [adminId, ...imageIds]
-      );
+      await sql`UPDATE images SET status = 'rejected', reviewed_by = ${adminId}, reviewed_at = NOW() WHERE id IN (${sql.join(idValues)})`.execute(db);
     } else if (action === "delete") {
-      await query(
-        `DELETE FROM images WHERE id IN (${placeholders})`,
-        imageIds
-      );
+      await db.deleteFrom("images")
+        .where("id", "in", imageIds as number[])
+        .execute();
     }
 
     return NextResponse.json({

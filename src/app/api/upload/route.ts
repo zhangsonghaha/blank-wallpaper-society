@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadFile, BUCKET_NAME, PUBLIC_URL_BASE } from "@/lib/minio";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { extractColors } from "@/lib/color-extract";
 import { addWatermark, isWatermarkEnabled, getWatermarkText } from "@/lib/watermark";
@@ -13,6 +13,7 @@ import { processNSFWDetection } from "@/lib/nsfw";
 import { sanitizeStrict, sanitizeName } from "@/lib/sanitize";
 import { canUpload } from "@/lib/storage-quota";
 import sharp from "sharp";
+import { sql } from "kysely";
 
 // pHash 去重阈值：hamming distance <= 5 判定为重复
 const PHASH_THRESHOLD = 5;
@@ -89,11 +90,13 @@ export async function POST(request: NextRequest) {
       if (!isAdmin) {
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
-        const todayCount = await query(
-          "SELECT COUNT(*) as count FROM images WHERE author = ? AND created_at >= ?",
-          [userName, todayStart.toISOString().slice(0, 19).replace("T", " ")]
-        );
-        if ((todayCount as any[])[0]?.count >= DAILY_UPLOAD_LIMIT) {
+        const todayCountRow = await db
+          .selectFrom("images")
+          .select((eb) => [eb.fn.count<number>("id").as("count")])
+          .where("author", "=", userName)
+          .where("created_at", ">=", todayStart)
+          .executeTakeFirst();
+        if (Number(todayCountRow?.count ?? 0) >= DAILY_UPLOAD_LIMIT) {
           return NextResponse.json(
             { error: `每日上传限制为${DAILY_UPLOAD_LIMIT}张，请明天再试` },
             { status: 429 }
@@ -167,12 +170,14 @@ export async function POST(request: NextRequest) {
       try {
         phash = await computePHash(imageBuffer);
         if (phash) {
-          const existingImages = await query(
-            "SELECT id, title, url, thumbnail_url, phash FROM images WHERE phash IS NOT NULL"
-          ) as any[];
+          const existingImages = await db
+            .selectFrom("images")
+            .select(["id", "title", "url", "thumbnail_url", "phash"])
+            .where("phash", "is not", null)
+            .execute();
 
           for (const existing of existingImages) {
-            if (existing.phash && hammingDistance(phash, existing.phash) <= PHASH_THRESHOLD) {
+            if (existing.phash && hammingDistance(phash, existing.phash as string) <= PHASH_THRESHOLD) {
               return NextResponse.json(
                 {
                   error: "检测到重复图片",
@@ -216,33 +221,32 @@ export async function POST(request: NextRequest) {
       const status = isAdmin ? "approved" : "pending";
 
       // 写入数据库
-      const result = await query(
-        `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by, phash, exif)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          title || "网络图片",
-          description || "",
-          safeName,
-          storageKey,
-          storedUrl,
-          thumbnailUrl || null,
+      const result = await db
+        .insertInto("images")
+        .values({
+          title: title || "网络图片",
+          description: description || "",
+          filename: safeName,
+          storage_key: storageKey,
+          url: storedUrl,
+          thumbnail_url: thumbnailUrl || null,
           width,
           height,
-          imageBuffer.length,
-          contentTypeHeader,
-          author || userName,
-          tags || "",
-          category || "",
+          file_size: imageBuffer.length,
+          mime_type: contentTypeHeader,
+          author: author || userName,
+          tags: tags || "",
+          category: category || "",
           status,
-          dominantColor,
-          colorPalette,
-          userId,
+          dominant_color: dominantColor,
+          color_palette: colorPalette,
+          uploaded_by: userId,
           phash,
-          exifJson,
-        ]
-      );
+          exif: exifJson,
+        })
+        .executeTakeFirst();
 
-      const insertId = (result as any).insertId;
+      const insertId = Number(result.insertId);
 
       // 上传成功 → 加经验 + 检查成就（异步不阻塞）
       addExp(userId, 10).catch(() => {});
@@ -251,9 +255,9 @@ export async function POST(request: NextRequest) {
       // 管理员上传直接 approved → 自动索引到 Meilisearch
       if (isAdmin) {
         try {
-          const newImage = await query("SELECT * FROM images WHERE id = ?", [insertId]);
-          if ((newImage as any[]).length > 0) {
-            indexImage(dbRowToSearchData((newImage as any[])[0])).catch(() => {});
+          const newImage = await db.selectFrom("images").selectAll().where("id", "=", insertId).execute();
+          if (newImage.length > 0) {
+            indexImage(dbRowToSearchData(newImage[0] as any)).catch(() => {});
           }
         } catch {}
       }
@@ -262,10 +266,14 @@ export async function POST(request: NextRequest) {
       if (width > 0 && height > 0) {
         generateAndUploadVariants(insertId, imageBuffer, width, height)
           .then(async ({ variants, thumbnails }) => {
-            await query(
-              "UPDATE images SET variants = ?, thumbnails = ? WHERE id = ?",
-              [JSON.stringify(variants), JSON.stringify(thumbnails), insertId]
-            );
+            await db
+              .updateTable("images")
+              .set({
+                variants: JSON.stringify(variants),
+                thumbnails: JSON.stringify(thumbnails),
+              })
+              .where("id", "=", insertId)
+              .executeTakeFirst();
           })
           .catch((err) => {
             console.error(`异步生成变体失败 (imageId=${insertId}):`, err);
@@ -337,11 +345,13 @@ export async function POST(request: NextRequest) {
     if (!isAdmin) {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      const todayCount = await query(
-        "SELECT COUNT(*) as count FROM images WHERE uploaded_by = ? AND created_at >= ?",
-        [userId, todayStart.toISOString().slice(0, 19).replace("T", " ")]
-      );
-      if ((todayCount as any[])[0]?.count >= DAILY_UPLOAD_LIMIT) {
+      const todayCountRow = await db
+        .selectFrom("images")
+        .select((eb) => [eb.fn.count<number>("id").as("count")])
+        .where("uploaded_by", "=", userId)
+        .where("created_at", ">=", todayStart)
+        .executeTakeFirst();
+      if (Number(todayCountRow?.count ?? 0) >= DAILY_UPLOAD_LIMIT) {
         return NextResponse.json(
           { error: `每日上传限制为${DAILY_UPLOAD_LIMIT}张，请明天再试` },
           { status: 429 }
@@ -353,7 +363,7 @@ export async function POST(request: NextRequest) {
     const quotaCheck = await canUpload(userId, userRole, file.size);
     if (!quotaCheck.allowed) {
       return NextResponse.json(
-        { 
+        {
           error: `存储空间不足，剩余 ${quotaCheck.quotaInfo.remainingMB}MB，需要 ${Math.round(file.size / (1024 * 1024) * 100) / 100}MB`,
           quota: quotaCheck.quotaInfo,
         },
@@ -490,12 +500,14 @@ export async function POST(request: NextRequest) {
       try {
         phash = await computePHash(buffer);
         if (phash) {
-          const existingImages = await query(
-            "SELECT id, title, url, thumbnail_url, phash FROM images WHERE phash IS NOT NULL"
-          ) as any[];
+          const existingImages = await db
+            .selectFrom("images")
+            .select(["id", "title", "url", "thumbnail_url", "phash"])
+            .where("phash", "is not", null)
+            .execute();
 
           for (const existing of existingImages) {
-            if (existing.phash && hammingDistance(phash, existing.phash) <= PHASH_THRESHOLD) {
+            if (existing.phash && hammingDistance(phash, existing.phash as string) <= PHASH_THRESHOLD) {
               return NextResponse.json(
                 {
                   error: "检测到重复图片",
@@ -551,41 +563,40 @@ export async function POST(request: NextRequest) {
     const mediaType = isVideo ? "video" : "image";
 
     // 写入数据库
-    const result = await query(
-      `INSERT INTO images (title, description, filename, storage_key, url, thumbnail_url, width, height, file_size, mime_type, author, tags, category, status, dominant_color, color_palette, uploaded_by, phash, exif, media_type)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
+    const result = await db
+      .insertInto("images")
+      .values({
         title,
         description,
         filename,
-        storageKey,
+        storage_key: storageKey,
         url,
-        thumbnailUrl || null,
+        thumbnail_url: thumbnailUrl || null,
         width,
         height,
-        file.size,
-        file.type,
-        userName,
+        file_size: file.size,
+        mime_type: file.type,
+        author: userName,
         tags,
         category,
         status,
-        dominantColor,
-        colorPalette,
-        userId,
+        dominant_color: dominantColor,
+        color_palette: colorPalette,
+        uploaded_by: userId,
         phash,
-        exifJson,
-        mediaType,
-      ]
-    );
+        exif: exifJson,
+        media_type: mediaType,
+      })
+      .executeTakeFirst();
 
-    const insertId = (result as any).insertId;
+    const insertId = Number(result.insertId);
 
     // 管理员上传直接 approved → 自动索引到 Meilisearch
     if (isAdmin) {
       try {
-        const newImage = await query("SELECT * FROM images WHERE id = ?", [insertId]);
-        if ((newImage as any[]).length > 0) {
-          indexImage(dbRowToSearchData((newImage as any[])[0])).catch(() => {});
+        const newImage = await db.selectFrom("images").selectAll().where("id", "=", insertId).execute();
+        if (newImage.length > 0) {
+          indexImage(dbRowToSearchData(newImage[0] as any)).catch(() => {});
         }
       } catch {}
     }
@@ -594,10 +605,14 @@ export async function POST(request: NextRequest) {
     if (!isVideo && width > 0 && height > 0) {
       generateAndUploadVariants(insertId, processedBuffer, width, height)
         .then(async ({ variants, thumbnails }) => {
-          await query(
-            "UPDATE images SET variants = ?, thumbnails = ? WHERE id = ?",
-            [JSON.stringify(variants), JSON.stringify(thumbnails), insertId]
-          );
+          await db
+            .updateTable("images")
+            .set({
+              variants: JSON.stringify(variants),
+              thumbnails: JSON.stringify(thumbnails),
+            })
+            .where("id", "=", insertId)
+            .executeTakeFirst();
         })
         .catch((err) => {
           console.error(`异步生成变体失败 (imageId=${insertId}):`, err);
@@ -644,4 +659,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
-

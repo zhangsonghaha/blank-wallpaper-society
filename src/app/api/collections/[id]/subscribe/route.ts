@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
 // POST /api/collections/[id]/subscribe - 订阅合集
@@ -18,10 +18,11 @@ export async function POST(
     const userId = (session.user as any).id;
 
     // 验证合集存在
-    const existing = (await query(
-      `SELECT * FROM collections WHERE id = ?`,
-      [collectionId]
-    )) as any[];
+    const existing = await db
+      .selectFrom("collections")
+      .selectAll()
+      .where("id", "=", collectionId)
+      .execute();
     if (existing.length === 0) {
       return NextResponse.json({ error: "合集不存在" }, { status: 404 });
     }
@@ -32,19 +33,24 @@ export async function POST(
     }
 
     // 检查是否已订阅
-    const existingSub = (await query(
-      `SELECT id FROM collection_subscriptions WHERE collection_id = ? AND user_id = ?`,
-      [collectionId, userId]
-    )) as any[];
+    const existingSub = await db
+      .selectFrom("collection_subscriptions")
+      .select(["id"])
+      .where("collection_id", "=", collectionId)
+      .where("user_id", "=", userId)
+      .execute();
 
     if (existingSub.length > 0) {
       return NextResponse.json({ error: "已订阅此合集" }, { status: 409 });
     }
 
-    await query(
-      `INSERT INTO collection_subscriptions (collection_id, user_id) VALUES (?, ?)`,
-      [collectionId, userId]
-    );
+    await db
+      .insertInto("collection_subscriptions")
+      .values({
+        collection_id: collectionId,
+        user_id: userId,
+      })
+      .executeTakeFirst();
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
@@ -68,10 +74,11 @@ export async function DELETE(
     const collectionId = parseInt(id);
     const userId = (session.user as any).id;
 
-    await query(
-      `DELETE FROM collection_subscriptions WHERE collection_id = ? AND user_id = ?`,
-      [collectionId, userId]
-    );
+    await db
+      .deleteFrom("collection_subscriptions")
+      .where("collection_id", "=", collectionId)
+      .where("user_id", "=", userId)
+      .executeTakeFirst();
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

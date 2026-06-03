@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { authenticateApiRequest, recordUsage } from "@/lib/api-auth";
 
 // GET /api/v1/collections - 合集列表
@@ -17,8 +18,9 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit;
     const featured = searchParams.get("featured") === "true";
 
-    let sql = `
-      SELECT c.*, 
+    // Build query with subqueries
+    let query = sql`
+      SELECT c.*,
         u.name as author_name, u.avatar as author_avatar,
         i.url as cover_url, i.thumbnail_url as cover_thumbnail_url,
         (SELECT COUNT(*) FROM collection_images WHERE collection_id = c.id) as image_count,
@@ -28,24 +30,24 @@ export async function GET(request: NextRequest) {
       LEFT JOIN images i ON c.cover_image_id = i.id
       WHERE c.is_public = TRUE
     `;
-    const params: any[] = [];
 
     if (featured) {
-      sql += " ORDER BY subscriber_count DESC, c.created_at DESC";
+      query = sql`${query} ORDER BY subscriber_count DESC, c.created_at DESC`;
     } else {
-      sql += " ORDER BY c.created_at DESC";
+      query = sql`${query} ORDER BY c.created_at DESC`;
     }
 
     // 获取总数
-    const countResult = (await query(
-      "SELECT COUNT(*) as total FROM collections WHERE is_public = TRUE"
-    )) as any[];
-    const total = countResult[0]?.total || 0;
+    const countResult = await db
+      .selectFrom("collections")
+      .select((eb) => [eb.fn.count<number>("id").as("total")])
+      .where("is_public", "=", 1)
+      .executeTakeFirst();
+    const total = Number(countResult?.total ?? 0);
 
-    sql += " LIMIT ? OFFSET ?";
-    params.push(limit, offset);
+    query = sql`${query} LIMIT ${limit} OFFSET ${offset}`;
 
-    const rows = (await query(sql, params)) as any[];
+    const rows = (await query.execute(db)).rows as any[];
 
     const collections = rows.map((row: any) => ({
       id: row.id,
@@ -57,8 +59,8 @@ export async function GET(request: NextRequest) {
         name: row.author_name,
         avatar: row.author_avatar,
       },
-      image_count: row.image_count,
-      subscriber_count: row.subscriber_count,
+      image_count: Number(row.image_count || 0),
+      subscriber_count: Number(row.subscriber_count || 0),
       is_public: row.is_public,
       created_at: row.created_at,
     }));

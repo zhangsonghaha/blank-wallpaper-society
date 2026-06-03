@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import ProfileClient from "./ProfileClient";
 
 export default async function ProfilePage() {
@@ -13,23 +13,31 @@ export default async function ProfilePage() {
   const userId = (session.user as any).id;
 
   // 获取用户信息
-  const users = (await query("SELECT id, email, name, avatar, role, is_verified, created_at FROM users WHERE id = ?", [userId])) as any[];
-  const user = users[0];
+  const user = await db
+    .selectFrom("users")
+    .select(["id", "email", "name", "avatar", "role", "is_verified", "created_at"])
+    .where("id", "=", userId)
+    .executeTakeFirst();
 
   if (!user) {
     redirect("/");
   }
 
   // 获取用户统计数据
-  const [imageStats] = (await query(
-    "SELECT COUNT(*) as total, COALESCE(SUM(view_count), 0) as totalViews FROM images WHERE author = ?",
-    [user.name]
-  )) as any[];
+  const imageStats = await db
+    .selectFrom("images")
+    .select((eb) => [
+      eb.fn.countAll().as("total"),
+      eb.fn.coalesce(eb.fn.sum("view_count"), eb.val(0)).as("totalViews"),
+    ])
+    .where("author", "=", user.name)
+    .executeTakeFirst();
 
-  const [favStats] = (await query(
-    "SELECT COUNT(*) as total FROM favorites WHERE user_id = ?",
-    [userId]
-  )) as any[];
+  const favStats = await db
+    .selectFrom("favorites")
+    .select((eb) => eb.fn.countAll().as("total"))
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
 
   return (
     <ProfileClient
@@ -40,12 +48,12 @@ export default async function ProfilePage() {
         avatar: user.avatar,
         role: user.role,
         is_verified: user.is_verified || 0,
-        createdAt: user.created_at,
+        createdAt: user.created_at instanceof Date ? user.created_at.toISOString() : String(user.created_at),
       }}
       stats={{
-        totalImages: imageStats?.total || 0,
-        totalViews: imageStats?.totalViews || 0,
-        totalFavorites: favStats?.total || 0,
+        totalImages: Number(imageStats?.total || 0),
+        totalViews: Number(imageStats?.totalViews || 0),
+        totalFavorites: Number(favStats?.total || 0),
       }}
     />
   );

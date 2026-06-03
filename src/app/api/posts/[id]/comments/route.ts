@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { sanitizeComment } from "@/lib/sanitize";
 
@@ -21,34 +22,46 @@ export async function GET(
     const offset = (page - 1) * limit;
 
     // 获取评论总数
-    const countResult = await query(
-      "SELECT COUNT(*) as total FROM comments WHERE post_id = ? AND parent_id IS NULL",
-      [postId]
-    ) as any[];
-    const total = countResult[0]?.total || 0;
+    const countResult = await db
+      .selectFrom("comments")
+      .select((eb) => [eb.fn.countAll().as("total")])
+      .where("post_id", "=", postId)
+      .where("parent_id", "is", null)
+      .execute();
+    const total = Number(countResult[0]?.total ?? 0);
 
     // 获取顶级评论
-    const comments = await query(
-      `SELECT c.*, u.name as user_name, u.avatar as user_avatar
-       FROM comments c
-       LEFT JOIN users u ON c.user_id = u.id
-       WHERE c.post_id = ? AND c.parent_id IS NULL
-       ORDER BY c.created_at DESC
-       LIMIT ${Number(limit)} OFFSET ${Number(offset)}`,
-      [postId]
-    ) as any[];
+    const comments = await db
+      .selectFrom("comments as c")
+      .leftJoin("users as u", "u.id", "c.user_id")
+      .select([
+        "c.id", "c.post_id", "c.user_id", "c.content", "c.parent_id",
+        "c.image_id", "c.like_count", "c.created_at",
+        sql<string>`u.name`.as("user_name"),
+        sql<string | null>`u.avatar`.as("user_avatar"),
+      ])
+      .where("c.post_id", "=", postId)
+      .where("c.parent_id", "is", null)
+      .orderBy("c.created_at", "desc")
+      .limit(limit)
+      .offset(offset)
+      .execute();
 
     // 获取每条顶级评论的回复
     const commentsWithReplies = await Promise.all(
       comments.map(async (comment: any) => {
-        const replies = await query(
-          `SELECT c.*, u.name as user_name, u.avatar as user_avatar
-           FROM comments c
-           LEFT JOIN users u ON c.user_id = u.id
-           WHERE c.parent_id = ?
-           ORDER BY c.created_at ASC`,
-          [comment.id]
-        ) as any[];
+        const replies = await db
+          .selectFrom("comments as c")
+          .leftJoin("users as u", "u.id", "c.user_id")
+          .select([
+            "c.id", "c.post_id", "c.user_id", "c.content", "c.parent_id",
+            "c.image_id", "c.like_count", "c.created_at",
+            sql<string>`u.name`.as("user_name"),
+            sql<string | null>`u.avatar`.as("user_avatar"),
+          ])
+          .where("c.parent_id", "=", comment.id)
+          .orderBy("c.created_at", "asc")
+          .execute();
         return { ...comment, replies };
       })
     );
@@ -98,44 +111,60 @@ export async function POST(
     }
 
     // 验证帖子存在
-    const posts = await query("SELECT id, user_id FROM posts WHERE id = ?", [postId]) as any[];
+    const posts = await db
+      .selectFrom("posts")
+      .select(["id", "user_id"])
+      .where("id", "=", postId)
+      .execute();
     if (posts.length === 0) {
       return NextResponse.json({ error: "帖子不存在" }, { status: 404 });
     }
 
     // 如果是回复，验证父评论
     if (parent_id) {
-      const parents = await query(
-        "SELECT id FROM comments WHERE id = ? AND post_id = ?",
-        [parent_id, postId]
-      ) as any[];
+      const parents = await db
+        .selectFrom("comments")
+        .select(["id"])
+        .where("id", "=", parent_id)
+        .where("post_id", "=", postId)
+        .execute();
       if (parents.length === 0) {
         return NextResponse.json({ error: "父评论不存在" }, { status: 404 });
       }
     }
 
     // 插入评论
-    const result = await query(
-      "INSERT INTO comments (post_id, user_id, content, parent_id) VALUES (?, ?, ?, ?)",
-      [postId, userId, content.trim(), parent_id || null]
-    );
+    const result = await db
+      .insertInto("comments")
+      .values({
+        post_id: postId,
+        user_id: userId,
+        content: content.trim(),
+        parent_id: parent_id || null,
+      })
+      .executeTakeFirst();
 
-    const insertId = (result as any).insertId;
+    const insertId = Number(result.insertId);
 
     // 更新帖子评论计数
-    await query(
-      "UPDATE posts SET comments_count = comments_count + 1 WHERE id = ?",
-      [postId]
-    );
+    await db
+      .updateTable("posts")
+      .set({ comments_count: sql`comments_count + 1` })
+      .where("id", "=", postId)
+      .executeTakeFirst();
 
     // 获取新评论（含用户信息）
-    const newComment = await query(
-      `SELECT c.*, u.name as user_name, u.avatar as user_avatar
-       FROM comments c
-       LEFT JOIN users u ON c.user_id = u.id
-       WHERE c.id = ?`,
-      [insertId]
-    ) as any[];
+    const newComment = await db
+      .selectFrom("comments as c")
+      .leftJoin("users as u", "u.id", "c.user_id")
+      .select([
+        "c.id", "c.post_id", "c.user_id", "c.content", "c.parent_id",
+        "c.image_id", "c.like_count", "c.created_at",
+        sql<string>`u.name`.as("user_name"),
+        sql<string | null>`u.avatar`.as("user_avatar"),
+      ])
+      .where("c.id", "=", insertId)
+      .execute();
 
     return NextResponse.json({
       data: newComment[0] || { id: insertId },

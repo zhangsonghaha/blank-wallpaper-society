@@ -1,4 +1,4 @@
-import { query, safeQuery } from "@/lib/db";
+import { db, safeExecute } from "@/lib/db";
 
 /**
  * 分类 → 推荐标签映射
@@ -150,12 +150,17 @@ export function suggestTagsByColor(dominantColor: string): string[] {
  */
 export async function getPopularTags(topN: number = 10): Promise<string[]> {
   try {
-    const rows = await safeQuery(
-      "SELECT name FROM tags WHERE image_count > 0 ORDER BY image_count DESC LIMIT ?",
-      [topN],
-      []
-    ) as any[];
-    return rows.map((r: any) => r.name);
+    const rows = await safeExecute(
+      () => db.selectFrom("tags")
+        .where("image_count", ">", 0)
+        .select(["name"])
+        .orderBy("image_count", "desc")
+        .limit(topN)
+        .execute(),
+      [],
+      "getPopularTags"
+    );
+    return rows.map((r) => r.name);
   } catch {
     return [];
   }

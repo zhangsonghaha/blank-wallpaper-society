@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit-log";
 
@@ -22,9 +22,11 @@ export async function GET(request: NextRequest) {
 
     switch (type) {
       case "users": {
-        const rows = (await query(
-          `SELECT id, name, email, role, created_at FROM users ORDER BY id`
-        )) as any[];
+        const rows = await db
+          .selectFrom("users")
+          .select(["id", "name", "email", "role", "created_at"])
+          .orderBy("id")
+          .execute();
         csv = "ID,名称,邮箱,角色,注册时间\n";
         for (const r of rows) {
           csv += `${r.id},"${(r.name || "").replace(/"/g, '""')}","${(r.email || "").replace(/"/g, '""')}",${r.role},${r.created_at}\n`;
@@ -34,9 +36,11 @@ export async function GET(request: NextRequest) {
       }
 
       case "images": {
-        const rows = (await query(
-          `SELECT id, title, author, category, status, width, height, download_count, view_count, created_at FROM images ORDER BY id`
-        )) as any[];
+        const rows = await db
+          .selectFrom("images")
+          .select(["id", "title", "author", "category", "status", "width", "height", "download_count", "view_count", "created_at"])
+          .orderBy("id")
+          .execute();
         csv = "ID,标题,作者,分类,状态,宽度,高度,下载量,浏览量,上传时间\n";
         for (const r of rows) {
           csv += `${r.id},"${(r.title || "").replace(/"/g, '""')}","${(r.author || "").replace(/"/g, '""')}","${(r.category || "").replace(/"/g, '""')}",${r.status},${r.width},${r.height},${r.download_count || 0},${r.view_count || 0},${r.created_at}\n`;
@@ -46,17 +50,24 @@ export async function GET(request: NextRequest) {
       }
 
       case "downloads": {
-        const rows = (await query(
-          `SELECT dl.id, u.name as user_name, i.title as image_title, dl.resolution, dl.ip_address, dl.created_at
-           FROM download_logs dl
-           LEFT JOIN users u ON dl.user_id = u.id
-           LEFT JOIN images i ON dl.image_id = i.id
-           ORDER BY dl.created_at DESC
-           LIMIT 10000`
-        )) as any[];
+        const rows = await db
+          .selectFrom("download_logs as dl")
+          .leftJoin("users as u", "dl.user_id", "u.id")
+          .leftJoin("images as i", "dl.image_id", "i.id")
+          .select((eb) => [
+            "dl.id",
+            "u.name as user_name",
+            "i.title as image_title",
+            "dl.resolution",
+            "dl.ip_address",
+            "dl.created_at",
+          ])
+          .orderBy("dl.created_at", "desc")
+          .limit(10000)
+          .execute();
         csv = "ID,用户,图片,分辨率,IP,下载时间\n";
         for (const r of rows) {
-          csv += `${r.id},"${(r.user_name || "匿名").replace(/"/g, '""')}","${(r.image_title || "").replace(/"/g, '""')}","${r.resolution || ""}","${r.ip_address || ""}",${r.created_at}\n`;
+          csv += `${r.id},"${((r as any).user_name || "匿名").replace(/"/g, '""')}","${((r as any).image_title || "").replace(/"/g, '""')}","${r.resolution || ""}","${r.ip_address || ""}",${r.created_at}\n`;
         }
         filename = `downloads_${new Date().toISOString().slice(0, 10)}.csv`;
         break;

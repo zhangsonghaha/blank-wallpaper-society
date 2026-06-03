@@ -1,25 +1,31 @@
 import { NextResponse } from "next/server";
-import { query, safeQuery } from "@/lib/db";
+import { db, safeExecute } from "@/lib/db";
 
 // GET /api/search/hot - 获取热门搜索词
 export async function GET() {
   try {
     // 基于下载量和浏览量聚合热门标签和分类
-    const hotTags = (await safeQuery(
-      `SELECT tags FROM images
-       WHERE status = 'approved' AND tags IS NOT NULL AND tags != '' AND tags != '[]'
-       ORDER BY download_count DESC
-       LIMIT 50`,
+    const hotTags = await safeExecute(
+      () => db
+        .selectFrom("images")
+        .select("tags")
+        .where("status", "=", "approved")
+        .where("tags", "is not", null)
+        .where("tags", "!=", "")
+        .where("tags", "!=", "[]")
+        .orderBy("download_count", "desc")
+        .limit(50)
+        .execute(),
       [],
-      []
-    )) as any[];
+      "search-hot-tags"
+    );
 
     // 统计标签频率
     const tagCount: Record<string, number> = {};
     for (const row of hotTags) {
       if (!row.tags) continue;
       try {
-        const parsed = JSON.parse(row.tags);
+        const parsed = JSON.parse(row.tags as string);
         if (Array.isArray(parsed)) {
           for (const tag of parsed) {
             if (typeof tag === "string" && tag.trim()) {
@@ -29,7 +35,7 @@ export async function GET() {
         }
       } catch {
         // 非JSON格式，按逗号分割
-        const parts = row.tags.split(",");
+        const parts = (row.tags as string).split(",");
         for (const part of parts) {
           const t = part.trim();
           if (t) tagCount[t] = (tagCount[t] || 0) + 1;

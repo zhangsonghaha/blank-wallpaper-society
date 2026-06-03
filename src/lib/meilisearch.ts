@@ -1,5 +1,4 @@
 import { Meilisearch, Index } from "meilisearch";
-import { query } from "@/lib/db";
 
 // ==================== 配置 ====================
 

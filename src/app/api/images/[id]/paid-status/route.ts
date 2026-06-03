@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // GET /api/images/[id]/paid-status - 检查壁纸付费状态
 export async function GET(
@@ -9,19 +9,22 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const imageId = Number(id);
 
     // 检查是否为付费壁纸
-    const paidRows = (await query(
-      "SELECT price, user_id FROM paid_wallpapers WHERE image_id = ? AND is_paid = 1",
-      [id]
-    )) as any[];
+    const paidRow = await db
+      .selectFrom("paid_wallpapers")
+      .where("image_id", "=", imageId)
+      .where("is_paid", "=", 1)
+      .select(["price", "user_id"])
+      .executeTakeFirst();
 
-    if (paidRows.length === 0) {
+    if (!paidRow) {
       return NextResponse.json({ is_paid_wallpaper: false });
     }
 
-    const price = parseFloat(paidRows[0].price);
-    const creatorId = paidRows[0].user_id;
+    const price = parseFloat(String(paidRow.price));
+    const creatorId = paidRow.user_id;
 
     // 检查当前用户是否已购买
     let hasPurchased = false;
@@ -33,26 +36,31 @@ export async function GET(
       if (userId === creatorId) {
         hasPurchased = true;
       } else {
-        const orderRows = (await query(
-          "SELECT id FROM orders WHERE user_id = ? AND type = 'paid_wallpaper' AND related_id = ? AND payment_status = 'paid'",
-          [userId, id]
-        )) as any[];
-        hasPurchased = orderRows.length > 0;
+        const orderRow = await db
+          .selectFrom("orders")
+          .where("user_id", "=", userId)
+          .where("type", "=", "paid_wallpaper")
+          .where("related_id", "=", imageId)
+          .where("payment_status", "=", "paid")
+          .select("id")
+          .executeTakeFirst();
+        hasPurchased = !!orderRow;
       }
     }
 
     // 获取图片标题
-    const imageRows = (await query(
-      "SELECT title FROM images WHERE id = ?",
-      [id]
-    )) as any[];
+    const imageRow = await db
+      .selectFrom("images")
+      .where("id", "=", imageId)
+      .select("title")
+      .executeTakeFirst();
 
     return NextResponse.json({
       is_paid_wallpaper: true,
       price,
       has_purchased: hasPurchased,
       creator_id: creatorId,
-      image_title: imageRows[0]?.title || "",
+      image_title: imageRow?.title || "",
     });
   } catch (error: any) {
     console.error("GET /api/images/[id]/paid-status error:", error);

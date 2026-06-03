@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { query } from "@/lib/db";
-import { withTransaction } from "@/lib/db-tx";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import {
   PLATFORM_FEE_RATE,
   MEMBERSHIP_PRICES,
@@ -25,49 +25,48 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "请先登录" }, { status: 401 });
     }
 
-    const userId = (session.user as any).id;
+    const userId = Number((session.user as any).id);
     const { searchParams } = new URL(request.url);
     const type = searchParams.get("type"); // paid_wallpaper | tip | membership
     const status = searchParams.get("status"); // pending | paid | failed | refunded
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = parseInt(searchParams.get("page_size") || "20");
-
-    let whereClause = "WHERE o.user_id = ?";
-    const params: any[] = [userId];
-
-    if (type) {
-      whereClause += " AND o.type = ?";
-      params.push(type);
-    }
-    if (status) {
-      whereClause += " AND o.payment_status = ?";
-      params.push(status);
-    }
-
     const offset = (page - 1) * pageSize;
 
+    // Build dynamic WHERE clause with Kysely
+    const applyFilters = (qb: any) => {
+      qb = qb.where("o.user_id", "=", userId);
+      if (type) qb = qb.where("o.type", "=", type);
+      if (status) qb = qb.where("o.payment_status", "=", status);
+      return qb;
+    };
+
     const [orders, countResult] = await Promise.all([
-      query(
-        `SELECT o.*, 
+      sql<any>`
+        SELECT o.*, 
           CASE o.type 
             WHEN 'paid_wallpaper' THEN (SELECT title FROM images WHERE id = o.related_id)
             WHEN 'tip' THEN (SELECT name FROM users WHERE id = o.related_id)
             WHEN 'membership' THEN CONCAT(o.amount, '元会员订阅')
           END as description
-        FROM orders o ${whereClause}
+        FROM orders o
+        WHERE o.user_id = ${userId}
+        ${type ? sql`AND o.type = ${type}` : sql``}
+        ${status ? sql`AND o.payment_status = ${status}` : sql``}
         ORDER BY o.created_at DESC
-        LIMIT ? OFFSET ?`,
-        [...params, pageSize, offset]
-      ),
-      query(
-        `SELECT COUNT(*) as total FROM orders o ${whereClause}`,
-        params
-      ),
+        LIMIT ${pageSize} OFFSET ${offset}
+      `.execute(db).then(r => r.rows),
+
+      db
+        .selectFrom("orders as o")
+        .select((eb) => [eb.fn.count("o.id").as("total")])
+        .$call((qb) => applyFilters(qb))
+        .execute(),
     ]);
 
     return NextResponse.json({
       data: orders,
-      total: (countResult as any[])[0]?.total || 0,
+      total: Number((countResult[0] as any)?.total) || 0,
       page,
       page_size: pageSize,
     });
@@ -85,7 +84,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "请先登录" }, { status: 401 });
     }
 
-    const userId = (session.user as any).id;
+    const userId = Number((session.user as any).id);
     const body = await request.json();
     const { type, amount, image_id, to_user_id, plan } = body;
 
@@ -106,31 +105,46 @@ export async function POST(request: NextRequest) {
         }
 
         // 检查图片是否为付费壁纸
-        const paidRows = (await query(
-          "SELECT price, user_id FROM paid_wallpapers WHERE image_id = ? AND is_paid = 1",
-          [image_id]
-        )) as any[];
+        const paidRows = await db
+          .selectFrom("paid_wallpapers")
+          .select(["price", "user_id"])
+          .where("image_id", "=", image_id)
+          .where("is_paid", "=", 1)
+          .execute();
 
         if (paidRows.length === 0) {
-          return NextResponse.json({ error: "该壁纸不是付费壁纸" }, { status: 400 });
+          return NextResponse.json(
+            { error: "该壁纸不是付费壁纸" },
+            { status: 400 }
+          );
         }
 
         // 不能购买自己的壁纸
         if (paidRows[0].user_id === userId) {
-          return NextResponse.json({ error: "不能购买自己的壁纸" }, { status: 400 });
+          return NextResponse.json(
+            { error: "不能购买自己的壁纸" },
+            { status: 400 }
+          );
         }
 
         // 检查是否已购买
-        const existingOrder = (await query(
-          "SELECT id FROM orders WHERE user_id = ? AND type = 'paid_wallpaper' AND related_id = ? AND payment_status = 'paid'",
-          [userId, image_id]
-        )) as any[];
+        const existingOrder = await db
+          .selectFrom("orders")
+          .select("id")
+          .where("user_id", "=", userId)
+          .where("type", "=", "paid_wallpaper")
+          .where("related_id", "=", image_id)
+          .where("payment_status", "=", "paid")
+          .execute();
 
         if (existingOrder.length > 0) {
-          return NextResponse.json({ error: "已购买该壁纸" }, { status: 400 });
+          return NextResponse.json(
+            { error: "已购买该壁纸" },
+            { status: 400 }
+          );
         }
 
-        finalAmount = parseFloat(paidRows[0].price);
+        finalAmount = parseFloat(String(paidRows[0].price));
         creatorId = paidRows[0].user_id;
         relatedId = image_id;
         break;
@@ -142,7 +156,10 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "缺少打赏对象" }, { status: 400 });
         }
         if (to_user_id === userId) {
-          return NextResponse.json({ error: "不能给自己打赏" }, { status: 400 });
+          return NextResponse.json(
+            { error: "不能给自己打赏" },
+            { status: 400 }
+          );
         }
         relatedId = to_user_id;
         creatorId = to_user_id;
@@ -153,12 +170,16 @@ export async function POST(request: NextRequest) {
         // 会员订阅 - 管理员无需订阅
         const userRole = (session.user as any).role;
         if (userRole === "admin") {
-          return NextResponse.json({ error: "管理员无需订阅会员，您已拥有最高权限" }, { status: 400 });
+          return NextResponse.json(
+            { error: "管理员无需订阅会员，您已拥有最高权限" },
+            { status: 400 }
+          );
         }
         if (!plan || !MEMBERSHIP_PRICES[plan as keyof typeof MEMBERSHIP_PRICES]) {
           return NextResponse.json({ error: "无效的套餐" }, { status: 400 });
         }
-        finalAmount = MEMBERSHIP_PRICES[plan as keyof typeof MEMBERSHIP_PRICES];
+        finalAmount =
+          MEMBERSHIP_PRICES[plan as keyof typeof MEMBERSHIP_PRICES];
         break;
       }
 
@@ -166,27 +187,45 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "无效的订单类型" }, { status: 400 });
     }
 
-    // 使用事务创建订单
-    const result = await withTransaction(async (conn) => {
-      const [orderResult] = await conn.execute(
-        `INSERT INTO orders (user_id, type, related_id, amount, payment_status, payment_id)
-         VALUES (?, ?, ?, ?, 'pending', ?)`,
-        [userId, type, relatedId, finalAmount, orderNo]
-      );
-      const orderId = (orderResult as any).insertId;
+    // 使用 Kysely 事务创建订单
+    const result = await db.transaction().execute(async (trx) => {
+      const insertResult = await trx
+        .insertInto("orders")
+        .values({
+          user_id: userId,
+          type: type,
+          related_id: relatedId,
+          amount: String(finalAmount),
+          payment_status: "pending",
+          payment_id: orderNo,
+        })
+        .executeTakeFirst();
+
+      const orderId = Number(insertResult.insertId);
 
       return { id: orderId, order_no: orderNo, amount: finalAmount };
     });
 
     // 异步通知管理员有新订单待确认
-    const buyerName = (session.user as any).nickname || (session.user as any).email || `用户#${userId}`;
+    const buyerName =
+      (session.user as any).nickname ||
+      (session.user as any).email ||
+      `用户#${userId}`;
     let orderDescription = "";
     if (type === "paid_wallpaper") {
-      const imgRows = (await query("SELECT title FROM images WHERE id = ?", [relatedId])) as any[];
+      const imgRows = await db
+        .selectFrom("images")
+        .select("title")
+        .where("id", "=", relatedId!)
+        .execute();
       orderDescription = imgRows[0]?.title || `壁纸#${relatedId}`;
     } else if (type === "tip") {
-      const toUserRows = (await query("SELECT nickname FROM users WHERE id = ?", [relatedId])) as any[];
-      orderDescription = `打赏给 ${toUserRows[0]?.nickname || `用户#${relatedId}`}`;
+      const toUserRows = await db
+        .selectFrom("users")
+        .select("name")
+        .where("id", "=", relatedId!)
+        .execute();
+      orderDescription = `打赏给 ${toUserRows[0]?.name || `用户#${relatedId}`}`;
     } else if (type === "membership") {
       orderDescription = `${finalAmount}元会员订阅`;
     }

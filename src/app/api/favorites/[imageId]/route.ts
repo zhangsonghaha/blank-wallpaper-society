@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { addExp, checkAchievements } from "@/lib/user-level";
 import { notifyNewFavorite } from "@/lib/notification";
@@ -30,10 +31,11 @@ export async function POST(
     }
 
     // 验证图片存在
-    const existing = (await query(
-      `SELECT id FROM images WHERE id = ?`,
-      [id]
-    )) as any[];
+    const existing = await db
+      .selectFrom("images")
+      .select(["id"])
+      .where("id", "=", id)
+      .execute();
     if (existing.length === 0) {
       return NextResponse.json(
         { success: false, error: "图片不存在" },
@@ -42,10 +44,12 @@ export async function POST(
     }
 
     // 检查是否已收藏
-    const existingFav = (await query(
-      `SELECT id FROM favorites WHERE user_id = ? AND image_id = ?`,
-      [userId, id]
-    )) as any[];
+    const existingFav = await db
+      .selectFrom("favorites")
+      .select(["id"])
+      .where("user_id", "=", userId)
+      .where("image_id", "=", id)
+      .execute();
 
     if (existingFav.length > 0) {
       return NextResponse.json(
@@ -54,19 +58,25 @@ export async function POST(
       );
     }
 
-    await query(
-      `INSERT INTO favorites (user_id, image_id) VALUES (?, ?)`,
-      [userId, id]
-    );
+    await db
+      .insertInto("favorites")
+      .values({
+        user_id: userId,
+        image_id: id,
+      })
+      .executeTakeFirst();
 
     // 更新图片收藏计数
-    query(
-      `UPDATE images SET favorite_count = (SELECT COUNT(*) FROM favorites WHERE image_id = ?) WHERE id = ?`,
-      [id, id]
-    ).catch(() => {});
+    sql`UPDATE images SET favorite_count = (SELECT COUNT(*) FROM favorites WHERE image_id = ${id}) WHERE id = ${id}`
+      .execute(db)
+      .catch(() => {});
 
-    // 收藏成功 → 图片作者 +5 exp + 检查成就（异步不阻塞）
-    query("SELECT uploaded_by, title FROM images WHERE id = ?", [id])
+    // 收藏成功 -> 图片作者 +5 exp + 检查成就（异步不阻塞）
+    db
+      .selectFrom("images")
+      .select(["uploaded_by", "title"])
+      .where("id", "=", id)
+      .execute()
       .then((rows) => {
         const authorId = (rows as any[])?.[0]?.uploaded_by;
         const imageTitle = (rows as any[])?.[0]?.title || `图片#${id}`;
@@ -117,20 +127,22 @@ export async function DELETE(
       );
     }
 
-    const result = await query(
-      `DELETE FROM favorites WHERE user_id = ? AND image_id = ?`,
-      [userId, id]
-    ) as any;
+    const result = await db
+      .deleteFrom("favorites")
+      .where("user_id", "=", userId)
+      .where("image_id", "=", id)
+      .executeTakeFirst();
+
+    const affectedRows = Number(result.numDeletedRows);
 
     // 更新图片收藏计数
-    if (result.affectedRows > 0) {
-      query(
-        `UPDATE images SET favorite_count = (SELECT COUNT(*) FROM favorites WHERE image_id = ?) WHERE id = ?`,
-        [id, id]
-      ).catch(() => {});
+    if (affectedRows > 0) {
+      sql`UPDATE images SET favorite_count = (SELECT COUNT(*) FROM favorites WHERE image_id = ${id}) WHERE id = ${id}`
+        .execute(db)
+        .catch(() => {});
     }
 
-    if (result.affectedRows === 0) {
+    if (affectedRows === 0) {
       return NextResponse.json(
         { success: false, error: "未找到该收藏记录" },
         { status: 404 }

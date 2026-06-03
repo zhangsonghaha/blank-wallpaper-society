@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
+import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 
 // GET /api/admin/crawl/schedule - 获取定时任务列表
@@ -11,11 +12,9 @@ export async function GET() {
     }
 
     // 从 system_settings 获取定时任务配置
-    const schedules = await query(
-      "SELECT * FROM system_settings WHERE setting_key LIKE 'crawl_schedule_%'"
-    );
+    const schedules = await sql<Record<string, any>>`SELECT * FROM system_settings WHERE setting_key LIKE 'crawl_schedule_%'`.execute(db);
 
-    return NextResponse.json({ data: schedules });
+    return NextResponse.json({ data: schedules.rows });
   } catch (error: any) {
     console.error("GET /api/admin/crawl/schedule error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -52,10 +51,7 @@ export async function POST(request: NextRequest) {
       createdAt: new Date().toISOString(),
     });
 
-    await query(
-      "INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?",
-      [settingKey, settingValue, settingValue]
-    );
+    await sql`INSERT INTO system_settings (setting_key, setting_value) VALUES (${settingKey}, ${settingValue}) ON DUPLICATE KEY UPDATE setting_value = ${settingValue}`.execute(db);
 
     return NextResponse.json(
       { data: { key: settingKey, value: settingValue }, message: "定时任务创建成功" },
@@ -82,7 +78,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "缺少任务key" }, { status: 400 });
     }
 
-    await query("DELETE FROM system_settings WHERE setting_key = ?", [key]);
+    await db.deleteFrom("system_settings").where("setting_key", "=", key).execute();
 
     return NextResponse.json({ message: "定时任务已删除" });
   } catch (error: any) {
@@ -107,24 +103,24 @@ export async function PATCH(request: NextRequest) {
     }
 
     // 读取当前配置
-    const rows = await query(
-      "SELECT setting_value FROM system_settings WHERE setting_key = ?",
-      [key]
-    ) as any[];
+    const rows = await db.selectFrom("system_settings")
+      .where("setting_key", "=", key)
+      .select(["setting_value"])
+      .execute();
 
     if (rows.length === 0) {
       return NextResponse.json({ error: "任务不存在" }, { status: 404 });
     }
 
-    const config = JSON.parse(rows[0].setting_value);
+    const config = JSON.parse(rows[0].setting_value!);
     if (enabled !== undefined) {
       config.enabled = enabled;
     }
 
-    await query(
-      "UPDATE system_settings SET setting_value = ? WHERE setting_key = ?",
-      [JSON.stringify(config), key]
-    );
+    await db.updateTable("system_settings")
+      .set({ setting_value: JSON.stringify(config) })
+      .where("setting_key", "=", key)
+      .execute();
 
     return NextResponse.json({ message: "定时任务更新成功" });
   } catch (error: any) {

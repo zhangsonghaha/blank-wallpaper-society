@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 import { getObject, putBuffer, objectExists } from "@/lib/minio";
 import { getResizedKey, RESOLUTIONS, RESOLUTION_MAP } from "@/lib/resolutions";
 import sharp from "sharp";
@@ -11,15 +11,15 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const rows = (await query("SELECT * FROM images WHERE id = ?", [
-      id,
-    ])) as any[];
+    const image = await db
+      .selectFrom("images")
+      .where("id", "=", Number(id))
+      .selectAll()
+      .executeTakeFirst();
 
-    if (rows.length === 0) {
+    if (!image) {
       return NextResponse.json({ error: "图片不存在" }, { status: 404 });
     }
-
-    const image = rows[0];
 
     // 检查哪些分辨率已缓存
     const availableResolutions = await Promise.all(
@@ -73,14 +73,16 @@ export async function POST(
       );
     }
 
-    const rows = (await query("SELECT * FROM images WHERE id = ?", [
-      id,
-    ])) as any[];
-    if (rows.length === 0) {
+    const image = await db
+      .selectFrom("images")
+      .where("id", "=", Number(id))
+      .selectAll()
+      .executeTakeFirst();
+
+    if (!image) {
       return NextResponse.json({ error: "图片不存在" }, { status: 404 });
     }
 
-    const image = rows[0];
     const resizedKey = getResizedKey(
       image.storage_key,
       resInfo.width,

@@ -5,7 +5,7 @@
  * 配额来源优先级：数据库 system_settings > 环境变量 > 默认值
  */
 
-import { query } from "@/lib/db";
+import { db } from "@/lib/db";
 
 // === 默认配额配置（当数据库/环境变量未设置时使用） ===
 const DEFAULT_QUOTA_MB = 500;       // 普通用户默认 500MB
@@ -44,10 +44,10 @@ async function getQuotaConfig(): Promise<Record<string, number>> {
   };
 
   try {
-    const rows = (await query(
-      "SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN (?, ?, ?)",
-      ["quota_default_mb", "quota_premium_mb", "quota_admin_mb"]
-    )) as any[];
+    const rows = await db.selectFrom("system_settings")
+      .where("setting_key", "in", ["quota_default_mb", "quota_premium_mb", "quota_admin_mb"])
+      .select(["setting_key", "setting_value"])
+      .execute();
     for (const row of rows) {
       if (row.setting_value) {
         const mb = parseInt(row.setting_value);
@@ -89,12 +89,12 @@ async function getUserQuotaMB(role: string): Promise<number> {
  * 获取用户存储使用量（字节）
  */
 export async function getUserStorageUsage(userId: number): Promise<number> {
-  const result = (await query(
-    "SELECT COALESCE(SUM(file_size), 0) as total_bytes FROM images WHERE uploaded_by = ?",
-    [userId]
-  )) as any[];
+  const result = await db.selectFrom("images")
+    .where("uploaded_by", "=", userId)
+    .select((eb) => eb.fn.coalesce(eb.fn.sum("file_size"), eb.val(0)).as("total_bytes"))
+    .executeTakeFirst();
 
-  return Number(result[0]?.total_bytes || 0);
+  return Number(result?.total_bytes ?? 0);
 }
 
 /**
