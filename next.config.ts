@@ -12,6 +12,11 @@ const nextConfig: NextConfig = {
       // 仅允许本地 MinIO 通过 HTTP 访问（开发/内网环境）
       // 注意：生产环境 MinIO 应通过 HTTPS 反向代理访问
     ],
+    // 开发环境下允许图片域名解析到本地代理 IP（如 Clash/Surge 的 198.18.x.x）
+    dangerouslyAllowSVG: true,
+    ...(process.env.NODE_ENV === "development"
+      ? { unoptimized: true }
+      : {}),
   },
   // API 版本化：/api/v1/* 映射到 /api/*
   async rewrites() {
