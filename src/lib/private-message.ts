@@ -5,7 +5,7 @@
  * 使用 Redis pub/sub 实现跨实例实时消息推送
  */
 
-import { db } from "@/lib/db";
+import { db, safeExecute } from "@/lib/db";
 import { sql } from "kysely";
 import Redis from "ioredis";
 import redis from "@/lib/redis";
@@ -359,20 +359,26 @@ export async function getMessages(
 
 // === 获取未读消息总数 ===
 export async function getUnreadMessageCount(userId: number): Promise<number> {
-  const row = await db
-    .selectFrom("messages as m")
-    .innerJoin("conversation_participants as cp", (join) =>
-      join
-        .onRef("m.conversation_id", "=", "cp.conversation_id")
-        .on("cp.user_id", "=", userId)
-        .on("cp.is_hidden", "=", 0)
-    )
-    .where("m.sender_id", "!=", userId)
-    .where("m.is_read", "=", 0)
-    .select((eb) => eb.fn.countAll().as("count"))
-    .executeTakeFirst();
+  return safeExecute(
+    async () => {
+      const row = await db
+        .selectFrom("messages as m")
+        .innerJoin("conversation_participants as cp", (join) =>
+          join
+            .onRef("m.conversation_id", "=", "cp.conversation_id")
+            .on("cp.user_id", "=", userId)
+            .on("cp.is_hidden", "=", 0)
+        )
+        .where("m.sender_id", "!=", userId)
+        .where("m.is_read", "=", 0)
+        .select((eb) => eb.fn.countAll().as("count"))
+        .executeTakeFirst();
 
-  return Number(row?.count ?? 0);
+      return Number(row?.count ?? 0);
+    },
+    0,
+    "getUnreadMessageCount"
+  );
 }
 
 // === 隐藏对话（软删除） ===
