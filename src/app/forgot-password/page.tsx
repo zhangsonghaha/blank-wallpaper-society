@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { Toaster, toast } from "sonner";
 import { Mail, ArrowLeft, ImageIcon, Send } from "lucide-react";
 import "altcha";
@@ -68,11 +67,8 @@ export default function ForgotPasswordPage() {
   return (
     <div className="min-h-[calc(100vh-64px)] flex items-center justify-center bg-[var(--color-surface-soft)] px-4">
       <Toaster position="top-right" richColors />
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-md"
+      <div
+        className="pin-enter w-full max-w-md"
       >
         <Card className="rounded-2xl border-none shadow-lg">
           <CardHeader className="text-center pb-2">
@@ -185,7 +181,7 @@ export default function ForgotPasswordPage() {
             </div>
           </CardContent>
         </Card>
-      </motion.div>
+      </div>
     </div>
   );
 }

@@ -4,7 +4,6 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { Toaster, toast } from "sonner";
 import { Eye, EyeOff, Lock, ImageIcon, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -177,16 +176,13 @@ export default function ResetPasswordPage() {
   return (
     <div className="min-h-[calc(100vh-64px)] flex items-center justify-center bg-[var(--color-surface-soft)] px-4">
       <Toaster position="top-right" richColors />
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-md"
+      <div
+        className="pin-enter w-full max-w-md"
       >
         <Suspense fallback={<div className="h-64 skeleton-pulse rounded-xl" />}>
           <ResetPasswordForm />
         </Suspense>
-      </motion.div>
+      </div>
     </div>
   );
 }

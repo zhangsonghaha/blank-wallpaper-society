@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import { toast, Toaster } from "sonner";
-import { gsap } from "gsap";
 import "altcha";
 import AltchaWidget from "@/components/AltchaWidget";
 import { withCsrfHeader } from "@/lib/csrf-client";
@@ -303,6 +302,14 @@ function LoginForm() {
   const cardRef = useRef<HTMLDivElement>(null);
   const cellsRef = useRef<(HTMLDivElement | null)[]>([]);
   const animDoneRef = useRef(false);
+  const gsapRef = useRef<typeof import("gsap")["gsap"] | null>(null);
+
+  // 动态导入 gsap
+  useEffect(() => {
+    import("gsap").then((mod) => {
+      gsapRef.current = mod.gsap;
+    });
+  }, []);
 
   // 检查 OAuth 可用性
   useEffect(() => {
@@ -333,7 +340,9 @@ function LoginForm() {
     const cells = cellsRef.current.filter(Boolean) as HTMLDivElement[];
     if (cells.length === 0) return;
 
-    const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+    const tl = gsapRef.current?.timeline({ defaults: { ease: "power3.out" } });
+
+    if (!tl) return;
 
     // 0: logo 浮现
     tl.to(".auth-intro-logo", { duration: 0.6, opacity: 1, y: -10, ease: "power2.out" }, 0);
@@ -402,10 +411,10 @@ function LoginForm() {
       if (rect.width === 0) return;
       const rx = ((e.clientY - rect.top) / rect.height - 0.5) * -2;
       const ry = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
-      gsap.to(card, { duration: 0.6, rotateX: rx, rotateY: ry, ease: "power2.out" });
+      gsapRef.current?.to(card, { duration: 0.6, rotateX: rx, rotateY: ry, ease: "power2.out" });
     };
     const onLeave = () => {
-      gsap.to(cardRef.current, { duration: 0.8, rotateX: 0, rotateY: 0, ease: "power2.out" });
+      gsapRef.current?.to(cardRef.current, { duration: 0.8, rotateX: 0, rotateY: 0, ease: "power2.out" });
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseleave", onLeave);
@@ -425,7 +434,7 @@ function LoginForm() {
     setConfirmPassword("");
     const card = cardRef.current;
     if (card) {
-      gsap.fromTo(card, { scale: 0.985 }, { duration: 0.35, scale: 1, ease: "power2.out" });
+      gsapRef.current?.fromTo(card, { scale: 0.985 }, { duration: 0.35, scale: 1, ease: "power2.out" });
     }
   }, [mode]);
 

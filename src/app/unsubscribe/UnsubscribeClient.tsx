@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
 import { Mail, CheckCircle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -60,18 +59,18 @@ export default function UnsubscribeClient() {
   if (result === "success") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--color-surface-soft)]">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center p-8">
+        <div className="pin-enter text-center p-8">
           <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
           <h1 className="text-xl font-bold text-[var(--color-ink)]">退订成功</h1>
           <p className="text-[var(--color-mute)] mt-2">{message}</p>
-        </motion.div>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--color-surface-soft)]">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md p-8">
+      <div className="pin-enter w-full max-w-md p-8">
         <div className="bg-white rounded-2xl shadow-lg p-8">
           <div className="text-center mb-6">
             <Mail className="w-12 h-12 text-[var(--color-primary)] mx-auto mb-3" />
@@ -106,7 +105,7 @@ export default function UnsubscribeClient() {
             </Button>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,19 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import ProfileClient from "./ProfileClient";
+import dynamic from "next/dynamic";
+
+const ProfileClient = dynamic(() => import("./ProfileClient"), {
+  loading: () => (
+    <div className="max-w-5xl mx-auto px-4 py-8">
+      <div className="animate-pulse flex flex-col items-center gap-4">
+        <div className="w-24 h-24 rounded-full bg-gray-200 dark:bg-gray-700" />
+        <div className="w-48 h-6 rounded bg-gray-200 dark:bg-gray-700" />
+        <div className="w-32 h-4 rounded bg-gray-200 dark:bg-gray-700" />
+      </div>
+    </div>
+  ),
+});
 
 export default async function ProfilePage() {
   const session = await auth();
