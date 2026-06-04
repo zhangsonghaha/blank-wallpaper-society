@@ -11,7 +11,6 @@ import CookieConsent from "@/components/CookieConsent";
 import AnnouncementBar from "@/components/AnnouncementBar";
 import FeedbackButton from "@/components/FeedbackButton";
 import { Toaster } from "sonner";
-import { auth } from "@/lib/auth";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -49,12 +48,11 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await auth();
   return (
     <html lang="zh-CN" className={`${inter.variable} h-full`} suppressHydrationWarning>
       <head>
@@ -67,7 +65,7 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <SearchProvider>
-            <AuthProvider session={session}>
+            <AuthProvider>
               <Navbar />
               <div className="flex-1 pt-16 min-h-0">
                 <AnnouncementBar />

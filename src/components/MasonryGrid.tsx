@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, Fragment } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import PinCard from "./PinCard";
@@ -102,6 +102,37 @@ export default function MasonryGrid() {
   const [totalCount, setTotalCount] = useState(0);
   const [recommendations, setRecommendations] = useState<ImageRecord[]>([]);
   const favoritesRef = useRef<HTMLDivElement>(null);
+
+  // 虚拟滚动：懒渲染控制
+  const INITIAL_VISIBLE_COUNT = 24;
+  const [visibleSet, setVisibleSet] = useState<Set<number>>(new Set());
+  const observeRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (!el) return;
+      const id = Number(el.dataset.imgId);
+      if (id < INITIAL_VISIBLE_COUNT) return; // 首屏直接可见
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setVisibleSet((prev) => {
+              const next = new Set(prev);
+              next.add(id);
+              return next;
+            });
+            observer.disconnect();
+          }
+        },
+        { rootMargin: "1200px 0px" }
+      );
+      observer.observe(el);
+    },
+    []
+  );
+
+  // 筛选变化时重置可见集合
+  useEffect(() => {
+    setVisibleSet(new Set());
+  }, [activeCategory, searchQuery, activeColor, sortBy]);
 
   // 精选合集
   const [featuredCollections, setFeaturedCollections] = useState<any[]>([]);
@@ -725,33 +756,46 @@ export default function MasonryGrid() {
                     const globalIdx = displayedImages.findIndex(
                       (img) => img.id === image.id
                     );
+                    const isLazy = globalIdx >= INITIAL_VISIBLE_COUNT && !visibleSet.has(globalIdx);
                     return (
-                      <PinCard
+                      <div
                         key={image.id}
-                        image={{
-                          id: image.id,
-                          src: image.thumbnail_url || image.url,
-                          width: image.width || 600,
-                          height: image.height || 800,
-                          title: image.title,
-                          description: image.description,
-                          tags: image.tags
-                            ? image.tags.split(",").map((t) => t.trim())
-                            : [],
-                          author: image.author || "未知",
-                          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${image.author || image.id}`,
-                          media_type: image.media_type || "image",
-                          video_url: image.video_url || undefined,
-                          poster_url: image.poster_url || undefined,
-                          uploaded_by: image.uploaded_by || undefined,
-                          author_level: image.uploaded_by != null && authorLevels[image.uploaded_by] ? authorLevels[image.uploaded_by].level : undefined,
-                          author_level_title: image.uploaded_by != null && authorLevels[image.uploaded_by] ? authorLevels[image.uploaded_by].title : undefined,
-                        }}
-                        index={globalIdx}
-                        isFavorited={favorites.has(image.id)}
-                        onToggleFavorite={toggleFavorite}
-                        onClick={() => openLightbox(globalIdx)}
-                      />
+                        ref={observeRef}
+                        data-img-id={globalIdx}
+                      >
+                        {isLazy ? (
+                          <div
+                            className="rounded-[var(--radius-md)] bg-[var(--color-surface-card)] skeleton-pulse"
+                            style={{ aspectRatio: `${(image.width || 600) / (image.height || 800)}` }}
+                          />
+                        ) : (
+                          <PinCard
+                            image={{
+                              id: image.id,
+                              src: image.thumbnail_url || image.url,
+                              width: image.width || 600,
+                              height: image.height || 800,
+                              title: image.title,
+                              description: image.description,
+                              tags: image.tags
+                                ? image.tags.split(",").map((t) => t.trim())
+                                : [],
+                              author: image.author || "未知",
+                              avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${image.author || image.id}`,
+                              media_type: image.media_type || "image",
+                              video_url: image.video_url || undefined,
+                              poster_url: image.poster_url || undefined,
+                              uploaded_by: image.uploaded_by || undefined,
+                              author_level: image.uploaded_by != null && authorLevels[image.uploaded_by] ? authorLevels[image.uploaded_by].level : undefined,
+                              author_level_title: image.uploaded_by != null && authorLevels[image.uploaded_by] ? authorLevels[image.uploaded_by].title : undefined,
+                            }}
+                            index={globalIdx}
+                            isFavorited={favorites.has(image.id)}
+                            onToggleFavorite={toggleFavorite}
+                            onClick={() => openLightbox(globalIdx)}
+                          />
+                        )}
+                      </div>
                     );
                   })}
                 </div>
