@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getCache, setCache, CacheTTL } from "@/lib/redis";
 
 // GET /api/tags - 获取标签列表
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get("type") || "popular"; // popular | all | cloud
+
+    // 缓存检查
+    const cacheKey = `tags:list:${type}`;
+    const cached = await getCache<any>(cacheKey);
+    if (cached) return NextResponse.json(cached);
 
     if (type === "cloud" || type === "popular") {
       // 从 images 表中提取标签，统计使用次数
@@ -64,7 +70,9 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      return NextResponse.json({ data: tags });
+      const responseData = { data: tags };
+      setCache(cacheKey, responseData, CacheTTL.TAGS_LIST).catch(() => {});
+      return NextResponse.json(responseData);
     }
 
     // 从 tags 表获取（如果已同步）
@@ -75,7 +83,9 @@ export async function GET(request: NextRequest) {
       .limit(100)
       .execute();
 
-    return NextResponse.json({ data: tags });
+    const responseData = { data: tags };
+    setCache(cacheKey, responseData, CacheTTL.TAGS_LIST).catch(() => {});
+    return NextResponse.json(responseData);
   } catch (error: any) {
     console.error("GET /api/tags error:", error);
     return NextResponse.json(

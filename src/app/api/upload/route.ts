@@ -14,6 +14,7 @@ import { sanitizeStrict, sanitizeName } from "@/lib/sanitize";
 import { canUpload } from "@/lib/storage-quota";
 import sharp from "sharp";
 import { sql } from "kysely";
+import { clearPattern } from "@/lib/redis";
 
 // pHash 去重阈值：hamming distance <= 5 判定为重复
 const PHASH_THRESHOLD = 5;
@@ -298,6 +299,9 @@ export async function POST(request: NextRequest) {
       } catch {
         // NSFW 检测失败不影响上传
       }
+
+      // 缓存失效
+      await clearPattern("images:list:*");
 
       return NextResponse.json(
         {
@@ -641,6 +645,9 @@ export async function POST(request: NextRequest) {
       // NSFW 检测失败不影响上传
     }
     } // end if (!isVideo)
+
+    // 缓存失效
+    await clearPattern("images:list:*");
 
     return NextResponse.json(
       {

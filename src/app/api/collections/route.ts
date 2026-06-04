@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "kysely";
 import { auth } from "@/lib/auth";
+import { getCache, setCache, clearPattern, CacheKeys, CacheTTL } from "@/lib/redis";
 
 // GET /api/collections - 获取合集列表
 export async function GET(request: NextRequest) {
@@ -12,6 +13,16 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit;
     const userId = searchParams.get("userId");
     const featured = searchParams.get("featured") === "true";
+
+    // 缓存检查：仅公开列表（无用户特定筛选）
+    const cacheParams = JSON.stringify({ page, limit, userId: userId || "", featured: featured ? "1" : "0" });
+    const cacheKey = CacheKeys.COLLECTIONS_LIST(cacheParams);
+    const session = await auth();
+    const isAnonymous = !session?.user;
+    if (isAnonymous) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) return NextResponse.json(cached);
+    }
 
     // 构建动态 WHERE 条件
     const whereParts: ReturnType<typeof sql>[] = [sql`c.is_public = TRUE`];
@@ -56,7 +67,6 @@ export async function GET(request: NextRequest) {
     const rows = rowsResult.rows as any[];
 
     // 如果用户已登录，检查是否已订阅
-    const session = await auth();
     if (session?.user) {
       const currentUserId = (session.user as any).id;
       const collectionIds = rows.map((r: any) => r.id);
@@ -74,13 +84,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const responseData = {
       data: rows,
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
-    });
+    };
+    if (isAnonymous) {
+      setCache(cacheKey, responseData, CacheTTL.COLLECTIONS_LIST).catch(() => {});
+    }
+    return NextResponse.json(responseData);
   } catch (error: any) {
     console.error("GET /api/collections error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -123,6 +137,9 @@ export async function POST(request: NextRequest) {
         (SELECT COUNT(*) FROM collection_subscriptions WHERE collection_id = c.id) as subscriber_count
       FROM collections c LEFT JOIN users u ON c.user_id = u.id WHERE c.id = ${newId}
     `.execute(db);
+
+    // 缓存失效
+    await clearPattern("collections:list:*");
 
     return NextResponse.json({ data: newCollection.rows[0] }, { status: 201 });
   } catch (error: any) {

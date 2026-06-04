@@ -4,6 +4,7 @@ import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { uploadFile } from "@/lib/minio";
 import { sanitizeComment, sanitizeStrict } from "@/lib/sanitize";
+import { getCache, setCache, clearPattern, CacheKeys, CacheTTL } from "@/lib/redis";
 
 // POST /api/posts - 创建动态
 export async function POST(request: NextRequest) {
@@ -154,6 +155,9 @@ export async function POST(request: NextRequest) {
       .where("post_id", "=", postId)
       .execute();
 
+    // 缓存失效
+    await clearPattern("posts:list:*");
+
     return NextResponse.json({
       message: "发布成功",
       post: {
@@ -183,6 +187,14 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit;
     const userIdFilter = searchParams.get("user_id");
     const postId = searchParams.get("id");
+
+    // 缓存检查：仅匿名用户的公开列表请求
+    const isAnonymousList = !userId && !userIdFilter && !postId;
+    const cacheKey = isAnonymousList ? CacheKeys.POSTS_LIST(page) : null;
+    if (cacheKey) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) return NextResponse.json(cached);
+    }
 
     // 获取单个帖子
     if (postId) {
@@ -335,7 +347,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({
+    const responseData = {
       data: posts,
       pagination: {
         page,
@@ -343,7 +355,11 @@ export async function GET(request: NextRequest) {
         total,
         totalPages: Math.ceil(total / limit),
       },
-    });
+    };
+    if (cacheKey) {
+      setCache(cacheKey, responseData, CacheTTL.POSTS_LIST).catch(() => {});
+    }
+    return NextResponse.json(responseData);
 
   } catch (error: any) {
     console.error("GET /api/posts error:", error);

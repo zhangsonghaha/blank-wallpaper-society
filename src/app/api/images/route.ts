@@ -9,6 +9,7 @@ import {
   SearchOptions,
 } from "@/lib/meilisearch";
 import { sanitizeQueryParam, sanitizeStrict } from "@/lib/sanitize";
+import { getCache, setCache, CacheKeys, CacheTTL } from "@/lib/redis";
 
 // GET /api/images - 获取图片列表
 export async function GET(request: NextRequest) {
@@ -45,6 +46,19 @@ export async function GET(request: NextRequest) {
 
     // 默认只显示已通过审核的图片（前台用户可见）
     const showAll = searchParams.get("showAll") === "true";
+
+    // 缓存检查：仅公开请求（非 my、非 showAll）
+    const isPublicRequest = !myImages && !showAll;
+    let cacheKey: string | null = null;
+    if (isPublicRequest) {
+      const cacheParams: Record<string, string> = {};
+      for (const [k, v] of searchParams.entries()) {
+        if (v && k !== "my" && k !== "showAll") cacheParams[k] = v;
+      }
+      cacheKey = CacheKeys.IMAGES_LIST(JSON.stringify(Object.entries(cacheParams).sort()));
+      const cached = await getCache<any>(cacheKey);
+      if (cached) return NextResponse.json(cached);
+    }
 
     // 优先使用 Meilisearch 搜索（仅在有搜索关键词且无高级筛选时）
     const useMeilisearch =
@@ -89,19 +103,20 @@ export async function GET(request: NextRequest) {
             const distB = colorDistance(targetRgb, hexToRgb(b.dominant_color));
             return distA - distB;
           });
-          return NextResponse.json({
+          const meiliColorResponse = {
             data: filtered,
             total: filtered.length,
             page,
             limit,
             totalPages: Math.ceil(filtered.length / limit),
             _searchEngine: "meilisearch",
-          });
+          };
+          if (cacheKey) setCache(cacheKey, meiliColorResponse, CacheTTL.IMAGES_LIST).catch(() => {});
+          return NextResponse.json(meiliColorResponse);
         }
-        return NextResponse.json({
-          ...meiliResult,
-          _searchEngine: "meilisearch",
-        });
+        const meiliResponse = { ...meiliResult, _searchEngine: "meilisearch" };
+        if (cacheKey) setCache(cacheKey, meiliResponse, CacheTTL.IMAGES_LIST).catch(() => {});
+        return NextResponse.json(meiliResponse);
       }
     }
 
@@ -254,14 +269,16 @@ export async function GET(request: NextRequest) {
       recommendations = recRows;
     }
 
-    return NextResponse.json({
+    const kyselyResponse = {
       data: filteredRows,
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
       ...(recommendations ? { recommendations } : {}),
-    });
+    };
+    if (cacheKey) setCache(cacheKey, kyselyResponse, CacheTTL.IMAGES_LIST).catch(() => {});
+    return NextResponse.json(kyselyResponse);
   } catch (error: any) {
     console.error("GET /api/images error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

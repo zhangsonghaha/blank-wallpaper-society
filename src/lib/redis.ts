@@ -47,6 +47,16 @@ export const CacheKeys = {
   /** Feed 热门流 feed:trending:{page}:{limit} */
   FEED_TRENDING: (page: number, limit: number) =>
     `feed:trending:${page}:${limit}`,
+  /** 图片列表 images:list:{serializedParams} */
+  IMAGES_LIST: (params: string) => `images:list:${params}`,
+  /** 图片详情 images:detail:{id} */
+  IMAGE_DETAIL: (id: number) => `images:detail:${id}`,
+  /** 标签列表 */
+  TAGS_LIST: "tags:list",
+  /** 合集列表 collections:list:{serializedParams} */
+  COLLECTIONS_LIST: (params: string) => `collections:list:${params}`,
+  /** 帖子列表 posts:list:{page} */
+  POSTS_LIST: (page: number) => `posts:list:${page}`,
 } as const;
 
 // ============================================================
@@ -62,6 +72,11 @@ export const CacheTTL = {
   FEATURED_CAROUSEL: 3600, // 1 小时（编辑精选变更少）
   FRESH_PICKS: 600,        // 10 分钟
   FEED_TRENDING: 300,      // 5 分钟
+  IMAGES_LIST: 60,         // 1 分钟
+  IMAGE_DETAIL: 300,       // 5 分钟
+  TAGS_LIST: 600,          // 10 分钟
+  COLLECTIONS_LIST: 300,   // 5 分钟
+  POSTS_LIST: 300,         // 5 分钟
 } as const;
 
 // ============================================================

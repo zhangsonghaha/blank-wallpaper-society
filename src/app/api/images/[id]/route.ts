@@ -4,6 +4,7 @@ import { sql } from "kysely";
 import { deleteFile } from "@/lib/minio";
 import { auth } from "@/lib/auth";
 import { indexImage, deleteImage as deleteSearchIndex, dbRowToSearchData } from "@/lib/meilisearch";
+import { getOrSet, delCache, clearPattern, CacheKeys, CacheTTL } from "@/lib/redis";
 
 // GET /api/images/[id] - 获取单张图片
 export async function GET(
@@ -14,22 +15,31 @@ export async function GET(
     const { id } = await params;
     const imageId = Number(id);
 
-    const image = await db
-      .selectFrom("images")
-      .where("id", "=", imageId)
-      .selectAll()
-      .executeTakeFirst();
+    const image = await getOrSet(
+      CacheKeys.IMAGE_DETAIL(imageId),
+      async () => {
+        const row = await db
+          .selectFrom("images")
+          .where("id", "=", imageId)
+          .selectAll()
+          .executeTakeFirst();
+        if (!row) return null;
+
+        // 增加浏览次数
+        await db
+          .updateTable("images")
+          .set({ view_count: sql`view_count + 1` })
+          .where("id", "=", imageId)
+          .execute();
+
+        return row;
+      },
+      CacheTTL.IMAGE_DETAIL
+    );
 
     if (!image) {
       return NextResponse.json({ error: "图片不存在" }, { status: 404 });
     }
-
-    // 增加浏览次数
-    await db
-      .updateTable("images")
-      .set({ view_count: sql`view_count + 1` })
-      .where("id", "=", imageId)
-      .execute();
 
     return NextResponse.json(image);
   } catch (error: any) {
@@ -76,6 +86,9 @@ export async function PATCH(
         tags === undefined &&
         category === undefined
       ) {
+        // 缓存失效
+        await delCache(CacheKeys.IMAGE_DETAIL(imageId));
+        await clearPattern("images:list:*");
         return NextResponse.json({ success: true, message: "更新成功" });
       }
     }
@@ -113,6 +126,10 @@ export async function PATCH(
         }
       }
     } catch {}
+
+    // 缓存失效：清除该图片详情和列表缓存
+    await delCache(CacheKeys.IMAGE_DETAIL(imageId));
+    await clearPattern("images:list:*");
 
     return NextResponse.json({ success: true, message: "更新成功" });
   } catch (error: any) {
@@ -155,6 +172,10 @@ export async function DELETE(
 
     // 从 Meilisearch 索引中删除
     deleteSearchIndex(imageId).catch(() => {});
+
+    // 缓存失效
+    await delCache(CacheKeys.IMAGE_DETAIL(imageId));
+    await clearPattern("images:list:*");
 
     return NextResponse.json({ message: "删除成功" });
   } catch (error: any) {

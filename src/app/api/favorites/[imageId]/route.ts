@@ -4,6 +4,7 @@ import { sql } from "kysely";
 import { auth } from "@/lib/auth";
 import { addExp, checkAchievements } from "@/lib/user-level";
 import { notifyNewFavorite } from "@/lib/notification";
+import { clearPattern } from "@/lib/redis";
 
 // POST /api/favorites/[imageId] - 添加收藏
 export async function POST(
@@ -92,6 +93,9 @@ export async function POST(
     // 收藏者自身也检查成就（收藏达人）
     checkAchievements(userId).catch(() => {});
 
+    // 缓存失效：图片列表可能因收藏数变化而需刷新
+    await clearPattern("images:list:*");
+
     return NextResponse.json({ success: true, data: { imageId: id } }, { status: 201 });
   } catch (error: any) {
     console.error("POST /api/favorites/[imageId] error:", error);
@@ -148,6 +152,9 @@ export async function DELETE(
         { status: 404 }
       );
     }
+
+    // 缓存失效
+    await clearPattern("images:list:*");
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
